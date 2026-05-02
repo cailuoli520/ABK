@@ -2,6 +2,7 @@ package com.abk.kernel.ui.theme
 
 import android.app.Activity
 import android.os.Build
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -9,6 +10,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 
 private val LightColorScheme = lightColorScheme(
@@ -63,6 +65,14 @@ private val DarkColorScheme = darkColorScheme(
     outline = OutlineDark
 )
 
+private val ExpressiveShapes = Shapes(
+    extraSmall = RoundedCornerShape(10.dp),
+    small = RoundedCornerShape(16.dp),
+    medium = RoundedCornerShape(24.dp),
+    large = RoundedCornerShape(32.dp),
+    extraLarge = RoundedCornerShape(40.dp)
+)
+
 @Composable
 fun AbkTheme(
     themeMode: String = "system",
@@ -95,6 +105,7 @@ fun AbkTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         typography = AbkTypography,
+        shapes = ExpressiveShapes,
         content = content
     )
 }

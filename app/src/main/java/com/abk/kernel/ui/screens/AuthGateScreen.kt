@@ -19,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -27,6 +28,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.abk.kernel.R
+import com.abk.kernel.ui.components.ExpressiveHeroCard
+import com.abk.kernel.ui.components.ExpressiveSectionCard
+import com.abk.kernel.ui.components.ExpressiveStatusChip
 import com.abk.kernel.viewmodel.AuthStep
 import com.abk.kernel.viewmodel.MainViewModel
 
@@ -71,51 +75,46 @@ fun AuthGateScreen(vm: MainViewModel) {
 
 @Composable
 private fun RootCheckScreen(isLoading: Boolean, onRequestRoot: () -> Unit) {
-    Scaffold { padding ->
-        Box(
-            Modifier.fillMaxSize().padding(padding),
-            contentAlignment = Alignment.Center
+    AuthShell {
+        ExpressiveHeroCard(
+            title = stringResource(R.string.root_check_title),
+            subtitle = stringResource(R.string.root_check_desc),
+            icon = Icons.Default.AdminPanelSettings,
+            badge = {
+                ExpressiveStatusChip(
+                    label = "Root 权限必需",
+                    icon = Icons.Default.Lock,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+            }
+        )
+        ExpressiveSectionCard(
+            title = "ABK 将在本机确认能力",
+            subtitle = "只在需要刷写、安装模块和识别内核时调用 Root。其余 GitHub 操作通过授权 token 完成。",
+            icon = Icons.Default.Security
         ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-                modifier = Modifier.padding(32.dp)
-            ) {
-                Icon(
-                    Icons.Default.AdminPanelSettings,
-                    contentDescription = null,
-                    modifier = Modifier.size(80.dp),
-                    tint = MaterialTheme.colorScheme.primary
+            Text(
+                "授权后会自动进入 GitHub 登录和 fork 检查流程。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Button(
+            onClick = onRequestRoot,
+            enabled = !isLoading,
+            shape = RoundedCornerShape(22.dp),
+            modifier = Modifier.fillMaxWidth().height(58.dp)
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator(
+                    Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary
                 )
-                Text(
-                    stringResource(R.string.root_check_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center
-                )
-                Text(
-                    stringResource(R.string.root_check_desc),
-                    style = MaterialTheme.typography.bodyLarge,
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Button(
-                    onClick = onRequestRoot,
-                    enabled = !isLoading,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(
-                            Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
-                    } else {
-                        Icon(Icons.Default.Lock, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.grant_root))
-                    }
-                }
+            } else {
+                Icon(Icons.Default.Lock, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.grant_root))
             }
         }
     }
@@ -158,96 +157,87 @@ private fun LoginScreen(
         )
     }
 
+    AuthShell {
+        ExpressiveHeroCard(
+            title = stringResource(R.string.login_title),
+            subtitle = stringResource(R.string.login_desc),
+            icon = Icons.Default.Code,
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            badge = {
+                ExpressiveStatusChip(
+                    label = if (isPolling) "等待 GitHub 确认" else "需要 GitHub 授权",
+                    icon = if (isPolling) Icons.Default.Sync else Icons.Default.VerifiedUser,
+                    color = if (isPolling) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.secondary
+                )
+            }
+        )
+
+        AnimatedVisibility(userCode != null) {
+            userCode?.let { code ->
+                DeviceCodeCard(
+                    code = code,
+                    verificationUri = verificationUri ?: "https://github.com/login/device",
+                    isPolling = isPolling,
+                    context = context
+                )
+            }
+        }
+
+        if (error != null) {
+            ErrorCard(error = error, onClearError = onClearError)
+        }
+
+        if (userCode == null) {
+            Button(
+                onClick = { showConsentDialog = true },
+                enabled = !isLoading,
+                shape = RoundedCornerShape(22.dp),
+                modifier = Modifier.fillMaxWidth().height(58.dp)
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                } else {
+                    Icon(Icons.Default.Code, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.login_github))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AuthShell(content: @Composable ColumnScope.() -> Unit) {
     Scaffold { padding ->
         Box(
-            Modifier.fillMaxSize().padding(padding),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.32f),
+                            MaterialTheme.colorScheme.surface,
+                            MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.22f)
+                        )
+                    )
+                )
+                .padding(padding),
             contentAlignment = Alignment.Center
         ) {
             Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(20.dp),
                 modifier = Modifier
-                    .padding(32.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                Icon(
-                    Icons.Default.Code,
-                    contentDescription = null,
-                    modifier = Modifier.size(72.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    stringResource(R.string.login_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center
-                )
-                Text(
-                    stringResource(R.string.login_desc),
-                    style = MaterialTheme.typography.bodyLarge,
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                AnimatedVisibility(userCode != null) {
-                    userCode?.let { code ->
-                        DeviceCodeCard(
-                            code = code,
-                            verificationUri = verificationUri ?: "https://github.com/login/device",
-                            isPolling = isPolling,
-                            context = context
-                        )
-                    }
-                }
-
-                if (error != null) {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-                    ) {
-                        Row(
-                            Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Default.Error,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                error,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.weight(1f)
-                            )
-                            IconButton(onClick = onClearError) {
-                                Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.error)
-                            }
-                        }
-                    }
-                }
-
-                if (userCode == null) {
-                    Button(
-                        onClick = { showConsentDialog = true },
-                        enabled = !isLoading,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        if (isLoading) {
-                            CircularProgressIndicator(
-                                Modifier.size(20.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                        } else {
-                            Icon(Icons.Default.Code, null)
-                            Spacer(Modifier.width(8.dp))
-                            Text(stringResource(R.string.login_github))
-                        }
-                    }
-                }
-            }
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 24.dp)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+                content = content
+            )
         }
     }
 }
@@ -262,6 +252,7 @@ private fun DeviceCodeCard(
     var copied by remember { mutableStateOf(false) }
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(34.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
     ) {
         Column(
@@ -284,9 +275,9 @@ private fun DeviceCodeCard(
             // User code display
             Box(
                 Modifier
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(18.dp))
                     .background(MaterialTheme.colorScheme.surface)
-                    .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
+                    .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(18.dp))
                     .padding(horizontal = 24.dp, vertical = 12.dp)
             ) {
                 Text(
@@ -370,62 +361,85 @@ private fun ForkCheckScreen(
         )
     }
 
-    Scaffold { padding ->
-        Box(
-            Modifier.fillMaxSize().padding(padding),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-                modifier = Modifier.padding(32.dp)
+    AuthShell {
+        if (isLoading) {
+            ExpressiveHeroCard(
+                title = "正在检查 Fork",
+                subtitle = "ABK 正在确认你的仓库、工作流和上游同步状态。",
+                icon = Icons.Default.Sync,
+                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                badge = {
+                    ExpressiveStatusChip(
+                        label = stringResource(R.string.loading),
+                        icon = Icons.Default.HourglassTop,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                }
             ) {
-                if (isLoading) {
-                    CircularProgressIndicator()
-                    Text(stringResource(R.string.loading))
-                } else if (!hasFork) {
-                    Icon(
-                        Icons.Default.ForkRight,
-                        null,
-                        modifier = Modifier.size(72.dp),
-                        tint = MaterialTheme.colorScheme.primary
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+        } else if (!hasFork) {
+            ExpressiveHeroCard(
+                title = stringResource(R.string.fork_title),
+                subtitle = stringResource(R.string.fork_desc),
+                icon = Icons.Default.ForkRight,
+                badge = {
+                    ExpressiveStatusChip(
+                        label = "将创建你的构建仓库",
+                        icon = Icons.Default.CallSplit,
+                        color = MaterialTheme.colorScheme.primary
                     )
-                    Text(
-                        stringResource(R.string.fork_title),
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center
-                    )
-                    Text(
-                        stringResource(R.string.fork_desc),
-                        style = MaterialTheme.typography.bodyLarge,
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Button(onClick = onFork, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.ForkRight, null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.fork_action))
-                    }
                 }
-                if (error != null) {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-                    ) {
-                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Error, null, tint = MaterialTheme.colorScheme.error)
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                error,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                modifier = Modifier.weight(1f)
-                            )
-                            IconButton(onClick = onClearError) {
-                                Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.error)
-                            }
-                        }
-                    }
+            )
+            Button(
+                onClick = onFork,
+                shape = RoundedCornerShape(22.dp),
+                modifier = Modifier.fillMaxWidth().height(58.dp)
+            ) {
+                Icon(Icons.Default.ForkRight, null)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.fork_action))
+            }
+        } else {
+            ExpressiveHeroCard(
+                title = "仓库已准备",
+                subtitle = if (behindBy > 0) "你的 fork 落后上游 $behindBy 个提交，建议同步后再构建。" else "Fork、权限和工作流状态已通过检查。",
+                icon = Icons.Default.CheckCircle,
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                badge = {
+                    ExpressiveStatusChip(
+                        label = if (behindBy > 0) "建议同步" else "可以进入主界面",
+                        icon = if (behindBy > 0) Icons.Default.Warning else Icons.Default.Verified,
+                        color = if (behindBy > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary
+                    )
                 }
+            )
+        }
+        if (error != null) {
+            ErrorCard(error = error, onClearError = onClearError)
+        }
+    }
+}
+
+@Composable
+private fun ErrorCard(error: String, onClearError: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(26.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+    ) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Error, null, tint = MaterialTheme.colorScheme.error)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                error,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onClearError) {
+                Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.error)
             }
         }
     }

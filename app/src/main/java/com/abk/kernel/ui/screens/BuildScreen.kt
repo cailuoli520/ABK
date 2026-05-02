@@ -10,6 +10,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -25,6 +26,10 @@ import com.abk.kernel.data.model.BuildProgress
 import com.abk.kernel.data.model.BuildStepProgress
 import com.abk.kernel.data.model.BuildStatus
 import com.abk.kernel.data.model.KernelBuildConfig
+import com.abk.kernel.ui.components.ExpressiveHeroCard
+import com.abk.kernel.ui.components.ExpressiveSectionCard
+import com.abk.kernel.ui.components.ExpressiveStatusChip
+import com.abk.kernel.ui.components.ExpressiveTopBar
 import com.abk.kernel.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -63,15 +68,9 @@ fun BuildScreen(vm: MainViewModel) {
 
     Scaffold(
         topBar = {
-            LargeTopAppBar(
-                title = {
-                    Text(
-                        stringResource(R.string.build_title),
-                        style = MaterialTheme.typography.headlineLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+            ExpressiveTopBar(
+                title = stringResource(R.string.build_title),
+                icon = Icons.Default.Memory
             )
         }
     ) { padding ->
@@ -83,6 +82,8 @@ fun BuildScreen(vm: MainViewModel) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            BuildPlanHero(config, recommended, state.buildStatus)
+
             AnimatedVisibility(
                 visible = state.buildStatus != BuildStatus.IDLE,
                 enter = fadeIn() + slideInVertically { -it / 3 } + expandVertically(),
@@ -117,6 +118,7 @@ fun BuildScreen(vm: MainViewModel) {
                         Text(recommended?.subLevel?.let { "子版本号（推荐：$it）" } ?: "子版本号")
                     },
                     placeholder = { Text("如: 66, 198") },
+                    shape = FieldShape(),
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -127,6 +129,7 @@ fun BuildScreen(vm: MainViewModel) {
                         Text(recommended?.osPatchLevel?.let { "安全补丁级别（推荐：$it）" } ?: "安全补丁级别")
                     },
                     placeholder = { Text("如: 2022-01, lts") },
+                    shape = FieldShape(),
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -138,6 +141,7 @@ fun BuildScreen(vm: MainViewModel) {
                             Text(recommended?.revision?.let { "修订版本（推荐：$it）" } ?: "修订版本 (5.10 专用)")
                         },
                         placeholder = { Text("如: r11") },
+                        shape = FieldShape(),
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
@@ -194,6 +198,7 @@ fun BuildScreen(vm: MainViewModel) {
                             onValueChange = { vm.updateBuildConfig(config.copy(zramExtraAlgos = it)) },
                             label = { Text("自定义 ZRAM 算法") },
                             placeholder = { Text("如: lzo,lz4,deflate,zstd") },
+                            shape = FieldShape(),
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
                         )
@@ -209,6 +214,7 @@ fun BuildScreen(vm: MainViewModel) {
                         onValueChange = { vm.updateBuildConfig(config.copy(kpmPassword = it)) },
                         label = { Text("KPM 超级密码 (可选)") },
                         placeholder = { Text("留空使用默认密码") },
+                        shape = FieldShape(),
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
@@ -221,6 +227,7 @@ fun BuildScreen(vm: MainViewModel) {
                     value = config.version,
                     onValueChange = { vm.updateBuildConfig(config.copy(version = it)) },
                     label = { Text("自定义版本名 (可选)") },
+                    shape = FieldShape(),
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -229,6 +236,7 @@ fun BuildScreen(vm: MainViewModel) {
                     onValueChange = { vm.updateBuildConfig(config.copy(buildTime = it)) },
                     label = { Text("自定义构建时间 (可选)") },
                     placeholder = { Text("留空=当前 UTC 时间") },
+                    shape = FieldShape(),
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -240,7 +248,8 @@ fun BuildScreen(vm: MainViewModel) {
                 enabled = !state.isLoading && state.buildStatus !in listOf(
                     BuildStatus.QUEUED, BuildStatus.IN_PROGRESS
                 ),
-                modifier = Modifier.fillMaxWidth()
+                shape = MaterialTheme.shapes.large,
+                modifier = Modifier.fillMaxWidth().height(60.dp)
             ) {
                 if (state.isLoading) {
                     CircularProgressIndicator(
@@ -256,7 +265,10 @@ fun BuildScreen(vm: MainViewModel) {
 
             // Error
             state.error?.let { err ->
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                Card(
+                    shape = MaterialTheme.shapes.large,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                ) {
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Error, null, tint = MaterialTheme.colorScheme.error)
                         Spacer(Modifier.width(8.dp))
@@ -274,6 +286,44 @@ fun BuildScreen(vm: MainViewModel) {
 }
 
 @Composable
+private fun BuildPlanHero(
+    config: KernelBuildConfig,
+    recommended: KernelBuildConfig?,
+    status: BuildStatus
+) {
+    val isRecommended = recommended != null &&
+        config.androidVersion == recommended.androidVersion &&
+        config.kernelVersion == recommended.kernelVersion &&
+        config.subLevel == recommended.subLevel &&
+        config.osPatchLevel == recommended.osPatchLevel
+
+    ExpressiveHeroCard(
+        title = "${config.kernelVersion}.${config.subLevel} · ${config.androidVersion.removePrefix("android").let { "Android $it" }}",
+        subtitle = "以当前配置触发 GitHub Actions，完成后自动整理 img、AK3、管理器和 SUSFS 模块。",
+        icon = Icons.Default.RocketLaunch,
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        badge = {
+            ExpressiveStatusChip(
+                label = config.kernelsuVariant,
+                icon = Icons.Default.Shield,
+                color = MaterialTheme.colorScheme.primary
+            )
+            ExpressiveStatusChip(
+                label = if (!config.cancelSusfs) "SUSFS 开启" else "SUSFS 关闭",
+                icon = Icons.Default.Extension,
+                color = if (!config.cancelSusfs) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outline
+            )
+            ExpressiveStatusChip(
+                label = if (isRecommended) "设备推荐" else buildStatusLabel(status),
+                icon = if (isRecommended) Icons.Default.AutoAwesome else Icons.Default.RunCircle,
+                color = if (isRecommended) MaterialTheme.colorScheme.tertiary else buildStatusColor(status)
+            )
+        }
+    )
+}
+
+@Composable
 private fun BuildStatusBanner(status: BuildStatus, progress: BuildProgress) {
     val (icon, text, color) = when (status) {
         BuildStatus.QUEUED -> Triple(Icons.Default.Queue, "构建已排队，等待运行…", MaterialTheme.colorScheme.tertiary)
@@ -284,7 +334,8 @@ private fun BuildStatusBanner(status: BuildStatus, progress: BuildProgress) {
         else -> return
     }
     Card(
-        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.12f)),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.13f)),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -320,6 +371,7 @@ private fun BuildProgressCard(progress: BuildProgress) {
     )
     Card(
         modifier = Modifier.fillMaxWidth().animateContentSize(),
+        shape = MaterialTheme.shapes.extraLarge,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -379,13 +431,72 @@ private fun BuildStepRow(step: BuildStepProgress) {
 
 @Composable
 fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ExpressiveSectionCard(
+        title = title,
+        subtitle = when (title) {
+            "内核版本配置" -> "优先使用设备识别出的推荐参数，避免手动填错版本线。"
+            "KernelSU 配置" -> "选择内核权限方案和对应分支。"
+            "功能开关" -> "按需开启模块能力，越少改动越利于排查问题。"
+            "ZRAM 扩展选项" -> "为内存压缩算法加入额外内核支持。"
+            "KPM 扩展选项" -> "用于 KPM 功能的可选安全参数。"
+            else -> "这些字段会被保存，下次打开不会重置。"
+        },
+        icon = when (title) {
+            "内核版本配置" -> Icons.Default.Memory
+            "KernelSU 配置" -> Icons.Default.Shield
+            "功能开关" -> Icons.Default.Tune
+            "ZRAM 扩展选项" -> Icons.Default.Compress
+            "KPM 扩展选项" -> Icons.Default.Key
+            else -> Icons.Default.Edit
+        },
+        content = content
+    )
+}
+
+@Composable
+private fun buildStatusColor(status: BuildStatus) = when (status) {
+    BuildStatus.IDLE -> MaterialTheme.colorScheme.outline
+    BuildStatus.QUEUED -> MaterialTheme.colorScheme.tertiary
+    BuildStatus.IN_PROGRESS -> MaterialTheme.colorScheme.secondary
+    BuildStatus.SUCCESS -> MaterialTheme.colorScheme.primary
+    BuildStatus.FAILURE -> MaterialTheme.colorScheme.error
+    BuildStatus.CANCELLED -> MaterialTheme.colorScheme.outline
+}
+
+private fun buildStatusLabel(status: BuildStatus): String = when (status) {
+    BuildStatus.IDLE -> "准备构建"
+    BuildStatus.QUEUED -> "已排队"
+    BuildStatus.IN_PROGRESS -> "构建中"
+    BuildStatus.SUCCESS -> "构建成功"
+    BuildStatus.FAILURE -> "构建失败"
+    BuildStatus.CANCELLED -> "已取消"
+}
+
+@Composable
+private fun FieldShape() = RoundedCornerShape(20.dp)
+
+@Composable
+fun SwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = if (checked) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
+        } else {
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.78f)
+        }
     ) {
-        Column(Modifier.padding(16.dp).animateContentSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-            content()
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                label,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (checked) FontWeight.Bold else FontWeight.Normal,
+                modifier = Modifier.weight(1f)
+            )
+            Switch(checked = checked, onCheckedChange = onCheckedChange)
         }
     }
 }
@@ -407,6 +518,7 @@ fun DropdownField(
             readOnly = true,
             label = { Text(label) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            shape = FieldShape(),
             modifier = Modifier
                 .fillMaxWidth()
                 .menuAnchor()
@@ -421,17 +533,5 @@ fun DropdownField(
                 )
             }
         }
-    }
-}
-
-@Composable
-fun SwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }

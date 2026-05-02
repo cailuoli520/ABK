@@ -2,8 +2,11 @@ package com.abk.kernel.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -19,6 +22,11 @@ import coil.compose.AsyncImage
 import com.abk.kernel.R
 import com.abk.kernel.data.model.BuildStatus
 import com.abk.kernel.data.model.WorkflowRun
+import com.abk.kernel.ui.components.ExpressiveHeroCard
+import com.abk.kernel.ui.components.ExpressiveSectionCard
+import com.abk.kernel.ui.components.ExpressiveStatusChip
+import com.abk.kernel.ui.components.ExpressiveTopBar
+import com.abk.kernel.utils.RootUtils
 import com.abk.kernel.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -31,17 +39,9 @@ fun StatusScreen(vm: MainViewModel) {
 
     Scaffold(
         topBar = {
-            LargeTopAppBar(
-                title = {
-                    Text(
-                        stringResource(R.string.status_title),
-                        style = MaterialTheme.typography.headlineLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
+            ExpressiveTopBar(
+                title = stringResource(R.string.status_title),
+                icon = Icons.Default.Info
             )
         }
     ) { padding ->
@@ -53,71 +53,44 @@ fun StatusScreen(vm: MainViewModel) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // User card
-            state.user?.let { user ->
-                StatusCard(title = stringResource(R.string.status_login)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        AsyncImage(
-                            model = user.avatarUrl,
-                            contentDescription = null,
-                            modifier = Modifier.size(40.dp)
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text(user.login, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            if (!user.name.isNullOrBlank()) {
-                                Text(user.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    }
+            val ksuVersion = remember(state.rootGranted) { RootUtils.getKsuVersion() }
+            val kernelVersion = remember(state.rootGranted) { RootUtils.getKernelVersion() }
+            val buildColor = buildStatusColor(state.buildStatus)
+
+            ExpressiveHeroCard(
+                title = state.user?.login?.let { "$it 的 ABK 控制台" } ?: "ABK 控制台",
+                subtitle = "把 Root、GitHub、Fork 和构建进度集中在一个状态面板中。",
+                icon = Icons.Default.Dashboard,
+                badge = {
+                    ExpressiveStatusChip(
+                        label = if (state.rootGranted) "Root 已授权" else "Root 未授权",
+                        icon = if (state.rootGranted) Icons.Default.Lock else Icons.Default.LockOpen,
+                        color = if (state.rootGranted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                    )
+                    ExpressiveStatusChip(
+                        label = state.forkRepo?.name ?: "未检测到 Fork",
+                        icon = Icons.Default.ForkRight,
+                        color = if (state.forkRepo != null) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
+                    )
                 }
-            } ?: StatusCard(title = stringResource(R.string.status_login)) {
-                StatusRow(Icons.Default.AccountCircle, stringResource(R.string.status_not_login), isError = true)
-            }
+            )
 
-            // Root status
-            StatusCard(title = stringResource(R.string.status_root)) {
-                StatusRow(
-                    if (state.rootGranted) Icons.Default.Lock else Icons.Default.LockOpen,
-                    if (state.rootGranted) stringResource(R.string.root_granted) else stringResource(R.string.root_denied),
-                    isError = !state.rootGranted
-                )
-            }
+            StatusMetricGrid(
+                rootGranted = state.rootGranted,
+                forkReady = state.forkRepo != null && state.behindBy <= 0,
+                ksuVersion = ksuVersion,
+                buildStatus = state.buildStatus
+            )
 
-            // Fork status
-            StatusCard(title = stringResource(R.string.status_fork)) {
-                if (state.forkRepo != null) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        StatusRow(Icons.Default.ForkRight, state.forkRepo!!.fullName, isError = false)
-                        if (state.behindBy > 0) {
-                            StatusRow(
-                                Icons.Default.Warning,
-                                "落后上游 ${state.behindBy} 个提交",
-                                isError = true
-                            )
-                        } else {
-                            StatusRow(Icons.Default.CheckCircle, "已与上游同步", isError = false)
-                        }
-                    }
-                } else {
-                    StatusRow(Icons.Default.ForkRight, stringResource(R.string.status_no_fork), isError = true)
-                }
-            }
-
-            // Kernel version
-            StatusCard(title = "设备内核信息") {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    StatusRow(Icons.Default.Memory, "内核: ${com.abk.kernel.utils.RootUtils.getKernelVersion()}", false)
-                    val ksuVer = com.abk.kernel.utils.RootUtils.getKsuVersion()
-                    StatusRow(Icons.Default.Shield, "KSU: $ksuVer", ksuVer == "N/A")
-                }
-            }
-
-            // Current build
-            StatusCard(title = stringResource(R.string.status_build)) {
+            ExpressiveSectionCard(
+                title = stringResource(R.string.status_build),
+                subtitle = "通知栏与应用内进度同步，失败时可直接跳转到 GitHub 日志。",
+                icon = Icons.Default.RunCircle,
+                containerColor = buildColor.copy(alpha = 0.12f)
+            ) {
                 when (state.buildStatus) {
                     BuildStatus.IDLE -> StatusRow(Icons.Default.HourglassEmpty, "暂无进行中的构建", false)
-                    BuildStatus.QUEUED -> StatusRow(Icons.Default.Queue, "构建已排队…", false)
+                    BuildStatus.QUEUED -> StatusRow(Icons.Default.Queue, "构建已排队，等待 Runner…", false)
                     BuildStatus.IN_PROGRESS -> Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(8.dp))
@@ -129,8 +102,12 @@ fun StatusScreen(vm: MainViewModel) {
                 }
                 if (state.buildProgress.totalSteps > 0) {
                     Spacer(Modifier.height(8.dp))
+                    val animatedProgress by animateFloatAsState(
+                        targetValue = (state.buildProgress.percent / 100f).coerceIn(0f, 1f),
+                        label = "status-progress"
+                    )
                     LinearProgressIndicator(
-                        progress = { state.buildProgress.percent / 100f },
+                        progress = { animatedProgress },
                         modifier = Modifier.fillMaxWidth()
                     )
                     Text(
@@ -158,9 +135,43 @@ fun StatusScreen(vm: MainViewModel) {
                 }
             }
 
-            // Recent runs
+            ExpressiveSectionCard(
+                title = "设备与仓库",
+                subtitle = "用于生成默认构建参数和确认工作流来源。",
+                icon = Icons.Default.Memory
+            ) {
+                StatusRow(Icons.Default.Memory, "内核: $kernelVersion", false)
+                StatusRow(Icons.Default.Shield, "KSU: $ksuVersion", ksuVersion == "N/A")
+                state.user?.let { user ->
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AsyncImage(
+                            model = user.avatarUrl,
+                            contentDescription = null,
+                            modifier = Modifier.size(42.dp)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(user.login, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(
+                                state.forkRepo?.fullName ?: stringResource(R.string.status_no_fork),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                if (state.behindBy > 0) {
+                    StatusRow(Icons.Default.Warning, "Fork 落后上游 ${state.behindBy} 个提交", true)
+                }
+            }
+
             if (state.recentRuns.isNotEmpty()) {
-                StatusCard(title = "最近构建记录") {
+                ExpressiveSectionCard(
+                    title = "最近构建记录",
+                    subtitle = "快速确认最近 5 次工作流结果。",
+                    icon = Icons.Default.History
+                ) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         val visibleRuns = state.recentRuns.take(5)
                         visibleRuns.forEachIndexed { index, run ->
@@ -172,19 +183,74 @@ fun StatusScreen(vm: MainViewModel) {
                     }
                 }
             }
+            Spacer(Modifier.height(80.dp))
         }
     }
 }
 
 @Composable
-private fun StatusCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+private fun StatusMetricGrid(
+    rootGranted: Boolean,
+    forkReady: Boolean,
+    ksuVersion: String,
+    buildStatus: BuildStatus
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            StatusMetricCard(
+                label = "Root",
+                value = if (rootGranted) "Granted" else "Denied",
+                icon = if (rootGranted) Icons.Default.Lock else Icons.Default.LockOpen,
+                color = if (rootGranted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                modifier = Modifier.weight(1f)
+            )
+            StatusMetricCard(
+                label = "Fork",
+                value = if (forkReady) "Synced" else "Check",
+                icon = Icons.Default.ForkRight,
+                color = if (forkReady) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            StatusMetricCard(
+                label = "KernelSU",
+                value = if (ksuVersion == "N/A") "Missing" else "Detected",
+                icon = Icons.Default.Shield,
+                color = if (ksuVersion == "N/A") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                modifier = Modifier.weight(1f)
+            )
+            StatusMetricCard(
+                label = "Build",
+                value = buildStatusDisplay(buildStatus),
+                icon = Icons.Default.RunCircle,
+                color = buildStatusColor(buildStatus),
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun StatusMetricCard(
+    label: String,
+    value: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    color: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier
+) {
+    val animatedColor by animateColorAsState(color, label = "metric-color")
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        modifier = modifier,
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(containerColor = animatedColor.copy(alpha = 0.13f))
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-            content()
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Icon(icon, null, tint = animatedColor, modifier = Modifier.size(26.dp))
+            Column {
+                Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+            }
         }
     }
 }
@@ -234,4 +300,23 @@ private fun RunListItem(run: WorkflowRun) {
             Text(label, color = color, style = MaterialTheme.typography.labelSmall)
         }
     }
+}
+
+private fun buildStatusDisplay(status: BuildStatus): String = when (status) {
+    BuildStatus.IDLE -> "Idle"
+    BuildStatus.QUEUED -> "Queued"
+    BuildStatus.IN_PROGRESS -> "Running"
+    BuildStatus.SUCCESS -> "Success"
+    BuildStatus.FAILURE -> "Failed"
+    BuildStatus.CANCELLED -> "Stopped"
+}
+
+@Composable
+private fun buildStatusColor(status: BuildStatus) = when (status) {
+    BuildStatus.IDLE -> MaterialTheme.colorScheme.outline
+    BuildStatus.QUEUED -> MaterialTheme.colorScheme.tertiary
+    BuildStatus.IN_PROGRESS -> MaterialTheme.colorScheme.secondary
+    BuildStatus.SUCCESS -> MaterialTheme.colorScheme.primary
+    BuildStatus.FAILURE -> MaterialTheme.colorScheme.error
+    BuildStatus.CANCELLED -> MaterialTheme.colorScheme.outline
 }

@@ -3,6 +3,7 @@ package com.abk.kernel.ui.screens
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -16,6 +17,10 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.abk.kernel.BuildConfig
 import com.abk.kernel.R
+import com.abk.kernel.ui.components.ExpressiveHeroCard
+import com.abk.kernel.ui.components.ExpressiveSectionCard
+import com.abk.kernel.ui.components.ExpressiveStatusChip
+import com.abk.kernel.ui.components.ExpressiveTopBar
 import com.abk.kernel.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -44,15 +49,9 @@ fun SettingsScreen(vm: MainViewModel) {
 
     Scaffold(
         topBar = {
-            LargeTopAppBar(
-                title = {
-                    Text(
-                        stringResource(R.string.settings_title),
-                        style = MaterialTheme.typography.headlineLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+            ExpressiveTopBar(
+                title = stringResource(R.string.settings_title),
+                icon = Icons.Default.Settings
             )
         }
     ) { padding ->
@@ -64,6 +63,12 @@ fun SettingsScreen(vm: MainViewModel) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            SettingsHero(
+                login = state.user?.login,
+                forkName = state.forkRepo?.fullName,
+                themeMode = state.themeMode
+            )
+
             // ── 账户 ──────────────────────────────────────────────────────
             SettingsGroup(title = stringResource(R.string.settings_account)) {
                 state.user?.let { user ->
@@ -142,6 +147,7 @@ fun SettingsScreen(vm: MainViewModel) {
                                 onClick = { vm.setThemeMode(key) }
                             )
                         },
+                        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
                         modifier = Modifier.clickable { vm.setThemeMode(key) }
                     )
                     if (key != themes.last().first) HorizontalDivider()
@@ -171,20 +177,56 @@ fun SettingsScreen(vm: MainViewModel) {
 }
 
 @Composable
-private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-        Text(
-            title,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(bottom = 4.dp, start = 4.dp)
-        )
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            Column { content() }
+private fun SettingsHero(
+    login: String?,
+    forkName: String?,
+    themeMode: String
+) {
+    ExpressiveHeroCard(
+        title = login?.let { "已连接 GitHub：$it" } ?: "ABK 设置中心",
+        subtitle = forkName ?: "管理构建自动化、通知、主题和仓库来源。",
+        icon = Icons.Default.Tune,
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        badge = {
+            ExpressiveStatusChip(
+                label = when (themeMode) {
+                    "dark" -> "深色主题"
+                    "light" -> "浅色主题"
+                    else -> "跟随系统"
+                },
+                icon = Icons.Default.Palette,
+                color = MaterialTheme.colorScheme.primary
+            )
+            ExpressiveStatusChip(
+                label = if (forkName != null) "Fork 已连接" else "等待 Fork",
+                icon = Icons.Default.ForkRight,
+                color = if (forkName != null) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
+            )
         }
+    )
+}
+
+@Composable
+private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
+    ExpressiveSectionCard(
+        title = title,
+        subtitle = when (title) {
+            stringResource(R.string.settings_account) -> "GitHub 账户、fork 仓库和退出登录。"
+            stringResource(R.string.settings_build) -> "控制构建成功后的自动化行为。"
+            stringResource(R.string.settings_notification) -> "同步工作流状态到系统通知。"
+            stringResource(R.string.settings_theme) -> "Material 3 Expressive 主题显示模式。"
+            else -> "应用版本与源码信息。"
+        },
+        icon = when (title) {
+            stringResource(R.string.settings_account) -> Icons.Default.AccountCircle
+            stringResource(R.string.settings_build) -> Icons.Default.Build
+            stringResource(R.string.settings_notification) -> Icons.Default.Notifications
+            stringResource(R.string.settings_theme) -> Icons.Default.Palette
+            else -> Icons.Default.Info
+        }
+    ) {
+        Column { content() }
     }
 }
 
@@ -196,10 +238,30 @@ private fun SwitchSettingsItem(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
-    ListItem(
-        headlineContent = { Text(title) },
-        supportingContent = { Text(subtitle) },
-        leadingContent = { Icon(icon, null) },
-        trailingContent = { Switch(checked = checked, onCheckedChange = onCheckedChange) }
-    )
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = if (checked) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+        } else {
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.76f)
+        },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                icon,
+                null,
+                tint = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(checked = checked, onCheckedChange = onCheckedChange)
+        }
+    }
 }

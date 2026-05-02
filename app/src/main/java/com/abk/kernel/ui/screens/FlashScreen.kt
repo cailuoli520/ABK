@@ -1,9 +1,11 @@
 package com.abk.kernel.ui.screens
 
 import android.content.Context
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -19,6 +21,11 @@ import com.abk.kernel.data.model.Artifact
 import com.abk.kernel.data.model.ArtifactType
 import com.abk.kernel.data.model.BuildStatus
 import com.abk.kernel.data.model.DownloadedArtifact
+import com.abk.kernel.ui.components.ExpressiveEmptyState
+import com.abk.kernel.ui.components.ExpressiveHeroCard
+import com.abk.kernel.ui.components.ExpressiveSectionCard
+import com.abk.kernel.ui.components.ExpressiveStatusChip
+import com.abk.kernel.ui.components.ExpressiveTopBar
 import com.abk.kernel.utils.DownloadUtils
 import com.abk.kernel.utils.RootUtils
 import com.abk.kernel.viewmodel.MainViewModel
@@ -80,15 +87,9 @@ fun FlashScreen(vm: MainViewModel) {
 
     Scaffold(
         topBar = {
-            LargeTopAppBar(
-                title = {
-                    Text(
-                        stringResource(R.string.flash_title),
-                        style = MaterialTheme.typography.headlineLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+            ExpressiveTopBar(
+                title = stringResource(R.string.flash_title),
+                icon = Icons.Default.FlashOn
             )
         }
     ) { padding ->
@@ -100,14 +101,22 @@ fun FlashScreen(vm: MainViewModel) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(vertical = 16.dp)
         ) {
+            item {
+                FlashHero(
+                    buildStatus = state.buildStatus,
+                    availableCount = state.artifacts.size,
+                    downloadedCount = state.downloadedArtifacts.size
+                )
+            }
+
             // ── Available artifacts to download ──
             if (state.buildStatus == BuildStatus.SUCCESS && state.artifacts.isNotEmpty()) {
                 item {
-                    Text(
-                        "可下载的构建产物",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    ExpressiveSectionCard(
+                        title = "可下载的构建产物",
+                        subtitle = "先下载需要的 img、AnyKernel3、管理器或模块，再在下方执行刷写/安装。",
+                        icon = Icons.Default.CloudDownload
+                    ) {}
                 }
                 items(state.artifacts, key = { it.id }) { artifact ->
                     ArtifactDownloadCard(
@@ -137,11 +146,12 @@ fun FlashScreen(vm: MainViewModel) {
             // ── Downloaded artifacts ──
             if (state.downloadedArtifacts.isNotEmpty()) {
                 item {
-                    Text(
-                        "已下载，选择操作",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    ExpressiveSectionCard(
+                        title = "已下载，选择操作",
+                        subtitle = "危险操作会再次确认。AK3 包默认交给恢复环境或文件管理器处理。",
+                        icon = Icons.Default.FolderSpecial,
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    ) {}
                 }
                 items(state.downloadedArtifacts, key = { it.id }) { downloaded ->
                     DownloadedArtifactCard(
@@ -158,16 +168,11 @@ fun FlashScreen(vm: MainViewModel) {
             // Empty state
             if (state.artifacts.isEmpty() && state.downloadedArtifacts.isEmpty()) {
                 item {
-                    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Default.Inbox, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.outline)
-                            Text(
-                                "构建完成后，产物将在此处显示",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.outline
-                            )
-                        }
-                    }
+                    ExpressiveEmptyState(
+                        title = "暂无可刷写产物",
+                        subtitle = "构建成功并下载后，ABK 会按类型整理这里的操作。",
+                        icon = Icons.Default.Inbox
+                    )
                 }
             }
 
@@ -177,35 +182,87 @@ fun FlashScreen(vm: MainViewModel) {
 }
 
 @Composable
+private fun FlashHero(
+    buildStatus: BuildStatus,
+    availableCount: Int,
+    downloadedCount: Int
+) {
+    ExpressiveHeroCard(
+        title = "产物中心",
+        subtitle = "下载构建输出，并按文件类型选择刷写、安装或交给恢复环境处理。",
+        icon = Icons.Default.FlashOn,
+        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        badge = {
+            ExpressiveStatusChip(
+                label = "${availableCount} 个可下载",
+                icon = Icons.Default.CloudDownload,
+                color = MaterialTheme.colorScheme.tertiary
+            )
+            ExpressiveStatusChip(
+                label = "${downloadedCount} 个已下载",
+                icon = Icons.Default.Inventory2,
+                color = MaterialTheme.colorScheme.secondary
+            )
+            ExpressiveStatusChip(
+                label = when (buildStatus) {
+                    BuildStatus.SUCCESS -> "构建成功"
+                    BuildStatus.IN_PROGRESS -> "构建中"
+                    BuildStatus.QUEUED -> "排队中"
+                    BuildStatus.FAILURE -> "构建失败"
+                    BuildStatus.CANCELLED -> "已取消"
+                    BuildStatus.IDLE -> "等待构建"
+                },
+                icon = Icons.Default.RunCircle,
+                color = when (buildStatus) {
+                    BuildStatus.SUCCESS -> MaterialTheme.colorScheme.primary
+                    BuildStatus.FAILURE -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.outline
+                }
+            )
+        }
+    )
+}
+
+@Composable
 private fun ArtifactDownloadCard(
     artifact: Artifact,
     progress: Int?,
     alreadyDownloaded: Boolean,
     onDownload: () -> Unit
 ) {
+    val type = DownloadUtils.classifyArtifact(artifact.name)
+    val animatedProgress by animateFloatAsState(
+        targetValue = ((progress ?: 0) / 100f).coerceIn(0f, 1f),
+        label = "artifact-download"
+    )
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(30.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Icon(
-                    artifactIcon(DownloadUtils.classifyArtifact(artifact.name)),
+                    artifactIcon(type),
                     null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(28.dp)
                 )
-                Spacer(Modifier.width(8.dp))
                 Column(Modifier.weight(1f)) {
                     Text(artifact.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                     Text(DownloadUtils.formatSize(artifact.sizeInBytes), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                ExpressiveStatusChip(
+                    label = artifactTypeLabel(type),
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
             if (progress != null) {
-                LinearProgressIndicator(progress = { progress / 100f }, modifier = Modifier.fillMaxWidth())
+                LinearProgressIndicator(progress = { animatedProgress }, modifier = Modifier.fillMaxWidth())
                 Text("下载中 $progress%", style = MaterialTheme.typography.labelSmall)
             } else if (!alreadyDownloaded) {
-                Button(onClick = onDownload, modifier = Modifier.fillMaxWidth()) {
+                Button(onClick = onDownload, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.Download, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("下载")
@@ -229,17 +286,17 @@ private fun DownloadedArtifactCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(30.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Icon(
                     artifactIcon(artifact.type),
                     null,
                     tint = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(28.dp)
                 )
-                Spacer(Modifier.width(8.dp))
                 Column(Modifier.weight(1f)) {
                     Text(artifact.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                     Text(
@@ -253,10 +310,15 @@ private fun DownloadedArtifactCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                ExpressiveStatusChip(
+                    label = artifactTypeLabel(artifact.type),
+                    color = MaterialTheme.colorScheme.secondary
+                )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = { DownloadUtils.openFile(context, artifact.filePath) },
+                    shape = RoundedCornerShape(18.dp),
                     modifier = Modifier.weight(1f)
                 ) {
                     Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(18.dp))
@@ -267,6 +329,7 @@ private fun DownloadedArtifactCard(
                     ArtifactType.KERNEL_IMG -> Button(
                         onClick = onFlash,
                         modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(18.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                     ) {
                         Icon(Icons.Default.FlashOn, null, modifier = Modifier.size(18.dp))
@@ -275,6 +338,7 @@ private fun DownloadedArtifactCard(
                     }
                     ArtifactType.ANYKERNEL3 -> Button(
                         onClick = { DownloadUtils.openFile(context, artifact.filePath) },
+                        shape = RoundedCornerShape(18.dp),
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(18.dp))
@@ -283,6 +347,7 @@ private fun DownloadedArtifactCard(
                     }
                     ArtifactType.KSU_MANAGER -> Button(
                         onClick = { DownloadUtils.installApk(context, artifact.filePath) },
+                        shape = RoundedCornerShape(18.dp),
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(Icons.Default.InstallMobile, null, modifier = Modifier.size(18.dp))
@@ -291,6 +356,7 @@ private fun DownloadedArtifactCard(
                     }
                     ArtifactType.SUSFS_MODULE -> Button(
                         onClick = onFlash,
+                        shape = RoundedCornerShape(18.dp),
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(Icons.Default.Extension, null, modifier = Modifier.size(18.dp))
