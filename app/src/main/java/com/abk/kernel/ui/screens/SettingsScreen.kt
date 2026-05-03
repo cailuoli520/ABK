@@ -210,10 +210,7 @@ private fun AboutDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                AboutSectionTitle("快速入口")
-                links.filter { it.section == AboutSection.QUICK_LINKS }.forEach {
-                    AboutLinkRow(it, onOpenUrl)
-                }
+                AboutLinkRow(AboutLink("源仓库", sourceRepoUrl()), onOpenUrl)
                 AboutSectionTitle("致谢")
                 Text(
                     "ABK 基于以下项目、仓库和社区工作继续开发。",
@@ -251,60 +248,45 @@ private fun AboutLinkRow(
     ListItem(
         headlineContent = { Text(link.title, fontWeight = FontWeight.SemiBold) },
         supportingContent = { Text(link.url) },
-        leadingContent = {
-            Icon(
-                if (link.section == AboutSection.QUICK_LINKS) Icons.Default.OpenInBrowser else Icons.Default.Code,
-                null
-            )
-        },
+        leadingContent = { Icon(Icons.Default.Code, null) },
         trailingContent = { Icon(Icons.Default.OpenInBrowser, null) },
         colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
         modifier = Modifier.clickable { onOpenUrl(link.url) }
     )
 }
 
-private enum class AboutSection {
-    QUICK_LINKS,
-    ACKNOWLEDGEMENTS
-}
-
 private data class AboutLink(
-    val section: AboutSection,
     val title: String,
     val url: String
 )
 
 private fun aboutLinks(): List<AboutLink> {
-    val repoUrl = "https://github.com/${BuildConfig.SOURCE_REPO_OWNER}/${BuildConfig.SOURCE_REPO_NAME}"
     return listOf(
-        AboutLink(AboutSection.QUICK_LINKS, "本仓库", repoUrl),
-        AboutLink(AboutSection.QUICK_LINKS, "Releases", "$repoUrl/releases"),
-        AboutLink(AboutSection.QUICK_LINKS, "Actions", "$repoUrl/actions"),
-        AboutLink(AboutSection.QUICK_LINKS, "Pages", "https://${BuildConfig.SOURCE_REPO_OWNER}.github.io/${BuildConfig.SOURCE_REPO_NAME}/"),
-        AboutLink(AboutSection.QUICK_LINKS, "ABK App CI", "$repoUrl/actions/workflows/build-abk-app.yml"),
-        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "上游仓库", BuildConfig.UPSTREAM_REPO_URL),
-        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "顶层仓库", BuildConfig.TOP_LEVEL_REPO_URL),
-        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "KernelSU", "https://github.com/tiann/KernelSU"),
-        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "KernelSU Next", "https://github.com/KernelSU-Next/KernelSU-Next"),
-        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "SukiSU Ultra", "https://github.com/SukiSU-Ultra/SukiSU-Ultra"),
-        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "ReSukiSU", "https://github.com/ReSukiSU/ReSukiSU"),
-        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "SUSFS", "https://gitlab.com/simonpunk/susfs4ksu"),
-        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "SUSFS GitHub 镜像/补丁来源", "https://github.com/ShirkNeko/susfs4ksu"),
-        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "SukiSU patch", "https://github.com/ShirkNeko/SukiSU_patch"),
-        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "AnyKernel3", "https://github.com/WildKernels/AnyKernel3"),
-        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "Kernel patches", "https://github.com/WildKernels/kernel_patches"),
-        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "Action-Build", "https://github.com/Numbersf/Action-Build"),
-        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "SUSFS 模块构建来源", "https://github.com/sidex15/susfs4ksu-module"),
+        AboutLink("上游仓库", BuildConfig.UPSTREAM_REPO_URL),
+        AboutLink("顶层仓库", BuildConfig.TOP_LEVEL_REPO_URL),
+        AboutLink("KernelSU", "https://github.com/tiann/KernelSU"),
+        AboutLink("KernelSU Next", "https://github.com/KernelSU-Next/KernelSU-Next"),
+        AboutLink("SukiSU Ultra", "https://github.com/SukiSU-Ultra/SukiSU-Ultra"),
+        AboutLink("ReSukiSU", "https://github.com/ReSukiSU/ReSukiSU"),
+        AboutLink("SUSFS", "https://gitlab.com/simonpunk/susfs4ksu"),
+        AboutLink("SUSFS GitHub 镜像/补丁来源", "https://github.com/ShirkNeko/susfs4ksu"),
+        AboutLink("SukiSU patch", "https://github.com/ShirkNeko/SukiSU_patch"),
+        AboutLink("AnyKernel3", "https://github.com/WildKernels/AnyKernel3"),
+        AboutLink("Kernel patches", "https://github.com/WildKernels/kernel_patches"),
+        AboutLink("Action-Build", "https://github.com/Numbersf/Action-Build"),
+        AboutLink("SUSFS 模块构建来源", "https://github.com/sidex15/susfs4ksu-module"),
         AboutLink(
-            AboutSection.ACKNOWLEDGEMENTS,
             "GCC prebuilts",
             "https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-gnu-6.4.1"
         ),
-        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "Baseband Guard", "https://github.com/vc-teahouse/Baseband-guard"),
-        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "Re-Kernel", "https://github.com/Sakion-Team/Re-Kernel"),
-        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "KernelSU 官方站点", "https://kernelsu.org/")
+        AboutLink("Baseband Guard", "https://github.com/vc-teahouse/Baseband-guard"),
+        AboutLink("Re-Kernel", "https://github.com/Sakion-Team/Re-Kernel"),
+        AboutLink("KernelSU 官方站点", "https://kernelsu.org/")
     )
 }
+
+private fun sourceRepoUrl(): String =
+    "https://github.com/${BuildConfig.SOURCE_REPO_OWNER}/${BuildConfig.SOURCE_REPO_NAME}"
 
 private fun openUrl(context: android.content.Context, url: String) {
     runCatching {
