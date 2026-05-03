@@ -2,6 +2,7 @@ package com.abk.kernel.utils
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Environment
 import androidx.core.content.FileProvider
 import com.abk.kernel.data.model.Artifact
@@ -29,6 +30,8 @@ object DownloadUtils {
     fun classifyArtifact(name: String): ArtifactType {
         val lower = name.lowercase()
         return when {
+            lower.contains("reject") || lower.contains("-rej") -> ArtifactType.OTHER
+            lower.contains("_kernel-android") || lower.contains("kernel-android") -> ArtifactType.KERNEL_PACKAGE
             lower.endsWith(".img") && (lower.contains("boot") || lower.contains("kernel")) -> ArtifactType.KERNEL_IMG
             lower.contains("boot-img") || lower.contains("boot_img") || lower.contains("kernel-img") -> ArtifactType.KERNEL_IMG
             lower.contains("anykernel") || lower.contains("ak3") -> ArtifactType.ANYKERNEL3
@@ -58,6 +61,7 @@ object DownloadUtils {
             lower.contains("kpm")
 
     fun classifyCategory(type: ArtifactType): ArtifactCategory? = when (type) {
+        ArtifactType.KERNEL_PACKAGE,
         ArtifactType.KERNEL_IMG,
         ArtifactType.ANYKERNEL3 -> ArtifactCategory.KERNEL
         ArtifactType.KSU_MANAGER -> ArtifactCategory.MANAGER
@@ -77,6 +81,12 @@ object DownloadUtils {
     }
 
     fun shouldAutoDownload(artifact: BuildArtifact): Boolean = shouldAutoDownload(artifact.toArtifact())
+
+    fun matchesDownloadedArtifact(downloaded: DownloadedArtifact, artifact: BuildArtifact): Boolean =
+        downloaded.runId == artifact.runId &&
+            downloaded.filePath.contains("/${artifactStorageFolderName(artifact.name)}/")
+
+    fun artifactStorageFolderName(name: String): String = safeFileName(name)
 
     private fun isLikelySupportedManager(name: String): Boolean {
         val abi = android.os.Build.SUPPORTED_ABIS.joinToString(" ").lowercase(Locale.ROOT)
@@ -196,6 +206,7 @@ object DownloadUtils {
 
         val candidates = files.filter { file ->
             when (classifyDownloadedFile(file)) {
+                ArtifactType.KERNEL_PACKAGE,
                 ArtifactType.KERNEL_IMG,
                 ArtifactType.ANYKERNEL3,
                 ArtifactType.KSU_MANAGER,
@@ -208,11 +219,12 @@ object DownloadUtils {
         return source.sortedWith(
             compareBy<File> {
                 when (classifyDownloadedFile(it)) {
-                    ArtifactType.KERNEL_IMG -> 0
-                    ArtifactType.ANYKERNEL3 -> 1
-                    ArtifactType.KSU_MANAGER -> 2
-                    ArtifactType.SUSFS_MODULE -> 3
-                    ArtifactType.OTHER -> 4
+                    ArtifactType.KERNEL_PACKAGE -> 0
+                    ArtifactType.KERNEL_IMG -> 1
+                    ArtifactType.ANYKERNEL3 -> 2
+                    ArtifactType.KSU_MANAGER -> 3
+                    ArtifactType.SUSFS_MODULE -> 4
+                    ArtifactType.OTHER -> 5
                 }
             }.thenBy { it.name }
         )
@@ -236,33 +248,66 @@ object DownloadUtils {
         }.getOrDefault(ArtifactType.OTHER)
     }
 
-    fun openFile(context: Context, filePath: String) {
+    fun openFile(context: Context, filePath: String): Boolean {
         val file = File(filePath)
-        if (!file.exists()) return
-        val uri = FileProvider.getUriForFile(
-            context, "${context.packageName}.fileprovider", file
-        )
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "*/*")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        runCatching {
-            context.startActivity(Intent.createChooser(intent, "打开文件"))
-        }
+        if (!file.exists()) return false
+        return runCatching {
+            val uri = FileProvider.getUriForFile(
+                context, "${context.packageName}.fileprovider", file
+            )
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mimeTypeFor(file))
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val chooser = Intent.createChooser(intent, "打开文件").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            val canHandle = intent.resolveActivity(context.packageManager) != null ||
+                chooser.resolveActivity(context.packageManager) != null
+            if (canHandle) {
+                context.grantUriPermissionForViewers(uri, intent)
+                context.startActivity(chooser)
+            }
+            canHandle
+        }.getOrDefault(false)
     }
 
     fun installApk(context: Context, filePath: String): Boolean {
         val file = File(filePath)
         if (!file.exists()) return false
-        val uri = FileProvider.getUriForFile(
-            context, "${context.packageName}.fileprovider", file
-        )
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return runCatching {
+            val uri = FileProvider.getUriForFile(
+                context, "${context.packageName}.fileprovider", file
+            )
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val canHandle = intent.resolveActivity(context.packageManager) != null
+            if (canHandle) {
+                context.grantUriPermissionForViewers(uri, intent)
+                context.startActivity(intent)
+            }
+            canHandle
+        }.getOrDefault(false)
+    }
+
+    private fun mimeTypeFor(file: File): String = when (file.extension.lowercase(Locale.ROOT)) {
+        "apk" -> "application/vnd.android.package-archive"
+        "zip" -> "application/zip"
+        "img" -> "application/octet-stream"
+        "txt", "log" -> "text/plain"
+        else -> "application/octet-stream"
+    }
+
+    private fun Context.grantUriPermissionForViewers(uri: android.net.Uri, intent: Intent) {
+        val flags = PackageManager.MATCH_DEFAULT_ONLY
+        packageManager.queryIntentActivities(intent, flags).forEach { resolveInfo ->
+            grantUriPermission(resolveInfo.activityInfo.packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        return runCatching { context.startActivity(intent) }.isSuccess
     }
 
     fun formatSize(bytes: Long): String {

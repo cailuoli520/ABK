@@ -598,7 +598,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 prefs.saveDownloadedArtifactsJson(gson.toJson(updated))
             } else {
-                _uiState.update { it.copy(isDownloading = false, error = "下载失败: ${artifact.name}") }
+                _uiState.update {
+                    it.copy(
+                        isDownloading = false,
+                        error = "下载失败: ${artifact.name}",
+                        downloadProgress = it.downloadProgress - artifact.id
+                    )
+                }
             }
         }
     }
@@ -645,9 +651,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val targets = artifacts
             .filter { !it.expired && DownloadUtils.shouldAutoDownload(it) }
             .filterNot { candidate ->
-                _uiState.value.downloadedArtifacts.any {
-                    it.runId == candidate.runId && it.filePath.contains("/${candidate.name}/")
-                }
+                _uiState.value.downloadedArtifacts.any { DownloadUtils.matchesDownloadedArtifact(it, candidate) }
             }
 
         if (targets.isEmpty()) {
@@ -709,22 +713,22 @@ private fun detectRecommendedBuildConfig(): KernelBuildConfig {
         kernel.contains("6.12") || kernel.contains("android16") -> KernelBuildConfig(
             androidVersion = "android16",
             kernelVersion = "6.12",
-            subLevel = "58",
-            osPatchLevel = "2025-12",
+            subLevel = "69",
+            osPatchLevel = "2026-03",
             revision = ""
         )
         kernel.contains("6.6") || kernel.contains("android15") -> KernelBuildConfig(
             androidVersion = "android15",
             kernelVersion = "6.6",
-            subLevel = "118",
-            osPatchLevel = "2026-01",
+            subLevel = "127",
+            osPatchLevel = "2026-04",
             revision = ""
         )
         kernel.contains("6.1") || kernel.contains("android14") -> KernelBuildConfig(
             androidVersion = "android14",
             kernelVersion = "6.1",
-            subLevel = "157",
-            osPatchLevel = "2025-12",
+            subLevel = "162",
+            osPatchLevel = "2026-03",
             revision = ""
         )
         kernel.contains("5.15") || kernel.contains("android13") -> KernelBuildConfig(
@@ -757,9 +761,10 @@ private fun detectRecommendedBuildConfig(): KernelBuildConfig {
 
 private val kernelPatchMap = mapOf(
     "5.10" to mapOf(
+        "43" to ("2021-10" to "r1"),
         "66" to ("2022-01" to "r11"),
         "81" to ("2022-03" to "r11"),
-        "101" to ("2022-04" to "r28"),
+        "101" to ("2022-05" to "r28"),
         "110" to ("2022-07" to "r1"),
         "117" to ("2022-09" to "r1"),
         "136" to ("2022-11" to "r15"),
@@ -780,32 +785,73 @@ private val kernelPatchMap = mapOf(
         "246" to ("2025-12" to "r1")
     ),
     "5.15" to mapOf(
-        "194" to ("2025-12" to ""),
-        "189" to ("2025-09" to ""),
-        "185" to ("2025-07" to ""),
-        "180" to ("2025-05" to ""),
+        "41" to ("2022-11" to ""),
+        "74" to ("2023-01" to ""),
+        "78" to ("2023-03" to ""),
+        "94" to ("2023-05" to ""),
+        "104" to ("2023-07" to ""),
+        "119" to ("2023-09" to ""),
+        "123" to ("2023-11" to ""),
+        "137" to ("2024-01" to ""),
+        "144" to ("2024-03" to ""),
+        "148" to ("2024-05" to ""),
+        "149" to ("2024-07" to ""),
+        "151" to ("2024-08" to ""),
+        "153" to ("2024-09" to ""),
+        "167" to ("2024-11" to ""),
+        "170" to ("2025-01" to ""),
         "178" to ("2025-03" to ""),
-        "170" to ("2025-01" to "")
+        "180" to ("2025-05" to ""),
+        "185" to ("2025-07" to ""),
+        "189" to ("2025-09" to ""),
+        "194" to ("2025-12" to "")
     ),
     "6.1" to mapOf(
-        "157" to ("2025-12" to ""),
-        "145" to ("2025-09" to ""),
-        "141" to ("2025-07" to ""),
+        "25" to ("2023-10" to ""),
+        "43" to ("2023-11" to ""),
+        "57" to ("2024-01" to ""),
+        "68" to ("2024-03" to ""),
+        "75" to ("2024-05" to ""),
+        "78" to ("2024-06" to ""),
+        "84" to ("2024-07" to ""),
+        "90" to ("2024-08" to ""),
+        "93" to ("2024-09" to ""),
+        "99" to ("2024-10" to ""),
+        "112" to ("2024-11" to ""),
+        "115" to ("2024-12" to ""),
+        "118" to ("2025-01" to ""),
+        "124" to ("2025-02" to ""),
+        "128" to ("2025-03" to ""),
+        "129" to ("2025-04" to ""),
+        "134" to ("2025-05" to ""),
         "138" to ("2025-06" to ""),
-        "134" to ("2025-05" to "")
+        "141" to ("2025-07" to ""),
+        "145" to ("2025-09" to ""),
+        "157" to ("2025-12" to ""),
+        "162" to ("2026-03" to "")
     ),
     "6.6" to mapOf(
-        "118" to ("2026-01" to ""),
-        "102" to ("2025-10" to ""),
-        "98" to ("2025-09" to ""),
+        "50" to ("2024-10" to ""),
+        "56" to ("2024-11" to ""),
+        "57" to ("2024-12" to ""),
+        "58" to ("2025-01" to ""),
+        "66" to ("2025-02" to ""),
+        "77" to ("2025-03" to ""),
+        "82" to ("2025-04" to ""),
+        "87" to ("2025-05" to ""),
+        "89" to ("2025-06" to ""),
         "92" to ("2025-07" to ""),
-        "89" to ("2025-06" to "")
+        "98" to ("2025-09" to ""),
+        "102" to ("2025-10" to ""),
+        "118" to ("2026-01" to ""),
+        "127" to ("2026-04" to "")
     ),
     "6.12" to mapOf(
-        "58" to ("2025-12" to ""),
-        "38" to ("2025-09" to ""),
+        "23" to ("2025-06" to ""),
         "30" to ("2025-07" to ""),
-        "23" to ("2025-06" to "")
+        "38" to ("2025-09" to ""),
+        "58" to ("2025-12" to ""),
+        "69" to ("2026-03" to "")
     )
 )
 
@@ -817,7 +863,8 @@ private fun KernelBuildConfig.toInputMap(): Map<String, String> = mapOf(
     "os_patch_level" to osPatchLevel,
     "revision" to revision,
     "kernelsu_variant" to kernelsuVariant,
-    "kernelsu_branch" to kernelsuBranch,
+    "kernelsu_branch" to kernelsuBranch.takeIf { it in setOf("Stable(标准)", "Dev(开发)") }.orEmpty()
+        .ifBlank { "Stable(标准)" },
     "version" to version,
     "build_time" to buildTime,
     "use_zram" to useZram.toString(),

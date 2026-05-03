@@ -45,40 +45,40 @@ fun ExpressiveHeroCard(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(34.dp),
+        shape = RoundedCornerShape(30.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(24.dp)
+                .padding(18.dp)
                 .animateContentSize(),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(24.dp))
+                        .clip(RoundedCornerShape(20.dp))
                         .background(contentColor.copy(alpha = 0.10f))
-                        .padding(14.dp),
+                        .padding(10.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
                         tint = contentColor,
-                        modifier = Modifier.size(38.dp)
+                        modifier = Modifier.size(30.dp)
                     )
                 }
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
                         text = title,
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = contentColor,
                         maxLines = 2,
@@ -86,7 +86,7 @@ fun ExpressiveHeroCard(
                     )
                     Text(
                         text = subtitle,
-                        style = MaterialTheme.typography.bodyLarge,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = contentColor.copy(alpha = 0.78f)
                     )
                 }
@@ -114,16 +114,16 @@ fun ExpressiveSectionCard(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(32.dp),
+        shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(22.dp)
+                .padding(16.dp)
                 .animateContentSize(),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (icon != null) {
@@ -135,21 +135,21 @@ fun ExpressiveSectionCard(
                             imageVector = icon,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.88f),
-                            modifier = Modifier.padding(6.dp).size(28.dp)
+                            modifier = Modifier.padding(5.dp).size(23.dp)
                         )
                     }
                 }
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
                         text = title,
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     if (subtitle != null) {
                         Text(
                             text = subtitle,
-                            style = MaterialTheme.typography.bodyLarge,
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -181,12 +181,12 @@ fun ExpressiveStatusChip(
         Row(
             modifier = Modifier
                 .border(1.dp, color.copy(alpha = 0.18f), RoundedCornerShape(50))
-                .padding(horizontal = 12.dp, vertical = 7.dp),
+                .padding(horizontal = 10.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             if (icon != null) {
-                Icon(icon, null, tint = contentColor, modifier = Modifier.size(16.dp))
+                Icon(icon, null, tint = contentColor, modifier = Modifier.size(14.dp))
             }
             Text(
                 text = label,

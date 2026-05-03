@@ -35,12 +35,12 @@ fun ExpressiveTopBar(
                 .fillMaxWidth()
                 .background(colors.surface)
                 .statusBarsPadding()
-                .padding(start = 22.dp, end = 18.dp, top = 22.dp, bottom = 18.dp),
+                .padding(start = 18.dp, end = 16.dp, top = 14.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
                 color = colors.onSurface,
                 maxLines = 1,

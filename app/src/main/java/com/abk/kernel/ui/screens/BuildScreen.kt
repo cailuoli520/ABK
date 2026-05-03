@@ -38,6 +38,7 @@ fun BuildScreen(vm: MainViewModel) {
     val state by vm.uiState.collectAsState()
     val config = state.buildConfig
     val recommended = state.recommendedBuildConfig
+    val ksuBranchOptions = listOf("Stable(标准)", "Dev(开发)")
     var showConfirmDialog by remember { mutableStateOf(false) }
 
     if (showConfirmDialog) {
@@ -158,8 +159,8 @@ fun BuildScreen(vm: MainViewModel) {
                 )
                 DropdownField(
                     label = "KSU 分支",
-                    value = config.kernelsuBranch,
-                    options = listOf("Stable(标准)", "Dev(开发)", "Other(其他/指定)"),
+                    value = config.kernelsuBranch.takeIf { it in ksuBranchOptions } ?: "Stable(标准)",
+                    options = ksuBranchOptions,
                     onSelect = { vm.updateBuildConfig(config.copy(kernelsuBranch = it)) }
                 )
             }

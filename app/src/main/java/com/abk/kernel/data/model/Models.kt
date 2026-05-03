@@ -233,6 +233,7 @@ data class DownloadedArtifact(
 )
 
 enum class ArtifactType {
+    KERNEL_PACKAGE,
     KERNEL_IMG,
     ANYKERNEL3,
     KSU_MANAGER,
@@ -247,6 +248,7 @@ enum class ArtifactCategory {
 }
 
 fun ArtifactType.toArtifactCategory(): ArtifactCategory = when (this) {
+    ArtifactType.KERNEL_PACKAGE,
     ArtifactType.KERNEL_IMG,
     ArtifactType.ANYKERNEL3 -> ArtifactCategory.KERNEL
     ArtifactType.KSU_MANAGER -> ArtifactCategory.MANAGER

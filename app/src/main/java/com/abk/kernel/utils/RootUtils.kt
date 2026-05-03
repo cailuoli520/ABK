@@ -54,8 +54,7 @@ object RootUtils {
             dd if=$safeImage of="${'$'}target" bs=4096 conv=fsync
             sync
         """.trimIndent()
-        val result = Shell.cmd(script).exec()
-        return ShellResult(result.isSuccess, result.out + result.err)
+        return execRootScript(script, timeoutSeconds = 240)
     }
 
     fun installModule(zipPath: String): ShellResult {
@@ -78,8 +77,7 @@ object RootUtils {
             fi
             sync
         """.trimIndent()
-        val result = Shell.cmd(script).exec()
-        return ShellResult(result.isSuccess, result.out + result.err)
+        return execRootScript(script, timeoutSeconds = 240)
     }
 
     fun flashAnyKernel3(context: Context, zipPath: String): ShellResult {
@@ -93,7 +91,7 @@ object RootUtils {
             val script = "F=${shellQuote(workDir.absolutePath)} Z=${shellQuote(zipPath)} /system/bin/sh ${shellQuote(scriptFile.absolutePath)}"
             val result = Shell.Builder.create()
                 .setFlags(Shell.FLAG_MOUNT_MASTER or Shell.FLAG_REDIRECT_STDERR)
-                .setTimeout(120)
+                .setTimeout(300)
                 .build()
                 .newJob()
                 .add(script)
@@ -128,7 +126,20 @@ object RootUtils {
         return result.out.firstOrNull() ?: "N/A"
     }
 
+    fun reboot(): ShellResult = execRootScript("svc power reboot || reboot", timeoutSeconds = 15)
+
     data class ShellResult(val success: Boolean, val output: List<String>)
+
+    private fun execRootScript(script: String, timeoutSeconds: Int): ShellResult {
+        val result = Shell.Builder.create()
+            .setFlags(Shell.FLAG_MOUNT_MASTER or Shell.FLAG_REDIRECT_STDERR)
+            .setTimeout(timeoutSeconds)
+            .build()
+            .newJob()
+            .add(script)
+            .exec()
+        return ShellResult(result.isSuccess, result.out + result.err)
+    }
 
     private fun shellQuote(value: String): String = "'${value.replace("'", "'\"'\"'")}'"
 
