@@ -217,7 +217,7 @@ private fun AboutDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                links.filter { it.section == AboutSection.ACKNOWLEDGEMENTS }.forEach {
+                links.forEach {
                     AboutLinkRow(it, onOpenUrl)
                 }
             }
