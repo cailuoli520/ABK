@@ -364,7 +364,7 @@ jobs:
         working-directory: ${{ env.KERNEL_ROOT }}/common/drivers
         run: |
           echo "下载一加 8E 支持补丁..."
-          curl -LSs "https://github.com/zzh20188/GKI_KernelSU_SUSFS/raw/refs/heads/dev/hmbird_patch.c" -o hmbird_patch.c
+          curl -LSs "https://github.com/xingguangcuican6666/ABK/raw/refs/heads/dev/hmbird_patch.c" -o hmbird_patch.c
           echo "obj-y += hmbird_patch.o" >> Makefile
 
       - name: 确定 KernelSU 分支
@@ -560,6 +560,21 @@ jobs:
               CURRENT_SUB=99999
             fi
 
+            fix_task_mmu_show_pad() {
+              local file="./fs/proc/task_mmu.c"
+              [ -f "$file" ] || return 0
+
+              if grep -qF 'goto show_pad;' "$file"; then
+                sed -i -e 's/goto show_pad;/return 0;/' "$file"
+                echo "已替换 task_mmu.c 中的 goto show_pad"
+              fi
+
+              if grep -q '^[[:space:]]*show_pad:[[:space:]]*$' "$file" && ! grep -qF 'goto show_pad;' "$file"; then
+                sed -i '/^[[:space:]]*show_pad:[[:space:]]*$/d' "$file"
+                echo "已移除 task_mmu.c 中无引用的 show_pad 标签，避免 -Wunused-label"
+              fi
+            }
+
             # Android 12 - 5.10 修复
             if [[ "${{ inputs.android_version }}" == "android12" && "${{ inputs.kernel_version }}" == "5.10" ]]; then
               # 修复 2024-11 分支: mmap.c 调用了 vm_flags_clear()，但同分支 mm.h 未提供 helper
@@ -567,7 +582,7 @@ jobs:
                 sed -i 's/vm_flags_clear(new_vma, VM_PAD_MASK);/new_vma->vm_flags \&= ~VM_PAD_MASK;/' ./mm/mmap.c
               fi
               if [[ "$CURRENT_SUB" -le 209 ]]; then
-                sed -i -e 's/goto show_pad;/return 0;/' ./fs/proc/task_mmu.c
+                fix_task_mmu_show_pad
               fi
               if [[ "$CURRENT_SUB" -le 117 ]]; then
                 cp $KERNEL_PATCHES/wild/susfs_fix_patches/v${SUSFS_VERSION}/a12-5.10/fdinfo.c.patch ./
@@ -594,7 +609,7 @@ jobs:
                 patch -p1 < open.c.patch || true
               fi
               if [[ "$CURRENT_SUB" -le 148 && "${{ inputs.os_patch_level }}" != "2024-05" ]]; then
-                sed -i -e 's/goto show_pad;/return 0;/' ./fs/proc/task_mmu.c
+                fix_task_mmu_show_pad
               fi
             fi
 
@@ -612,7 +627,7 @@ jobs:
                 fi
               fi
               if [[ "$CURRENT_SUB" -le 75 && "${{ inputs.os_patch_level }}" != "2024-05" ]]; then
-                sed -i -e 's/goto show_pad;/return 0;/' ./fs/proc/task_mmu.c
+                fix_task_mmu_show_pad
               fi
               # 修复 6.1 LTS: SUSFS 补丁在 namespace.c 头部 hunk 因上下文不匹配而失败，
               # 导致函数体中的 SUSFS 符号（DEFAULT_KSU_MNT_ID 等）未声明

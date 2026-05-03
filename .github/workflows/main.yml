@@ -279,7 +279,7 @@ jobs:
   # 当 release_type 不是 Actions 时，创建 GitHub Release
   # 仅限原仓库运行，fork 仓库跳过此步骤
   release:
-    if: ${{ always() && !cancelled() && inputs.release_type != 'Actions' && github.repository == 'zzh20188/GKI_KernelSU_SUSFS' }}
+    if: ${{ always() && !cancelled() && inputs.release_type != 'Actions' && github.repository == 'xingguangcuican6666/ABK' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -456,12 +456,6 @@ jobs:
           ${{ env.MOUNT_TYPE }}
           ${{ env.KPM_LINE }} 
 
-          > 💡 [Unicode 零宽绕过修复](https://t.me/real5ec1cff/268) - 请使用 Xposed 模块
-
-          ### 📥 推荐模块 / Recommended Module
-
-          - https://github.com/sidex15/ksu_module_susfs
-
           ---
 
           > [!IMPORTANT]
@@ -500,11 +494,11 @@ jobs:
 
           1. 恢复原厂 Boot 镜像
           2. 使用 KernelSU 管理器提取内核日志
-          3. 将日志提交到 [Issues](https://github.com/zzh20188/GKI_KernelSU_SUSFS/issues) 或咨询专业人士
+          3. 将日志提交到 [Issues](https://github.com/xingguangcuican6666/ABK/issues) 或咨询专业人士
 
           1. Restore stock boot image
           2. Extract kernel logs using KernelSU Manager
-          3. Submit logs to [Issues](https://github.com/zzh20188/GKI_KernelSU_SUSFS/issues) or consult experts
+          3. Submit logs to [Issues](https://github.com/xingguangcuican6666/ABK/issues) or consult experts
 
           </details>
 
