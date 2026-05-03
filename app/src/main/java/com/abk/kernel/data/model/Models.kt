@@ -174,7 +174,11 @@ data class DownloadedArtifact(
     val name: String,
     val filePath: String,
     val type: ArtifactType,
-    val sizeBytes: Long
+    val sizeBytes: Long,
+    val runId: Long = -1L,
+    val runTitle: String = "",
+    val runNumber: Int = 0,
+    val category: ArtifactCategory = type.toArtifactCategory()
 )
 
 enum class ArtifactType {
@@ -183,6 +187,20 @@ enum class ArtifactType {
     KSU_MANAGER,
     SUSFS_MODULE,
     OTHER
+}
+
+enum class ArtifactCategory {
+    KERNEL,
+    MANAGER,
+    MODULE
+}
+
+fun ArtifactType.toArtifactCategory(): ArtifactCategory = when (this) {
+    ArtifactType.KERNEL_IMG,
+    ArtifactType.ANYKERNEL3 -> ArtifactCategory.KERNEL
+    ArtifactType.KSU_MANAGER -> ArtifactCategory.MANAGER
+    ArtifactType.SUSFS_MODULE -> ArtifactCategory.MODULE
+    ArtifactType.OTHER -> ArtifactCategory.MODULE
 }
 
 enum class BuildStatus {

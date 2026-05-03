@@ -5,14 +5,19 @@ import android.content.Intent
 import android.os.Environment
 import androidx.core.content.FileProvider
 import com.abk.kernel.data.model.Artifact
+import com.abk.kernel.data.model.ArtifactCategory
 import com.abk.kernel.data.model.ArtifactType
 import com.abk.kernel.data.model.DownloadedArtifact
+import com.abk.kernel.data.model.WorkflowRun
+import com.abk.kernel.data.model.toArtifactCategory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
+import java.util.Locale
+import java.util.zip.ZipFile
 import java.util.zip.ZipInputStream
 
 object DownloadUtils {
@@ -22,23 +27,62 @@ object DownloadUtils {
     fun classifyArtifact(name: String): ArtifactType {
         val lower = name.lowercase()
         return when {
-            lower.endsWith(".img") && lower.contains("boot") -> ArtifactType.KERNEL_IMG
+            lower.endsWith(".img") && (lower.contains("boot") || lower.contains("kernel")) -> ArtifactType.KERNEL_IMG
             lower.endsWith(".zip") && (lower.contains("anykernel") || lower.contains("ak3")) -> ArtifactType.ANYKERNEL3
+            lower.endsWith(".zip") && isLikelyModuleZipName(lower) -> ArtifactType.SUSFS_MODULE
             lower.endsWith(".apk") && (
                 lower.contains("manager") ||
                     lower.contains("kernelsu") ||
                     lower.contains("ksu") ||
                     lower.contains("suki")
                 ) -> ArtifactType.KSU_MANAGER
-            lower.endsWith(".zip") && (lower.contains("susfs") || lower.contains("module")) -> ArtifactType.SUSFS_MODULE
             else -> ArtifactType.OTHER
         }
+    }
+
+    private fun isLikelyModuleZipName(lower: String): Boolean =
+        lower.contains("susfs") ||
+            lower.contains("module") ||
+            lower.contains("magisk") ||
+            lower.contains("zygisk") ||
+            lower.contains("kpm")
+
+    fun classifyCategory(type: ArtifactType): ArtifactCategory? = when (type) {
+        ArtifactType.KERNEL_IMG,
+        ArtifactType.ANYKERNEL3 -> ArtifactCategory.KERNEL
+        ArtifactType.KSU_MANAGER -> ArtifactCategory.MANAGER
+        ArtifactType.SUSFS_MODULE -> ArtifactCategory.MODULE
+        ArtifactType.OTHER -> null
+    }
+
+    fun shouldAutoDownload(artifact: Artifact): Boolean {
+        val lower = artifact.name.lowercase()
+        val type = classifyArtifact(artifact.name)
+        return when (classifyCategory(type)) {
+            ArtifactCategory.KERNEL,
+            ArtifactCategory.MODULE -> true
+            ArtifactCategory.MANAGER -> isLikelySupportedManager(lower)
+            null -> false
+        }
+    }
+
+    private fun isLikelySupportedManager(name: String): Boolean {
+        val abi = android.os.Build.SUPPORTED_ABIS.joinToString(" ").lowercase(Locale.ROOT)
+        val sdk = android.os.Build.VERSION.SDK_INT
+        if (name.contains("armeabi-v7a") && !abi.contains("armeabi-v7a")) return false
+        if ((name.contains("arm64") || name.contains("aarch64")) && !abi.contains("arm64")) return false
+        if ((name.contains("x86_64") || name.contains("x64")) && !abi.contains("x86_64")) return false
+        if (Regex("""(?:api|sdk|min)[-_ ]?(\d{2})""").find(name)?.groupValues?.getOrNull(1)?.toIntOrNull()?.let { sdk < it } == true) {
+            return false
+        }
+        return true
     }
 
     suspend fun downloadArtifact(
         context: Context,
         token: String,
         artifact: Artifact,
+        run: WorkflowRun? = null,
         onProgress: (Int) -> Unit = {}
     ): List<DownloadedArtifact> = withContext(Dispatchers.IO) {
         try {
@@ -54,9 +98,10 @@ object DownloadUtils {
             val body = response.body ?: return@withContext emptyList()
             val totalBytes = artifact.sizeInBytes.coerceAtLeast(1L)
 
-            val downloadsDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            val downloadsRoot = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
                 ?: context.filesDir
-            val zipFile = File(downloadsDir, "${artifact.name}.zip")
+            val runDir = File(downloadsRoot, runFolderName(run)).apply { mkdirs() }
+            val zipFile = File(runDir, "${artifact.name}.zip")
 
             body.byteStream().use { input ->
                 FileOutputStream(zipFile).use { output ->
@@ -73,25 +118,41 @@ object DownloadUtils {
             }
 
             // Unzip into named folder
-            val outDir = File(downloadsDir, artifact.name)
+            val outDir = File(runDir, safeFileName(artifact.name))
             if (outDir.exists()) outDir.deleteRecursively()
             outDir.mkdirs()
             unzip(zipFile, outDir)
             zipFile.delete()
 
             collectCandidateFiles(outDir).mapIndexed { index, file ->
+                val type = classifyDownloadedFile(file)
                 DownloadedArtifact(
                     id = artifact.id * 1000 + index + 1,
                     name = file.name,
                     filePath = file.absolutePath,
-                    type = classifyArtifact(file.name),
-                    sizeBytes = file.length()
+                    type = type,
+                    sizeBytes = file.length(),
+                    runId = run?.id ?: -1L,
+                    runTitle = run?.displayTitle ?: run?.name ?: run?.let { "#${it.runNumber}" } ?: "未关联工作流",
+                    runNumber = run?.runNumber ?: 0,
+                    category = type.toArtifactCategory()
                 )
             }
         } catch (e: Exception) {
             emptyList()
         }
     }
+
+    private fun runFolderName(run: WorkflowRun?): String {
+        if (run == null) return "manual"
+        val title = run.displayTitle ?: run.name ?: "workflow"
+        return "run-${run.runNumber}-${safeFileName(title).take(48)}"
+    }
+
+    private fun safeFileName(value: String): String =
+        value.replace(Regex("""[^A-Za-z0-9._ -]"""), "_")
+            .trim()
+            .ifBlank { "artifact" }
 
     private fun unzip(zipFile: File, outDir: File) {
         val outCanonical = outDir.canonicalFile
@@ -122,7 +183,7 @@ object DownloadUtils {
             .toList()
 
         val candidates = files.filter { file ->
-            when (classifyArtifact(file.name)) {
+            when (classifyDownloadedFile(file)) {
                 ArtifactType.KERNEL_IMG,
                 ArtifactType.ANYKERNEL3,
                 ArtifactType.KSU_MANAGER,
@@ -134,7 +195,7 @@ object DownloadUtils {
         val source = candidates.ifEmpty { files }
         return source.sortedWith(
             compareBy<File> {
-                when (classifyArtifact(it.name)) {
+                when (classifyDownloadedFile(it)) {
                     ArtifactType.KERNEL_IMG -> 0
                     ArtifactType.ANYKERNEL3 -> 1
                     ArtifactType.KSU_MANAGER -> 2
@@ -143,6 +204,24 @@ object DownloadUtils {
                 }
             }.thenBy { it.name }
         )
+    }
+
+    private fun classifyDownloadedFile(file: File): ArtifactType {
+        val byName = classifyArtifact(file.name)
+        if (byName != ArtifactType.OTHER || !file.extension.equals("zip", ignoreCase = true)) {
+            return byName
+        }
+        return runCatching {
+            ZipFile(file).use { zip ->
+                val names = zip.entries().asSequence().map { it.name.lowercase(Locale.ROOT) }.take(256).toList()
+                when {
+                    names.any { it == "module.prop" || it.endsWith("/module.prop") } -> ArtifactType.SUSFS_MODULE
+                    names.any { it.endsWith("meta-inf/com/google/android/update-binary") } &&
+                        names.any { it.contains("anykernel") || it.startsWith("tools/") } -> ArtifactType.ANYKERNEL3
+                    else -> ArtifactType.OTHER
+                }
+            }
+        }.getOrDefault(ArtifactType.OTHER)
     }
 
     fun openFile(context: Context, filePath: String) {
@@ -160,9 +239,9 @@ object DownloadUtils {
         }
     }
 
-    fun installApk(context: Context, filePath: String) {
+    fun installApk(context: Context, filePath: String): Boolean {
         val file = File(filePath)
-        if (!file.exists()) return
+        if (!file.exists()) return false
         val uri = FileProvider.getUriForFile(
             context, "${context.packageName}.fileprovider", file
         )
@@ -171,7 +250,7 @@ object DownloadUtils {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        runCatching { context.startActivity(intent) }
+        return runCatching { context.startActivity(intent) }.isSuccess
     }
 
     fun formatSize(bytes: Long): String {

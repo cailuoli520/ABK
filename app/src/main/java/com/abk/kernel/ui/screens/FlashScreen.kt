@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.abk.kernel.R
 import com.abk.kernel.data.model.Artifact
+import com.abk.kernel.data.model.ArtifactCategory
 import com.abk.kernel.data.model.ArtifactType
 import com.abk.kernel.data.model.BuildStatus
 import com.abk.kernel.data.model.DownloadedArtifact
@@ -39,6 +40,7 @@ fun FlashScreen(vm: MainViewModel) {
     var showFlashConfirm by remember { mutableStateOf(false) }
     var flashLog by remember { mutableStateOf<List<String>>(emptyList()) }
     var showLogDialog by remember { mutableStateOf(false) }
+    var flashSuccess by remember { mutableStateOf<Boolean?>(null) }
 
     if (showFlashConfirm && selectedItem != null) {
         val item = selectedItem!!
@@ -52,10 +54,13 @@ fun FlashScreen(vm: MainViewModel) {
                     onClick = {
                         showFlashConfirm = false
                         val result = when (item.type) {
-                            ArtifactType.KERNEL_IMG -> RootUtils.flashImage(item.filePath, "boot")
+                            ArtifactType.KERNEL_IMG -> RootUtils.flashImage(item.filePath)
+                            ArtifactType.ANYKERNEL3 -> RootUtils.flashAnyKernel3(context, item.filePath)
                             ArtifactType.SUSFS_MODULE -> RootUtils.installModule(item.filePath)
+                            ArtifactType.KSU_MANAGER -> RootUtils.ShellResult(false, listOf("无法打开系统 APK 安装器"))
                             else -> RootUtils.ShellResult(false, listOf("不支持此文件类型的自动刷写"))
                         }
+                        flashSuccess = result.success
                         flashLog = result.output
                         showLogDialog = true
                     },
@@ -71,9 +76,17 @@ fun FlashScreen(vm: MainViewModel) {
     if (showLogDialog) {
         AlertDialog(
             onDismissRequest = { showLogDialog = false },
-            title = { Text("执行日志") },
+            title = {
+                Text(
+                    when (flashSuccess) {
+                        true -> "执行完成"
+                        false -> "执行失败"
+                        null -> "执行日志"
+                    }
+                )
+            },
             text = {
-                Column {
+                Column(modifier = Modifier.heightIn(max = 360.dp)) {
                     flashLog.forEach { line ->
                         Text(line, style = MaterialTheme.typography.bodySmall, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
                     }
@@ -112,22 +125,32 @@ fun FlashScreen(vm: MainViewModel) {
 
             // ── Available artifacts to download ──
             if (state.buildStatus == BuildStatus.SUCCESS && state.artifacts.isNotEmpty()) {
-                item {
-                    ExpressiveSectionCard(
-                        title = "可下载的构建产物",
-                        subtitle = "先下载需要的 img、AnyKernel3、管理器或模块，再在下方执行刷写/安装。",
-                        icon = Icons.Default.CloudDownload
-                    ) {}
+                val grouped = remember(state.artifacts) {
+                    state.artifacts.filter { !it.expired }
+                        .groupBy { DownloadUtils.classifyCategory(DownloadUtils.classifyArtifact(it.name)) }
                 }
-                items(state.artifacts, key = { it.id }) { artifact ->
-                    ArtifactDownloadCard(
-                        artifact = artifact,
-                        progress = state.downloadProgress[artifact.id],
-                        alreadyDownloaded = state.downloadedArtifacts.any {
-                            it.filePath.contains("/${artifact.name}/")
-                        },
-                        onDownload = { vm.downloadArtifact(artifact) }
-                    )
+                artifactCategoryOrder.forEach { category ->
+                    val artifacts = grouped[category].orEmpty()
+                    if (artifacts.isNotEmpty()) {
+                        item("available-${category.name}") {
+                            ExpressiveSectionCard(
+                                title = "${category.label()} · 可下载",
+                                subtitle = category.availableSubtitle(),
+                                icon = category.icon()
+                            ) {}
+                        }
+                        items(artifacts, key = { it.id }) { artifact ->
+                            ArtifactDownloadCard(
+                                artifact = artifact,
+                                progress = state.downloadProgress[artifact.id],
+                                alreadyDownloaded = state.downloadedArtifacts.any {
+                                    it.runId == state.currentRun?.id && it.filePath.contains("/${artifact.name}/")
+                                },
+                                autoDownloadEligible = DownloadUtils.shouldAutoDownload(artifact),
+                                onDownload = { vm.downloadArtifact(artifact) }
+                            )
+                        }
+                    }
                 }
             } else if (state.currentRun != null && state.buildStatus == BuildStatus.SUCCESS && state.artifacts.isEmpty()) {
                 item {
@@ -146,23 +169,42 @@ fun FlashScreen(vm: MainViewModel) {
 
             // ── Downloaded artifacts ──
             if (state.downloadedArtifacts.isNotEmpty()) {
-                item {
-                    ExpressiveSectionCard(
-                        title = "已下载，选择操作",
-                        subtitle = "危险操作会再次确认。AK3 包默认交给恢复环境或文件管理器处理。",
-                        icon = Icons.Default.FolderSpecial,
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer
-                    ) {}
+                val byRun = remember(state.downloadedArtifacts) {
+                    state.downloadedArtifacts.groupBy { it.runId to it.runTitle.ifBlank { "未关联工作流" } }
                 }
-                items(state.downloadedArtifacts, key = { it.id }) { downloaded ->
-                    DownloadedArtifactCard(
-                        artifact = downloaded,
-                        context = context,
-                        onFlash = {
-                            selectedItem = downloaded
-                            showFlashConfirm = true
+                byRun.forEach { (runKey, runArtifacts) ->
+                    item("run-${runKey.first}") {
+                        ExpressiveSectionCard(
+                            title = "工作流 ${if (runArtifacts.first().runNumber > 0) "#${runArtifacts.first().runNumber}" else ""}",
+                            subtitle = runKey.second,
+                            icon = Icons.Default.FolderSpecial,
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer
+                        ) {}
+                    }
+                    artifactCategoryOrder.forEach { category ->
+                        val categoryArtifacts = runArtifacts.filter { it.category == category }
+                        if (categoryArtifacts.isNotEmpty()) {
+                            item("run-${runKey.first}-${category.name}") {
+                                Text(
+                                    category.label(),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 6.dp, top = 4.dp)
+                                )
+                            }
+                            items(categoryArtifacts, key = { it.id }) { downloaded ->
+                                DownloadedArtifactCard(
+                                    artifact = downloaded,
+                                    context = context,
+                                    onFlash = {
+                                        selectedItem = downloaded
+                                        showFlashConfirm = true
+                                    }
+                                )
+                            }
                         }
-                    )
+                    }
                 }
             }
 
@@ -230,6 +272,7 @@ private fun ArtifactDownloadCard(
     artifact: Artifact,
     progress: Int?,
     alreadyDownloaded: Boolean,
+    autoDownloadEligible: Boolean,
     onDownload: () -> Unit
 ) {
     val type = DownloadUtils.classifyArtifact(artifact.name)
@@ -256,7 +299,7 @@ private fun ArtifactDownloadCard(
                     Text(DownloadUtils.formatSize(artifact.sizeInBytes), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 ExpressiveStatusChip(
-                    label = artifactTypeLabel(type),
+                    label = if (autoDownloadEligible) "自动下载" else artifactTypeLabel(type),
                     color = MaterialTheme.colorScheme.primary
                 )
             }
@@ -348,16 +391,21 @@ private fun DownloadedArtifactCard(
                         Text(stringResource(R.string.flash_kernel))
                     }
                     ArtifactType.ANYKERNEL3 -> Button(
-                        onClick = { DownloadUtils.openFile(context, artifact.filePath) },
+                        onClick = onFlash,
                         shape = RoundedCornerShape(18.dp),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.FlashOn, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("交给恢复刷入")
+                        Text("刷入 AK3")
                     }
                     ArtifactType.KSU_MANAGER -> Button(
-                        onClick = { DownloadUtils.installApk(context, artifact.filePath) },
+                        onClick = {
+                            val ok = DownloadUtils.installApk(context, artifact.filePath)
+                            if (!ok) {
+                                onFlash()
+                            }
+                        },
                         shape = RoundedCornerShape(18.dp),
                         modifier = Modifier.weight(1f)
                     ) {
@@ -395,4 +443,28 @@ private fun artifactTypeLabel(type: ArtifactType) = when (type) {
     ArtifactType.KSU_MANAGER -> "KernelSU 管理器"
     ArtifactType.SUSFS_MODULE -> "SUSFS 模块"
     ArtifactType.OTHER -> "其他文件"
+}
+
+private val artifactCategoryOrder = listOf(
+    ArtifactCategory.KERNEL,
+    ArtifactCategory.MANAGER,
+    ArtifactCategory.MODULE
+)
+
+private fun ArtifactCategory.label(): String = when (this) {
+    ArtifactCategory.KERNEL -> "内核"
+    ArtifactCategory.MANAGER -> "管理器"
+    ArtifactCategory.MODULE -> "模块"
+}
+
+private fun ArtifactCategory.availableSubtitle(): String = when (this) {
+    ArtifactCategory.KERNEL -> "boot.img 可直接写入当前槽位，AK3 包可在应用内执行刷入。"
+    ArtifactCategory.MANAGER -> "自动下载只会选择当前设备 ABI / SDK 可能支持的管理器 APK。"
+    ArtifactCategory.MODULE -> "模块会按 KernelSU、Magisk、APatch 自动选择安装命令。"
+}
+
+private fun ArtifactCategory.icon() = when (this) {
+    ArtifactCategory.KERNEL -> Icons.Default.Memory
+    ArtifactCategory.MANAGER -> Icons.Default.Shield
+    ArtifactCategory.MODULE -> Icons.Default.Extension
 }

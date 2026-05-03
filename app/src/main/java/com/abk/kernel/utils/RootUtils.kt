@@ -1,6 +1,8 @@
 package com.abk.kernel.utils
 
+import android.content.Context
 import com.topjohnwu.superuser.Shell
+import java.io.File
 
 object RootUtils {
 
@@ -26,15 +28,80 @@ object RootUtils {
         }
     }
 
-    fun flashImage(imagePath: String, partition: String): ShellResult {
-        val result = Shell.cmd("dd if=\"$imagePath\" of=/dev/block/by-name/$partition", "sync").exec()
+    fun flashImage(imagePath: String, partition: String = "boot"): ShellResult {
+        val safeImage = shellQuote(imagePath)
+        val script = """
+            set -e
+            slot=${'$'}(getprop ro.boot.slot_suffix 2>/dev/null || true)
+            target=""
+            for candidate in \
+                /dev/block/by-name/${partition}${'$'}slot \
+                /dev/block/bootdevice/by-name/${partition}${'$'}slot \
+                /dev/block/platform/*/by-name/${partition}${'$'}slot \
+                /dev/block/mapper/${partition}${'$'}slot \
+                /dev/block/by-name/$partition \
+                /dev/block/bootdevice/by-name/$partition \
+                /dev/block/platform/*/by-name/$partition \
+                /dev/block/mapper/$partition
+            do
+                for block in ${'$'}candidate; do
+                    [ -b "${'$'}block" ] && target="${'$'}block" && break 2
+                done
+            done
+            [ -n "${'$'}target" ] || { echo "未找到 ${partition}${'$'}slot 分区"; exit 2; }
+            img_size=${'$'}(wc -c < $safeImage)
+            echo "写入 ${'$'}target (${'$'}img_size bytes)"
+            dd if=$safeImage of="${'$'}target" bs=4096 conv=fsync
+            sync
+        """.trimIndent()
+        val result = Shell.cmd(script).exec()
         return ShellResult(result.isSuccess, result.out + result.err)
     }
 
     fun installModule(zipPath: String): ShellResult {
-        // ksud is the KernelSU manager daemon
-        val result = Shell.cmd("ksud module install \"$zipPath\"").exec()
+        val safeZip = shellQuote(zipPath)
+        val script = """
+            set -e
+            chmod 0644 $safeZip 2>/dev/null || true
+            if command -v ksud >/dev/null 2>&1; then
+                echo "使用 KernelSU 安装模块"
+                ksud module install $safeZip
+            elif command -v magisk >/dev/null 2>&1; then
+                echo "使用 Magisk 安装模块"
+                magisk --install-module $safeZip
+            elif command -v apd >/dev/null 2>&1; then
+                echo "使用 APatch 安装模块"
+                apd module install $safeZip
+            else
+                echo "未检测到 KernelSU/Magisk/APatch 模块安装器"
+                exit 127
+            fi
+            sync
+        """.trimIndent()
+        val result = Shell.cmd(script).exec()
         return ShellResult(result.isSuccess, result.out + result.err)
+    }
+
+    fun flashAnyKernel3(context: Context, zipPath: String): ShellResult {
+        val workDir = File(context.filesDir, "ak3-flash").apply {
+            deleteRecursively()
+            mkdirs()
+        }
+        val scriptFile = File(workDir, "flash_ak3.sh")
+        return try {
+            scriptFile.writeText(AK3_FLASH_SCRIPT)
+            val script = "F=${shellQuote(workDir.absolutePath)} Z=${shellQuote(zipPath)} /system/bin/sh ${shellQuote(scriptFile.absolutePath)}"
+            val result = Shell.Builder.create()
+                .setFlags(Shell.FLAG_MOUNT_MASTER or Shell.FLAG_REDIRECT_STDERR)
+                .setTimeout(120)
+                .build()
+                .newJob()
+                .add(script)
+                .exec()
+            ShellResult(result.isSuccess, result.out + result.err)
+        } finally {
+            workDir.deleteRecursively()
+        }
     }
 
     fun getKernelVersion(): String {
@@ -47,10 +114,42 @@ object RootUtils {
         return result.out.firstOrNull() ?: "N/A"
     }
 
+    fun getRootMode(): String {
+        val result = Shell.cmd(
+            "command -v ksud >/dev/null 2>&1 && echo KernelSU || " +
+                "command -v magisk >/dev/null 2>&1 && echo Magisk || " +
+                "command -v apd >/dev/null 2>&1 && echo APatch || echo Unknown"
+        ).exec()
+        return result.out.firstOrNull() ?: "Unknown"
+    }
+
     fun getSusfsVersion(): String {
         val result = Shell.cmd("cat /proc/self/attr/prev 2>/dev/null | head -1 || echo N/A").exec()
         return result.out.firstOrNull() ?: "N/A"
     }
 
     data class ShellResult(val success: Boolean, val output: List<String>)
+
+    private fun shellQuote(value: String): String = "'${value.replace("'", "'\"'\"'")}'"
+
+    private const val AK3_FLASH_SCRIPT = """
+#!/system/bin/sh
+set -e
+unzip -p "$Z" 'tools*/busybox' > "$F/busybox" || { echo "AK3 缺少 busybox"; exit 2; }
+unzip -p "$Z" 'META-INF/com/google/android/update-binary' > "$F/update-binary" || { echo "AK3 缺少 update-binary"; exit 2; }
+chmod 755 "$F/busybox"
+"$F/busybox" chmod 755 "$F/update-binary"
+"$F/busybox" chown root:root "$F/busybox" "$F/update-binary" 2>/dev/null || true
+TMP="$F/tmp"
+"$F/busybox" umount "$TMP" 2>/dev/null || true
+"$F/busybox" rm -rf "$TMP" 2>/dev/null || true
+"$F/busybox" mkdir -p "$TMP"
+"$F/busybox" mount -t tmpfs -o noatime tmpfs "$TMP"
+"$F/busybox" mount | "$F/busybox" grep -q " $TMP " || exit 1
+AKHOME="$TMP/anykernel" "$F/busybox" ash "$F/update-binary" 3 1 "$Z"
+RC=$?
+"$F/busybox" umount "$TMP" 2>/dev/null || true
+"$F/busybox" rm -rf "$TMP" "$F/update-binary" "$F/busybox" 2>/dev/null || true
+exit $RC
+"""
 }

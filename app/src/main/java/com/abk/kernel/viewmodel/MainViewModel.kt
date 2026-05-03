@@ -57,7 +57,7 @@ data class MainUiState(
     // Settings
     val autoDownload: Boolean = true,
     val notifyBuild: Boolean = true,
-    val themeMode: String = "system"
+    val themeMode: String = "dark"
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -493,7 +493,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 is Result.Success -> {
                     _uiState.update { it.copy(artifacts = r.data) }
                     if (autoDownload) {
-                        r.data.filterNot { it.expired }.forEach { downloadArtifact(it) }
+                        r.data.filter { artifact ->
+                            !artifact.expired && DownloadUtils.shouldAutoDownload(artifact)
+                        }.forEach { downloadArtifact(it, run = state.currentRun) }
                     }
                 }
                 else -> {}
@@ -501,7 +503,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun downloadArtifact(artifact: com.abk.kernel.data.model.Artifact) {
+    fun downloadArtifact(
+        artifact: com.abk.kernel.data.model.Artifact,
+        run: WorkflowRun? = _uiState.value.currentRun
+    ) {
         viewModelScope.launch {
             val token = prefs.accessToken.first()
             if (token.isNullOrBlank()) {
@@ -511,7 +516,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(isDownloading = true) }
             NotificationUtils.notifyDownloadProgress(getApplication(), 0, artifact.name)
             val results = DownloadUtils.downloadArtifact(
-                getApplication(), token, artifact
+                getApplication(), token, artifact, run
             ) { pct ->
                 NotificationUtils.notifyDownloadProgress(getApplication(), pct, artifact.name)
                 _uiState.update { s ->
