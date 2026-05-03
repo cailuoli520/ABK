@@ -1196,12 +1196,9 @@ jobs:
 
       - name: 配置 KPM 超级密码
         if: inputs.use_kpm && inputs.kpm_password != '' && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'Next')
-        env:
-          KPM_PASSWORD: ${{ inputs.kpm_password }}
         run: |
-          echo "设置自定义 KPM 超级密码..."
-          echo "CONFIG_KPM_SUPER_KEY=\"${KPM_PASSWORD}\"" >> "$DEFCONFIG"
-          echo "KPM 超级密码已写入 defconfig"
+          echo "KPM 超级密码将在 Image KPM patch 阶段写入。"
+          echo "CONFIG_KPM_SUPER_KEY 不是当前 KSU Kconfig 符号，不能写入 defconfig fragment。"
 
       - name: 添加 SUSFS 配置
         if: inputs.enable_susfs
@@ -1333,6 +1330,8 @@ jobs:
 
       - name: 应用 KPM 补丁 (SukiSU/ReSukiSU/Next)
         if: inputs.use_kpm && (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' || inputs.ksu_variant == 'Next')
+        env:
+          KPM_PASSWORD: ${{ inputs.kpm_password }}
         run: |
           case "${{ inputs.android_version }}" in
             "android12"|"android13")
@@ -1348,7 +1347,11 @@ jobs:
           cp -r $SUKISU_PATCHES/kpm/patch_linux "$TARGET_PATH/patch"
           cd "$TARGET_PATH"
           chmod 777 patch
-          ./patch
+          if [ -n "$KPM_PASSWORD" ]; then
+            ./patch -s "$KPM_PASSWORD"
+          else
+            ./patch
+          fi
           rm -rf Image
           mv oImage Image
 
