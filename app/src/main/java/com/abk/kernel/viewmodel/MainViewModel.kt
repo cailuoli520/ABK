@@ -437,6 +437,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun dispatchBuild(config: KernelBuildConfig) {
         val state = _uiState.value
+        val buildConfig = KernelSupport.normalize(config)
         val username = state.user?.login ?: return
         val repoName = state.forkRepo?.name ?: BuildConfig.SOURCE_REPO_NAME
         val ref = state.forkRepo?.defaultBranch ?: "main"
@@ -453,7 +454,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 is Result.Success -> prior.data.firstOrNull()?.id
                 else -> null
             }
-            val inputs = config.toInputMap()
+            val inputs = buildConfig.toInputMap()
             when (val r = github.dispatchWorkflow(username, repoName, wfId, inputs, ref)) {
                 is Result.Success -> {
                     _uiState.update {
@@ -678,9 +679,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setNotifyBuild(v: Boolean) = viewModelScope.launch { prefs.setNotifyBuild(v) }
     fun setThemeMode(mode: String) = viewModelScope.launch { prefs.setThemeMode(mode) }
     fun updateBuildConfig(config: KernelBuildConfig) {
+        val normalized = KernelSupport.normalize(config)
         hasSavedBuildConfig = true
-        _uiState.update { it.copy(buildConfig = config) }
-        viewModelScope.launch { prefs.saveBuildConfigJson(gson.toJson(config)) }
+        _uiState.update { it.copy(buildConfig = normalized) }
+        viewModelScope.launch { prefs.saveBuildConfigJson(gson.toJson(normalized)) }
     }
 
     private fun parseDownloadedArtifacts(json: String?): List<DownloadedArtifact> {
@@ -708,152 +710,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 }
 
 private fun detectRecommendedBuildConfig(): KernelBuildConfig {
-    val kernel = RootUtils.getKernelVersion().lowercase()
-    val base = when {
-        kernel.contains("6.12") || kernel.contains("android16") -> KernelBuildConfig(
-            androidVersion = "android16",
-            kernelVersion = "6.12",
-            subLevel = "69",
-            osPatchLevel = "2026-03",
-            revision = ""
-        )
-        kernel.contains("6.6") || kernel.contains("android15") -> KernelBuildConfig(
-            androidVersion = "android15",
-            kernelVersion = "6.6",
-            subLevel = "127",
-            osPatchLevel = "2026-04",
-            revision = ""
-        )
-        kernel.contains("6.1") || kernel.contains("android14") -> KernelBuildConfig(
-            androidVersion = "android14",
-            kernelVersion = "6.1",
-            subLevel = "162",
-            osPatchLevel = "2026-03",
-            revision = ""
-        )
-        kernel.contains("5.15") || kernel.contains("android13") -> KernelBuildConfig(
-            androidVersion = "android13",
-            kernelVersion = "5.15",
-            subLevel = "194",
-            osPatchLevel = "2025-12",
-            revision = ""
-        )
-        else -> KernelBuildConfig(
-            androidVersion = "android12",
-            kernelVersion = "5.10",
-            subLevel = "246",
-            osPatchLevel = "2025-12",
-            revision = "r1"
-        )
-    }
-    val detectedSubLevel = Regex("""\b${Regex.escape(base.kernelVersion)}\.(\d+)""")
-        .find(kernel)
-        ?.groupValues
-        ?.getOrNull(1)
-        ?: return base
-    val patch = kernelPatchMap[base.kernelVersion]?.get(detectedSubLevel)
-    return base.copy(
-        subLevel = detectedSubLevel,
-        osPatchLevel = patch?.first ?: base.osPatchLevel,
-        revision = patch?.second ?: base.revision
-    )
+    return KernelSupport.recommendedFromKernel(RootUtils.getKernelVersion())
 }
-
-private val kernelPatchMap = mapOf(
-    "5.10" to mapOf(
-        "43" to ("2021-10" to "r1"),
-        "66" to ("2022-01" to "r11"),
-        "81" to ("2022-03" to "r11"),
-        "101" to ("2022-05" to "r28"),
-        "110" to ("2022-07" to "r1"),
-        "117" to ("2022-09" to "r1"),
-        "136" to ("2022-11" to "r15"),
-        "149" to ("2023-01" to "r1"),
-        "160" to ("2023-03" to "r1"),
-        "168" to ("2023-04" to "r9"),
-        "177" to ("2023-07" to "r3"),
-        "185" to ("2023-09" to "r1"),
-        "198" to ("2024-01" to "r17"),
-        "205" to ("2024-03" to "r1"),
-        "209" to ("2024-05" to "r13"),
-        "218" to ("2024-08" to "r14"),
-        "226" to ("2024-11" to "r8"),
-        "233" to ("2025-02" to "r1"),
-        "236" to ("2025-05" to "r1"),
-        "237" to ("2025-06" to "r1"),
-        "240" to ("2025-09" to "r1"),
-        "246" to ("2025-12" to "r1")
-    ),
-    "5.15" to mapOf(
-        "41" to ("2022-11" to ""),
-        "74" to ("2023-01" to ""),
-        "78" to ("2023-03" to ""),
-        "94" to ("2023-05" to ""),
-        "104" to ("2023-07" to ""),
-        "119" to ("2023-09" to ""),
-        "123" to ("2023-11" to ""),
-        "137" to ("2024-01" to ""),
-        "144" to ("2024-03" to ""),
-        "148" to ("2024-05" to ""),
-        "149" to ("2024-07" to ""),
-        "151" to ("2024-08" to ""),
-        "153" to ("2024-09" to ""),
-        "167" to ("2024-11" to ""),
-        "170" to ("2025-01" to ""),
-        "178" to ("2025-03" to ""),
-        "180" to ("2025-05" to ""),
-        "185" to ("2025-07" to ""),
-        "189" to ("2025-09" to ""),
-        "194" to ("2025-12" to "")
-    ),
-    "6.1" to mapOf(
-        "25" to ("2023-10" to ""),
-        "43" to ("2023-11" to ""),
-        "57" to ("2024-01" to ""),
-        "68" to ("2024-03" to ""),
-        "75" to ("2024-05" to ""),
-        "78" to ("2024-06" to ""),
-        "84" to ("2024-07" to ""),
-        "90" to ("2024-08" to ""),
-        "93" to ("2024-09" to ""),
-        "99" to ("2024-10" to ""),
-        "112" to ("2024-11" to ""),
-        "115" to ("2024-12" to ""),
-        "118" to ("2025-01" to ""),
-        "124" to ("2025-02" to ""),
-        "128" to ("2025-03" to ""),
-        "129" to ("2025-04" to ""),
-        "134" to ("2025-05" to ""),
-        "138" to ("2025-06" to ""),
-        "141" to ("2025-07" to ""),
-        "145" to ("2025-09" to ""),
-        "157" to ("2025-12" to ""),
-        "162" to ("2026-03" to "")
-    ),
-    "6.6" to mapOf(
-        "50" to ("2024-10" to ""),
-        "56" to ("2024-11" to ""),
-        "57" to ("2024-12" to ""),
-        "58" to ("2025-01" to ""),
-        "66" to ("2025-02" to ""),
-        "77" to ("2025-03" to ""),
-        "82" to ("2025-04" to ""),
-        "87" to ("2025-05" to ""),
-        "89" to ("2025-06" to ""),
-        "92" to ("2025-07" to ""),
-        "98" to ("2025-09" to ""),
-        "102" to ("2025-10" to ""),
-        "118" to ("2026-01" to ""),
-        "127" to ("2026-04" to "")
-    ),
-    "6.12" to mapOf(
-        "23" to ("2025-06" to ""),
-        "30" to ("2025-07" to ""),
-        "38" to ("2025-09" to ""),
-        "58" to ("2025-12" to ""),
-        "69" to ("2026-03" to "")
-    )
-)
 
 // Helper to convert KernelBuildConfig to workflow dispatch inputs map
 private fun KernelBuildConfig.toInputMap(): Map<String, String> = mapOf(

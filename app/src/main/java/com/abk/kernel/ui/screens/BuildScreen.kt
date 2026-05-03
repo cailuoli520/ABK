@@ -25,6 +25,7 @@ import com.abk.kernel.R
 import com.abk.kernel.data.model.BuildProgress
 import com.abk.kernel.data.model.BuildStepProgress
 import com.abk.kernel.data.model.BuildStatus
+import com.abk.kernel.data.model.KernelSupport
 import com.abk.kernel.data.model.KernelBuildConfig
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveSectionCard
@@ -36,10 +37,21 @@ import com.abk.kernel.viewmodel.MainViewModel
 @Composable
 fun BuildScreen(vm: MainViewModel) {
     val state by vm.uiState.collectAsState()
-    val config = state.buildConfig
+    val rawConfig = state.buildConfig
+    val config = remember(rawConfig) { KernelSupport.normalize(rawConfig) }
     val recommended = state.recommendedBuildConfig
     val ksuBranchOptions = listOf("Stable(标准)", "Dev(开发)")
+    val subLevelOptions = remember(config.androidVersion, config.kernelVersion) {
+        KernelSupport.subLevelOptions(config.androidVersion, config.kernelVersion)
+    }
+    val osPatchOptions = remember(config.androidVersion, config.kernelVersion, config.subLevel) {
+        KernelSupport.patchLevelOptions(config.androidVersion, config.kernelVersion, config.subLevel)
+    }
     var showConfirmDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(config, rawConfig) {
+        if (config != rawConfig) vm.updateBuildConfig(config)
+    }
 
     if (showConfirmDialog) {
         AlertDialog(
@@ -101,38 +113,62 @@ fun BuildScreen(vm: MainViewModel) {
                 DropdownField(
                     label = "Android 版本",
                     value = config.androidVersion,
-                    options = listOf("android12", "android13", "android14", "android15", "android16"),
+                    options = KernelSupport.androidVersions(),
                     recommendedValue = recommended?.androidVersion,
-                    onSelect = { vm.updateBuildConfig(config.copy(androidVersion = it)) }
+                    onSelect = {
+                        vm.updateBuildConfig(
+                            KernelSupport.normalize(
+                                config.copy(
+                                    androidVersion = it,
+                                    kernelVersion = KernelSupport.kernelForAndroid(it)
+                                )
+                            )
+                        )
+                    }
                 )
                 DropdownField(
                     label = "内核版本",
                     value = config.kernelVersion,
-                    options = listOf("5.10", "5.15", "6.1", "6.6", "6.12"),
+                    options = KernelSupport.kernelVersions(),
                     recommendedValue = recommended?.kernelVersion,
-                    onSelect = { vm.updateBuildConfig(config.copy(kernelVersion = it)) }
+                    onSelect = {
+                        vm.updateBuildConfig(
+                            KernelSupport.normalize(
+                                config.copy(
+                                    androidVersion = KernelSupport.androidForKernel(it),
+                                    kernelVersion = it
+                                )
+                            )
+                        )
+                    }
                 )
-                OutlinedTextField(
+                DropdownField(
+                    label = "子版本号",
                     value = config.subLevel,
-                    onValueChange = { vm.updateBuildConfig(config.copy(subLevel = it)) },
-                    label = {
-                        Text(recommended?.subLevel?.let { "子版本号（推荐：$it）" } ?: "子版本号")
-                    },
-                    placeholder = { Text("如: 66, 198") },
-                    shape = FieldShape(),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    options = subLevelOptions,
+                    recommendedValue = recommended
+                        ?.takeIf {
+                            it.androidVersion == config.androidVersion && it.kernelVersion == config.kernelVersion
+                        }
+                        ?.subLevel,
+                    onSelect = {
+                        vm.updateBuildConfig(KernelSupport.normalize(config.copy(subLevel = it)))
+                    }
                 )
-                OutlinedTextField(
+                DropdownField(
+                    label = "安全补丁级别",
                     value = config.osPatchLevel,
-                    onValueChange = { vm.updateBuildConfig(config.copy(osPatchLevel = it)) },
-                    label = {
-                        Text(recommended?.osPatchLevel?.let { "安全补丁级别（推荐：$it）" } ?: "安全补丁级别")
-                    },
-                    placeholder = { Text("如: 2022-01, lts") },
-                    shape = FieldShape(),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    options = osPatchOptions,
+                    recommendedValue = recommended
+                        ?.takeIf {
+                            it.androidVersion == config.androidVersion &&
+                                it.kernelVersion == config.kernelVersion &&
+                                it.subLevel == config.subLevel
+                        }
+                        ?.osPatchLevel,
+                    onSelect = {
+                        vm.updateBuildConfig(config.copy(osPatchLevel = it))
+                    }
                 )
                 if (config.kernelVersion == "5.10") {
                     OutlinedTextField(
