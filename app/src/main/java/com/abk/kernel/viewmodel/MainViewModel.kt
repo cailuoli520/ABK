@@ -20,6 +20,7 @@ import com.abk.kernel.utils.NotificationUtils
 import com.abk.kernel.utils.RootUtils
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -72,6 +73,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var hasSavedBuildConfig = false
     private var monitoredRunId: Long = -1L
     private val preparedMirrorArtifacts = mutableMapOf<Long, Set<String>>()
+    private val artifactDownloadJobs = mutableMapOf<Long, Job>()
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
@@ -619,8 +621,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun downloadArtifact(
         artifact: BuildArtifact
     ) {
-        viewModelScope.launch {
-            downloadArtifactNow(artifact)
+        startArtifactDownload(artifact)
+    }
+
+    private fun startArtifactDownload(artifact: BuildArtifact) {
+        artifactDownloadJobs[artifact.id]?.cancel()
+        artifactDownloadJobs[artifact.id] = viewModelScope.launch {
+            try {
+                downloadArtifactNow(artifact)
+            } finally {
+                artifactDownloadJobs.remove(artifact.id)
+            }
         }
     }
 
@@ -630,23 +641,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(isDownloading = false, error = "未登录，无法下载构建产物") }
             return
         }
-        _uiState.update { it.copy(isDownloading = true) }
+        _uiState.update {
+            it.copy(
+                isDownloading = true,
+                error = null,
+                downloadProgress = it.downloadProgress + (artifact.id to 0)
+            )
+        }
         NotificationUtils.notifyDownloadProgress(getApplication(), 0, artifact.name)
         val mirrorBaseUrl = prefs.downloadMirrorBaseUrl.first()
-        val downloadUrl = if (mirrorBaseUrl.isNotBlank()) {
-            prepareMirroredArtifactUrl(artifact, mirrorBaseUrl)
+        val mirrorEnabled = mirrorBaseUrl.isNotBlank()
+        val downloadUrl = if (mirrorEnabled) {
+            monitorMirrorAndResolveDownloadUrl(artifact, mirrorBaseUrl) ?: run {
+                finishArtifactDownloadWithError(artifact.id, "镜像下载准备失败: ${artifact.name}")
+                return
+            }
         } else {
             null
-        }
-        if (mirrorBaseUrl.isNotBlank() && downloadUrl == null) {
-            _uiState.update {
-                it.copy(
-                    isDownloading = false,
-                    error = it.error ?: "镜像下载准备失败: ${artifact.name}",
-                    downloadProgress = it.downloadProgress - artifact.id
-                )
-            }
-            return
         }
         val results = DownloadUtils.downloadArtifact(
             getApplication(),
@@ -655,9 +666,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             artifact.toWorkflowRun(),
             downloadUrl
         ) { pct ->
-            NotificationUtils.notifyDownloadProgress(getApplication(), pct, artifact.name)
+            val displayProgress = if (mirrorEnabled) {
+                (50 + pct / 2).coerceIn(50, 100)
+            } else {
+                pct
+            }
+            NotificationUtils.notifyDownloadProgress(getApplication(), displayProgress, artifact.name)
             _uiState.update { s ->
-                s.copy(downloadProgress = s.downloadProgress + (artifact.id to pct))
+                s.copy(downloadProgress = s.downloadProgress + (artifact.id to displayProgress))
             }
         }
         if (results.isNotEmpty()) {
@@ -668,23 +684,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { s ->
                 s.copy(
                     isDownloading = false,
+                    error = null,
                     downloadedArtifacts = updated,
                     downloadProgress = s.downloadProgress - artifact.id
                 )
             }
             prefs.saveDownloadedArtifactsJson(gson.toJson(updated))
         } else {
-            _uiState.update {
-                it.copy(
-                    isDownloading = false,
-                    error = "下载失败: ${artifact.name}",
-                    downloadProgress = it.downloadProgress - artifact.id
-                )
-            }
+            finishArtifactDownloadWithError(artifact.id, "下载失败: ${artifact.name}")
         }
     }
 
-    private suspend fun prepareMirroredArtifactUrl(
+    private fun finishArtifactDownloadWithError(artifactId: Long, message: String) {
+        _uiState.update {
+            it.copy(
+                isDownloading = false,
+                error = it.error ?: message,
+                downloadProgress = it.downloadProgress - artifactId
+            )
+        }
+    }
+
+    private suspend fun monitorMirrorAndResolveDownloadUrl(
         artifact: BuildArtifact,
         mirrorBaseUrl: String
     ): String? {
@@ -692,8 +713,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val username = state.user?.login ?: return null
         val repoName = state.forkRepo?.name ?: return null
         val ref = state.forkRepo?.defaultBranch ?: "main"
-        if (preparedMirrorArtifacts[artifact.runId]?.contains(artifact.name) == true) {
+        val cached = preparedMirrorArtifacts[artifact.runId]?.contains(artifact.name) == true
+        if (cached) {
+            markMirrorProgress(artifact.id, 50)
             return normalizeMirrorBaseUrl(mirrorBaseUrl) + releaseAssetUrl(username, repoName, artifact.runId, artifact.name)
+        }
+        val existingAssetUrl = findMirrorReleaseAssetUrl(username, repoName, artifact.runId, artifact.name)
+        if (existingAssetUrl != null) {
+            markMirrorProgress(artifact.id, 50)
+            preparedMirrorArtifacts[artifact.runId] = (preparedMirrorArtifacts[artifact.runId].orEmpty() + artifact.name).toSet()
+            return normalizeMirrorBaseUrl(mirrorBaseUrl) + existingAssetUrl
         }
         val targetNames = mirrorTargetArtifactNames(artifact)
         if (targetNames.isEmpty()) {
@@ -701,12 +730,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return null
         }
 
-        _uiState.update { s ->
-            s.copy(
-                downloadProgress = s.downloadProgress + (artifact.id to 1),
-                error = null
-            )
-        }
+        markMirrorProgress(artifact.id, 1)
         val workflowId = when (val wf = github.getWorkflowId(username, repoName, MIRROR_WORKFLOW_FILE)) {
             is Result.Success -> wf.data
             is Result.Error -> {
@@ -741,10 +765,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(error = "镜像工作流失败: ${completed.conclusion ?: "unknown"}") }
             return null
         }
-        _uiState.update { s -> s.copy(downloadProgress = s.downloadProgress + (artifact.id to 5)) }
+        markMirrorProgress(artifact.id, 50)
+        val releaseAssetUrl = findMirrorReleaseAssetUrlWithRetry(username, repoName, artifact.runId, artifact.name) ?: run {
+            _uiState.update { it.copy(error = "镜像 Release 已创建，但未找到产物: ${artifact.name}.zip") }
+            return null
+        }
         preparedMirrorArtifacts[artifact.runId] = (preparedMirrorArtifacts[artifact.runId].orEmpty() + targetNames).toSet()
-        val releaseUrl = releaseAssetUrl(username, repoName, artifact.runId, artifact.name)
-        return normalizeMirrorBaseUrl(mirrorBaseUrl) + releaseUrl
+        return normalizeMirrorBaseUrl(mirrorBaseUrl) + releaseAssetUrl
     }
 
     private fun mirrorTargetArtifactNames(artifact: BuildArtifact): List<String> {
@@ -784,10 +811,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 is Result.Success -> {
                     val data = run.data
                     if (data.status == "completed") return data
-                    _uiState.update { s ->
-                        val current = s.downloadProgress[artifactId] ?: 1
-                        s.copy(downloadProgress = s.downloadProgress + (artifactId to (current + 1).coerceAtMost(20)))
-                    }
+                    val progress = ((attempt + 1) * 49 / MIRROR_WORKFLOW_MAX_POLLS).coerceIn(1, 49)
+                    markMirrorProgress(artifactId, progress)
                 }
                 is Result.Error -> {
                     _uiState.update { it.copy(error = "查询镜像工作流失败: ${run.message}") }
@@ -798,6 +823,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (attempt < MIRROR_WORKFLOW_MAX_POLLS - 1) delay(15_000)
         }
         _uiState.update { it.copy(error = "镜像工作流等待超时") }
+        return null
+    }
+
+    private fun markMirrorProgress(artifactId: Long, progress: Int) {
+        _uiState.update { s ->
+            s.copy(downloadProgress = s.downloadProgress + (artifactId to progress.coerceIn(0, 100)))
+        }
+    }
+
+    private suspend fun findMirrorReleaseAssetUrl(
+        owner: String,
+        repoName: String,
+        runId: Long,
+        artifactName: String
+    ): String? {
+        val tag = mirrorReleaseTag(runId)
+        return when (val release = github.getReleaseByTag(owner, repoName, tag)) {
+            is Result.Success -> release.data?.assets
+                ?.firstOrNull { it.name == "$artifactName.zip" }
+                ?.browserDownloadUrl
+            is Result.Error -> {
+                _uiState.update { it.copy(error = "查询镜像 Release 失败: ${release.message}") }
+                null
+            }
+            else -> null
+        }
+    }
+
+    private suspend fun findMirrorReleaseAssetUrlWithRetry(
+        owner: String,
+        repoName: String,
+        runId: Long,
+        artifactName: String
+    ): String? {
+        repeat(MIRROR_RELEASE_ASSET_MAX_POLLS) { attempt ->
+            val url = findMirrorReleaseAssetUrl(owner, repoName, runId, artifactName)
+            if (url != null) return url
+            if (attempt < MIRROR_RELEASE_ASSET_MAX_POLLS - 1) delay(5_000)
+        }
         return null
     }
 
@@ -851,7 +915,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         prefs.clearPendingAutoDownloadRunId()
-        targets.forEach { downloadArtifactNow(it) }
+        targets.forEach { startArtifactDownload(it) }
     }
 
     private fun openActionsPage(repo: GitHubRepo) {
@@ -944,6 +1008,7 @@ private const val MAX_REMOTE_ARTIFACT_RUNS = 30
 private const val MAX_PERSISTED_REMOTE_ARTIFACTS = 240
 private const val MIRROR_WORKFLOW_FILE = "mirror-custom-artifacts.yml"
 private const val MIRROR_WORKFLOW_MAX_POLLS = 40
+private const val MIRROR_RELEASE_ASSET_MAX_POLLS = 6
 
 private fun normalizeMirrorBaseUrl(url: String): String {
     val trimmed = url.trim()
@@ -952,10 +1017,12 @@ private fun normalizeMirrorBaseUrl(url: String): String {
 }
 
 private fun releaseAssetUrl(owner: String, repoName: String, runId: Long, artifactName: String): String {
-    val tag = "mirror-custom-run-$runId"
+    val tag = mirrorReleaseTag(runId)
     val asset = Uri.encode("$artifactName.zip")
     return "https://github.com/$owner/$repoName/releases/download/$tag/$asset"
 }
+
+private fun mirrorReleaseTag(runId: Long): String = "mirror-custom-run-$runId"
 
 private fun Artifact.toBuildArtifact(runId: Long): BuildArtifact = BuildArtifact(
     id = id,

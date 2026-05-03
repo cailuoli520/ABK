@@ -95,6 +95,14 @@ interface GitHubApiService {
         @Query("per_page") perPage: Int = 100
     ): Response<ArtifactsResponse>
 
+    // ── Releases ─────────────────────────────────────────────────────────
+    @GET("repos/{owner}/{repo}/releases/tags/{tag}")
+    suspend fun getReleaseByTag(
+        @Path("owner") owner: String,
+        @Path("repo") repo: String,
+        @Path("tag") tag: String
+    ): Response<GitHubRelease>
+
     @Streaming
     @GET("repos/{owner}/{repo}/actions/artifacts/{artifact_id}/zip")
     suspend fun downloadArtifact(

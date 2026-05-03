@@ -169,6 +169,17 @@ data class ArtifactsResponse(
     val artifacts: List<Artifact>
 )
 
+data class GitHubRelease(
+    @SerializedName("tag_name") val tagName: String,
+    @SerializedName("html_url") val htmlUrl: String,
+    val assets: List<ReleaseAsset> = emptyList()
+)
+
+data class ReleaseAsset(
+    val name: String,
+    @SerializedName("browser_download_url") val browserDownloadUrl: String
+)
+
 // GitHub Device Flow OAuth
 data class DeviceCodeResponse(
     @SerializedName("device_code") val deviceCode: String,

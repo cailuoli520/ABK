@@ -203,4 +203,16 @@ class GitHubRepository(
             }
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
+
+    suspend fun getReleaseByTag(owner: String, repo: String, tag: String): Result<GitHubRelease?> {
+        val api = apiService ?: return Result.Error("Not authenticated")
+        return runCatching<Result<GitHubRelease?>> {
+            val resp = api.getReleaseByTag(owner, repo, tag)
+            when {
+                resp.isSuccessful -> Result.Success(resp.body())
+                resp.code() == 404 -> Result.Success(null)
+                else -> Result.Error("Get release failed: ${resp.code()}", resp.code())
+            }
+        }.getOrElse { Result.Error(it.message ?: "Unknown error") }
+    }
 }
