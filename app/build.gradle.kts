@@ -9,6 +9,22 @@ val githubClientId = providers.gradleProperty("ABK_GITHUB_CLIENT_ID")
     .orElse(providers.environmentVariable("ABK_GITHUB_CLIENT_ID"))
     .orElse("Ov23li8skGo6AFPBeSTh")
 
+val releaseStoreFile = providers.gradleProperty("ABK_RELEASE_STORE_FILE")
+    .orElse(providers.environmentVariable("ABK_RELEASE_STORE_FILE"))
+val releaseStorePassword = providers.gradleProperty("ABK_RELEASE_STORE_PASSWORD")
+    .orElse(providers.environmentVariable("ABK_RELEASE_STORE_PASSWORD"))
+val releaseStoreType = providers.gradleProperty("ABK_RELEASE_STORE_TYPE")
+    .orElse(providers.environmentVariable("ABK_RELEASE_STORE_TYPE"))
+    .orElse("JKS")
+val releaseKeyAlias = providers.gradleProperty("ABK_RELEASE_KEY_ALIAS")
+    .orElse(providers.environmentVariable("ABK_RELEASE_KEY_ALIAS"))
+val releaseKeyPassword = providers.gradleProperty("ABK_RELEASE_KEY_PASSWORD")
+    .orElse(providers.environmentVariable("ABK_RELEASE_KEY_PASSWORD"))
+val hasReleaseSigning = !releaseStoreFile.orNull.isNullOrBlank() &&
+    !releaseStorePassword.orNull.isNullOrBlank() &&
+    !releaseKeyAlias.orNull.isNullOrBlank() &&
+    !releaseKeyPassword.orNull.isNullOrBlank()
+
 android {
     namespace = "com.abk.kernel"
     compileSdk = 35
@@ -27,10 +43,23 @@ android {
         buildConfigField("String", "SOURCE_REPO_NAME", "\"ABK\"")
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = releaseStoreFile.orNull?.let { file(it) }
+            storePassword = releaseStorePassword.orNull
+            storeType = releaseStoreType.get()
+            keyAlias = releaseKeyAlias.orNull
+            keyPassword = releaseKeyPassword.orNull
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
