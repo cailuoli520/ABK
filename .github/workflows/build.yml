@@ -364,7 +364,7 @@ jobs:
         working-directory: ${{ env.KERNEL_ROOT }}/common/drivers
         run: |
           echo "下载一加 8E 支持补丁..."
-          curl -LSs "https://github.com/zzh20188/GKI_KernelSU_SUSFS/raw/refs/heads/dev/hmbird_patch.c" -o hmbird_patch.c
+          curl -LSs "https://github.com/xingguangcuican6666/ABK/raw/refs/heads/dev/hmbird_patch.c" -o hmbird_patch.c
           echo "obj-y += hmbird_patch.o" >> Makefile
 
       - name: 确定 KernelSU 分支
