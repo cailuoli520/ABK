@@ -91,7 +91,7 @@ object RootUtils {
             val script = "F=${shellQuote(workDir.absolutePath)} Z=${shellQuote(zipPath)} /system/bin/sh ${shellQuote(scriptFile.absolutePath)}"
             val result = Shell.Builder.create()
                 .setFlags(Shell.FLAG_MOUNT_MASTER or Shell.FLAG_REDIRECT_STDERR)
-                .setTimeout(300)
+                .setTimeout(300L)
                 .build()
                 .newJob()
                 .add(script)
@@ -126,11 +126,11 @@ object RootUtils {
         return result.out.firstOrNull() ?: "N/A"
     }
 
-    fun reboot(): ShellResult = execRootScript("svc power reboot || reboot", timeoutSeconds = 15)
+    fun reboot(): ShellResult = execRootScript("svc power reboot || reboot", timeoutSeconds = 15L)
 
     data class ShellResult(val success: Boolean, val output: List<String>)
 
-    private fun execRootScript(script: String, timeoutSeconds: Int): ShellResult {
+    private fun execRootScript(script: String, timeoutSeconds: Long): ShellResult {
         val result = Shell.Builder.create()
             .setFlags(Shell.FLAG_MOUNT_MASTER or Shell.FLAG_REDIRECT_STDERR)
             .setTimeout(timeoutSeconds)
