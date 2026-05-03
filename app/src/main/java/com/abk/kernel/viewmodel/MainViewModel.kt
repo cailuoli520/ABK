@@ -69,6 +69,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val github = GitHubRepository()
     private val gson = Gson()
     private var hasSavedBuildConfig = false
+    private var monitoredRunId: Long = -1L
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
@@ -493,6 +494,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             prefs.clearPendingAutoDownloadRunId()
                         }
                         _uiState.update { it.copy(currentRun = run, buildStatus = BuildStatus.QUEUED) }
+                        monitoredRunId = run.id
                         BuildMonitorService.startMonitoring(getApplication(), owner, repo, run.id)
                         return
                     }
@@ -514,11 +516,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             when (val r = github.listRecentRuns(username, repoName, perPage = 30)) {
                 is Result.Success -> {
                     _uiState.update { it.copy(recentRuns = r.data) }
+                    autoMonitorRunningCustomBuild(username, repoName, r.data)
                     refreshArtifactsForRuns(username, repoName, r.data)
                 }
                 else -> {}
             }
         }
+    }
+
+    private suspend fun autoMonitorRunningCustomBuild(
+        owner: String,
+        repoName: String,
+        recentRuns: List<WorkflowRun>
+    ) {
+        val workflowId = when (val wf = github.getWorkflowId(owner, repoName, "kernel-custom.yml")) {
+            is Result.Success -> wf.data
+            else -> return
+        }
+        val workflowRuns = recentRuns.filter { it.workflowId == workflowId }.ifEmpty {
+            when (val customRuns = github.listRecentRuns(owner, repoName, perPage = 10, workflowId = workflowId)) {
+                is Result.Success -> customRuns.data
+                else -> emptyList()
+            }
+        }
+        val running = workflowRuns.firstOrNull { it.isActiveBuildRun() } ?: return
+        if (monitoredRunId == running.id && _uiState.value.currentRun?.id == running.id) return
+
+        monitoredRunId = running.id
+        prefs.saveLastRunId(running.id)
+        if (_uiState.value.autoDownload) {
+            prefs.savePendingAutoDownloadRunId(running.id)
+        }
+        _uiState.update {
+            it.copy(
+                currentRun = running,
+                buildStatus = running.toBuildStatus(),
+                buildProgress = BuildProgress(
+                    percent = if (running.status == "in_progress") 5 else 0,
+                    currentStep = if (running.status == "in_progress") {
+                        "已接管运行中的工作流"
+                    } else {
+                        "发现运行中的工作流，等待 Runner"
+                    }
+                )
+            )
+        }
+        BuildMonitorService.startMonitoring(getApplication(), owner, repoName, running.id)
     }
 
     fun loadArtifacts(runId: Long, autoDownload: Boolean = false) {
@@ -711,6 +754,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
 private fun detectRecommendedBuildConfig(): KernelBuildConfig {
     return KernelSupport.recommendedFromKernel(RootUtils.getKernelVersion())
+}
+
+private fun WorkflowRun.isActiveBuildRun(): Boolean =
+    status in setOf("queued", "waiting", "requested", "pending", "in_progress")
+
+private fun WorkflowRun.toBuildStatus(): BuildStatus = when (status) {
+    "queued", "waiting", "requested", "pending" -> BuildStatus.QUEUED
+    "in_progress" -> BuildStatus.IN_PROGRESS
+    "completed" -> if (conclusion == "success") BuildStatus.SUCCESS else BuildStatus.FAILURE
+    else -> BuildStatus.IDLE
 }
 
 // Helper to convert KernelBuildConfig to workflow dispatch inputs map
