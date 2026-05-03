@@ -132,24 +132,24 @@ object RootUtils {
 
     private fun shellQuote(value: String): String = "'${value.replace("'", "'\"'\"'")}'"
 
-    private const val AK3_FLASH_SCRIPT = """
+    private val AK3_FLASH_SCRIPT = """
 #!/system/bin/sh
 set -e
-unzip -p "$Z" 'tools*/busybox' > "$F/busybox" || { echo "AK3 缺少 busybox"; exit 2; }
-unzip -p "$Z" 'META-INF/com/google/android/update-binary' > "$F/update-binary" || { echo "AK3 缺少 update-binary"; exit 2; }
-chmod 755 "$F/busybox"
-"$F/busybox" chmod 755 "$F/update-binary"
-"$F/busybox" chown root:root "$F/busybox" "$F/update-binary" 2>/dev/null || true
-TMP="$F/tmp"
-"$F/busybox" umount "$TMP" 2>/dev/null || true
-"$F/busybox" rm -rf "$TMP" 2>/dev/null || true
-"$F/busybox" mkdir -p "$TMP"
-"$F/busybox" mount -t tmpfs -o noatime tmpfs "$TMP"
-"$F/busybox" mount | "$F/busybox" grep -q " $TMP " || exit 1
-AKHOME="$TMP/anykernel" "$F/busybox" ash "$F/update-binary" 3 1 "$Z"
-RC=$?
-"$F/busybox" umount "$TMP" 2>/dev/null || true
-"$F/busybox" rm -rf "$TMP" "$F/update-binary" "$F/busybox" 2>/dev/null || true
-exit $RC
+unzip -p "${'$'}Z" 'tools*/busybox' > "${'$'}F/busybox" || { echo "AK3 缺少 busybox"; exit 2; }
+unzip -p "${'$'}Z" 'META-INF/com/google/android/update-binary' > "${'$'}F/update-binary" || { echo "AK3 缺少 update-binary"; exit 2; }
+chmod 755 "${'$'}F/busybox"
+"${'$'}F/busybox" chmod 755 "${'$'}F/update-binary"
+"${'$'}F/busybox" chown root:root "${'$'}F/busybox" "${'$'}F/update-binary" 2>/dev/null || true
+TMP="${'$'}F/tmp"
+"${'$'}F/busybox" umount "${'$'}TMP" 2>/dev/null || true
+"${'$'}F/busybox" rm -rf "${'$'}TMP" 2>/dev/null || true
+"${'$'}F/busybox" mkdir -p "${'$'}TMP"
+"${'$'}F/busybox" mount -t tmpfs -o noatime tmpfs "${'$'}TMP"
+"${'$'}F/busybox" mount | "${'$'}F/busybox" grep -q " ${'$'}TMP " || exit 1
+AKHOME="${'$'}TMP/anykernel" "${'$'}F/busybox" ash "${'$'}F/update-binary" 3 1 "${'$'}Z"
+RC=${'$'}?
+"${'$'}F/busybox" umount "${'$'}TMP" 2>/dev/null || true
+"${'$'}F/busybox" rm -rf "${'$'}TMP" "${'$'}F/update-binary" "${'$'}F/busybox" 2>/dev/null || true
+exit ${'$'}RC
 """
 }

@@ -41,6 +41,13 @@ fun FlashScreen(vm: MainViewModel) {
     var flashLog by remember { mutableStateOf<List<String>>(emptyList()) }
     var showLogDialog by remember { mutableStateOf(false) }
     var flashSuccess by remember { mutableStateOf<Boolean?>(null) }
+    val groupedAvailableArtifacts = remember(state.artifacts) {
+        state.artifacts.filter { !it.expired }
+            .groupBy { DownloadUtils.classifyCategory(DownloadUtils.classifyArtifact(it.name)) }
+    }
+    val downloadedArtifactsByRun = remember(state.downloadedArtifacts) {
+        state.downloadedArtifacts.groupBy { it.runId to it.runTitle.ifBlank { "未关联工作流" } }
+    }
 
     if (showFlashConfirm && selectedItem != null) {
         val item = selectedItem!!
@@ -125,12 +132,8 @@ fun FlashScreen(vm: MainViewModel) {
 
             // ── Available artifacts to download ──
             if (state.buildStatus == BuildStatus.SUCCESS && state.artifacts.isNotEmpty()) {
-                val grouped = remember(state.artifacts) {
-                    state.artifacts.filter { !it.expired }
-                        .groupBy { DownloadUtils.classifyCategory(DownloadUtils.classifyArtifact(it.name)) }
-                }
                 artifactCategoryOrder.forEach { category ->
-                    val artifacts = grouped[category].orEmpty()
+                    val artifacts = groupedAvailableArtifacts[category].orEmpty()
                     if (artifacts.isNotEmpty()) {
                         item("available-${category.name}") {
                             ExpressiveSectionCard(
@@ -169,10 +172,7 @@ fun FlashScreen(vm: MainViewModel) {
 
             // ── Downloaded artifacts ──
             if (state.downloadedArtifacts.isNotEmpty()) {
-                val byRun = remember(state.downloadedArtifacts) {
-                    state.downloadedArtifacts.groupBy { it.runId to it.runTitle.ifBlank { "未关联工作流" } }
-                }
-                byRun.forEach { (runKey, runArtifacts) ->
+                downloadedArtifactsByRun.forEach { (runKey, runArtifacts) ->
                     item("run-${runKey.first}") {
                         ExpressiveSectionCard(
                             title = "工作流 ${if (runArtifacts.first().runNumber > 0) "#${runArtifacts.first().runNumber}" else ""}",
