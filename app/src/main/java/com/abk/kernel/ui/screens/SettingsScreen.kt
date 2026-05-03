@@ -32,6 +32,7 @@ fun SettingsScreen(vm: MainViewModel) {
     val state by vm.uiState.collectAsState()
     val context = LocalContext.current
     var showLogoutDialog by remember { mutableStateOf(false) }
+    var showAboutDialog by remember { mutableStateOf(false) }
 
     if (showLogoutDialog) {
         AlertDialog(
@@ -48,6 +49,13 @@ fun SettingsScreen(vm: MainViewModel) {
             dismissButton = {
                 TextButton(onClick = { showLogoutDialog = false }) { Text(stringResource(R.string.cancel)) }
             }
+        )
+    }
+
+    if (showAboutDialog) {
+        AboutDialog(
+            onDismiss = { showAboutDialog = false },
+            onOpenUrl = { openUrl(context, it) }
         )
     }
 
@@ -166,41 +174,136 @@ fun SettingsScreen(vm: MainViewModel) {
                 )
                 HorizontalDivider()
                 ListItem(
-                    headlineContent = { Text(stringResource(R.string.settings_source_repo)) },
-                    supportingContent = {
-                        Text("${BuildConfig.SOURCE_REPO_OWNER}/${BuildConfig.SOURCE_REPO_NAME}")
-                    },
-                    leadingContent = { Icon(Icons.Default.Code, null) },
-                    trailingContent = { Icon(Icons.Default.OpenInBrowser, null) },
-                    modifier = Modifier.clickable {
-                        openUrl(context, "https://github.com/${BuildConfig.SOURCE_REPO_OWNER}/${BuildConfig.SOURCE_REPO_NAME}")
-                    }
-                )
-                HorizontalDivider()
-                ListItem(
-                    headlineContent = { Text("上游源仓库") },
-                    supportingContent = { Text(BuildConfig.UPSTREAM_REPO_URL) },
-                    leadingContent = { Icon(Icons.Default.ForkRight, null) },
-                    trailingContent = { Icon(Icons.Default.OpenInBrowser, null) },
-                    modifier = Modifier.clickable {
-                        openUrl(context, BuildConfig.UPSTREAM_REPO_URL)
-                    }
-                )
-                HorizontalDivider()
-                ListItem(
-                    headlineContent = { Text("顶层仓库") },
-                    supportingContent = { Text(BuildConfig.TOP_LEVEL_REPO_URL) },
-                    leadingContent = { Icon(Icons.Default.Code, null) },
-                    trailingContent = { Icon(Icons.Default.OpenInBrowser, null) },
-                    modifier = Modifier.clickable {
-                        openUrl(context, BuildConfig.TOP_LEVEL_REPO_URL)
-                    }
+                    headlineContent = { Text("关于") },
+                    supportingContent = { Text("项目入口、源码仓库、上游项目与致谢") },
+                    leadingContent = { Icon(Icons.Default.AutoAwesome, null) },
+                    trailingContent = { Icon(Icons.Default.ChevronRight, null) },
+                    modifier = Modifier.clickable { showAboutDialog = true }
                 )
             }
 
             Spacer(Modifier.height(80.dp))
         }
     }
+}
+
+@Composable
+private fun AboutDialog(
+    onDismiss: () -> Unit,
+    onOpenUrl: (String) -> Unit
+) {
+    val links = remember { aboutLinks() }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Info, null) },
+        title = { Text("关于 ABK") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 460.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    "AnyBase Kernel 用于构建、分发和管理 GKI KernelSU / SUSFS 内核。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                AboutSectionTitle("快速入口")
+                links.filter { it.section == AboutSection.QUICK_LINKS }.forEach {
+                    AboutLinkRow(it, onOpenUrl)
+                }
+                AboutSectionTitle("致谢")
+                Text(
+                    "ABK 基于以下项目、仓库和社区工作继续开发。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                links.filter { it.section == AboutSection.ACKNOWLEDGEMENTS }.forEach {
+                    AboutLinkRow(it, onOpenUrl)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.close))
+            }
+        }
+    )
+}
+
+@Composable
+private fun AboutSectionTitle(title: String) {
+    Text(
+        title,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.primary
+    )
+}
+
+@Composable
+private fun AboutLinkRow(
+    link: AboutLink,
+    onOpenUrl: (String) -> Unit
+) {
+    ListItem(
+        headlineContent = { Text(link.title, fontWeight = FontWeight.SemiBold) },
+        supportingContent = { Text(link.url) },
+        leadingContent = {
+            Icon(
+                if (link.section == AboutSection.QUICK_LINKS) Icons.Default.OpenInBrowser else Icons.Default.Code,
+                null
+            )
+        },
+        trailingContent = { Icon(Icons.Default.OpenInBrowser, null) },
+        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+        modifier = Modifier.clickable { onOpenUrl(link.url) }
+    )
+}
+
+private enum class AboutSection {
+    QUICK_LINKS,
+    ACKNOWLEDGEMENTS
+}
+
+private data class AboutLink(
+    val section: AboutSection,
+    val title: String,
+    val url: String
+)
+
+private fun aboutLinks(): List<AboutLink> {
+    val repoUrl = "https://github.com/${BuildConfig.SOURCE_REPO_OWNER}/${BuildConfig.SOURCE_REPO_NAME}"
+    return listOf(
+        AboutLink(AboutSection.QUICK_LINKS, "本仓库", repoUrl),
+        AboutLink(AboutSection.QUICK_LINKS, "Releases", "$repoUrl/releases"),
+        AboutLink(AboutSection.QUICK_LINKS, "Actions", "$repoUrl/actions"),
+        AboutLink(AboutSection.QUICK_LINKS, "Pages", "https://${BuildConfig.SOURCE_REPO_OWNER}.github.io/${BuildConfig.SOURCE_REPO_NAME}/"),
+        AboutLink(AboutSection.QUICK_LINKS, "ABK App CI", "$repoUrl/actions/workflows/build-abk-app.yml"),
+        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "上游仓库", BuildConfig.UPSTREAM_REPO_URL),
+        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "顶层仓库", BuildConfig.TOP_LEVEL_REPO_URL),
+        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "KernelSU", "https://github.com/tiann/KernelSU"),
+        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "KernelSU Next", "https://github.com/KernelSU-Next/KernelSU-Next"),
+        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "SukiSU Ultra", "https://github.com/SukiSU-Ultra/SukiSU-Ultra"),
+        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "ReSukiSU", "https://github.com/ReSukiSU/ReSukiSU"),
+        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "SUSFS", "https://gitlab.com/simonpunk/susfs4ksu"),
+        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "SUSFS GitHub 镜像/补丁来源", "https://github.com/ShirkNeko/susfs4ksu"),
+        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "SukiSU patch", "https://github.com/ShirkNeko/SukiSU_patch"),
+        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "AnyKernel3", "https://github.com/WildKernels/AnyKernel3"),
+        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "Kernel patches", "https://github.com/WildKernels/kernel_patches"),
+        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "Action-Build", "https://github.com/Numbersf/Action-Build"),
+        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "SUSFS 模块构建来源", "https://github.com/sidex15/susfs4ksu-module"),
+        AboutLink(
+            AboutSection.ACKNOWLEDGEMENTS,
+            "GCC prebuilts",
+            "https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-gnu-6.4.1"
+        ),
+        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "Baseband Guard", "https://github.com/vc-teahouse/Baseband-guard"),
+        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "Re-Kernel", "https://github.com/Sakion-Team/Re-Kernel"),
+        AboutLink(AboutSection.ACKNOWLEDGEMENTS, "KernelSU 官方站点", "https://kernelsu.org/")
+    )
 }
 
 private fun openUrl(context: android.content.Context, url: String) {
