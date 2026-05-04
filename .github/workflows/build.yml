@@ -50,6 +50,10 @@ on:
         required: true
         type: boolean
         default: true
+      use_ddk:
+        required: false
+        type: boolean
+        default: false
       use_kpm:
         required: true
         type: boolean
@@ -112,6 +116,7 @@ jobs:
           echo "ZRAM 完整算法 : ${{ inputs.zram_full_algo }}"
           echo "ZRAM 额外算法 : ${{ inputs.zram_extra_algos || '无' }}"
           echo "BBG 补丁      : ${{ inputs.use_bbg }}"
+          echo "DDK LSM       : ${{ inputs.use_ddk }}"
           echo "KPM 功能      : ${{ inputs.use_kpm }}"
           echo "KPM 密码      : ${{ inputs.kpm_password && '已自定义' || '默认' }}"
           echo "Re-Kernel     : ${{ inputs.use_rekernel }}"
@@ -1101,6 +1106,13 @@ jobs:
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
           echo "CONFIG_BBG=y" >> common/arch/arm64/configs/gki_defconfig
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' common/security/Kconfig
+
+      - name: 添加 DDK 防格机 LSM
+        if: inputs.use_ddk
+        working-directory: ${{ env.KERNEL_ROOT }}
+        run: |
+          bash "$ZZH_PATCHES/ddk/setup.sh"
+          grep -q '^CONFIG_XINGGUANG_DDK=y$' "$DEFCONFIG" || echo "CONFIG_XINGGUANG_DDK=y" >> "$DEFCONFIG"
 
       - name: 应用 Re-Kernel
         if: inputs.use_rekernel

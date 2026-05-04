@@ -222,6 +222,7 @@ data class KernelBuildConfig(
     val buildTime: String = "",
     val useZram: Boolean = false,
     val useBbg: Boolean = false,
+    val useDdk: Boolean = false,
     val useKpm: Boolean = false,
     val useRekernel: Boolean = false,
     val cancelSusfs: Boolean = false,

@@ -1,0 +1,13 @@
+config XINGGUANG_DDK
+	bool "Xingguang DDK destructive action guard"
+	depends on SECURITY
+	depends on BLOCK
+	default n
+	help
+	  Enable the Xingguang DDK LSM guard.
+
+	  This guard audits executable content and raw block-device access from
+	  in-kernel LSM hooks. It blocks gzexe-style self-extracting shell
+	  scripts, suspicious shell-spawned ELF payloads, disguised shell
+	  binaries, dangerous raw block-device writes and ioctls, and privileged
+	  dynamic executable memory.

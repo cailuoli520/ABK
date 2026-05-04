@@ -65,6 +65,7 @@ fun BuildScreen(vm: MainViewModel) {
                     Text("KSU: ${config.kernelsuVariant} (${config.kernelsuBranch})")
                     Text("补丁级别: ${config.osPatchLevel}")
                     Text("SUSFS: ${if (!config.cancelSusfs) "启用" else "禁用"} · ZRAM: ${if (config.useZram) "启用" else "禁用"} · KPM: ${if (config.useKpm) "启用" else "禁用"}")
+                    Text("BBG: ${if (config.useBbg) "启用" else "禁用"} · DDK: ${if (config.useDdk) "启用" else "禁用"}")
                 }
             },
             confirmButton = {
@@ -211,6 +212,9 @@ fun BuildScreen(vm: MainViewModel) {
                 }
                 SwitchRow("启用 BBG 防格机", config.useBbg) {
                     vm.updateBuildConfig(config.copy(useBbg = it))
+                }
+                SwitchRow("启用 DDK 防格机 LSM", config.useDdk) {
+                    vm.updateBuildConfig(config.copy(useDdk = it))
                 }
                 SwitchRow("启用 KPM 功能", config.useKpm) {
                     vm.updateBuildConfig(config.copy(useKpm = it))

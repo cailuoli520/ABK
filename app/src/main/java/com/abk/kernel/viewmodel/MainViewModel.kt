@@ -1008,6 +1008,7 @@ private fun KernelBuildConfig.toInputMap(): Map<String, String> = mapOf(
     "build_time" to buildTime,
     "use_zram" to useZram.toString(),
     "use_bbg" to useBbg.toString(),
+    "use_ddk" to useDdk.toString(),
     "use_kpm" to useKpm.toString(),
     "use_rekernel" to useRekernel.toString(),
     "cancel_susfs" to cancelSusfs.toString(),
