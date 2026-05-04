@@ -391,23 +391,13 @@ static bool xg_path_triggers_enforced(const char *path)
 	return xg_name_is_root_manager_token(base);
 }
 
-static bool xg_current_comm_triggers_enforced(void)
-{
-	return xg_name_is_root_manager_token(current->comm);
-}
-
 static void xg_maybe_enforce_for_root_manager(const char *hook,
 					      const char *path)
 {
 	if (xg_stage_is_enforced())
 		return;
 
-	if (xg_path_triggers_enforced(path)) {
-		xg_enter_enforced(hook, path);
-		return;
-	}
-
-	if (xg_current_comm_triggers_enforced())
+	if (xg_path_triggers_enforced(path))
 		xg_enter_enforced(hook, path);
 }
 
@@ -1448,11 +1438,6 @@ static bool xg_raw_block_should_block(struct file *file, bool destructive_ioctl,
 		return false;
 	}
 
-	if (destructive_ioctl && !xg_bdev_is_zram(bdev)) {
-		*reason = "destructive raw block-device ioctl";
-		return true;
-	}
-
 	return false;
 }
 
@@ -1802,12 +1787,18 @@ static bool xg_raw_write_should_block(struct file *file, loff_t pos,
 
 	if ((u64)pos < XG_EARLY_WINDOW_BYTES &&
 	    count > XG_GENERIC_BULK_WRITE_LIMIT) {
-		reason = "oversized early raw block-device write";
-		goto block;
+		xg_log_audited_access(hook,
+				      "oversized early raw block-device write",
+				      file, bdev, (u64)pos, count, 0);
+		return false;
 	}
 
-	if (xg_flow_should_block(dev, pos, count, &reason))
-		goto block;
+	if (xg_flow_should_block(dev, pos, count, &reason)) {
+		xg_log_audited_access(
+		    hook, reason ? reason : "generic early raw block-device flow",
+		    file, bdev, (u64)pos, count, 0);
+		return false;
+	}
 
 	return false;
 
@@ -1919,8 +1910,12 @@ int xg_ddk_blkdev_ioctl(struct block_device *bdev, unsigned int cmd)
 		reason = "protected firmware partition ioctl";
 	else if (part_class == XG_PART_RADIO_NV)
 		reason = "protected radio NV partition ioctl";
-	else if (!xg_bdev_is_zram(bdev))
-		reason = "destructive raw block-device ioctl";
+	else if (!xg_bdev_is_zram(bdev)) {
+		xg_log_audited_access("blkdev_ioctl",
+				      "destructive raw block-device ioctl", NULL,
+				      bdev, 0, 0, cmd);
+		return 0;
+	}
 
 	if (!reason)
 		return 0;
@@ -1933,6 +1928,8 @@ int xg_ddk_blkdev_fallocate(struct file *file, int mode, loff_t start,
 			    loff_t len)
 {
 	struct block_device *bdev = xg_file_bdev(file);
+	enum xg_part_class part_class;
+	const char *reason = NULL;
 	u64 count = len > 0 ? (u64)len : 0;
 
 	if (!bdev)
@@ -1945,15 +1942,29 @@ int xg_ddk_blkdev_fallocate(struct file *file, int mode, loff_t start,
 		return 0;
 	}
 
-	xg_log_blocked_access("blkdev_fallocate", "raw block-device fallocate",
-			      file, bdev, start < 0 ? 0 : (u64)start, count,
-			      0);
+	part_class = xg_classify_bdev(bdev);
+	if (part_class == XG_PART_FIRMWARE)
+		reason = "protected firmware partition fallocate";
+	else if (part_class == XG_PART_RADIO_NV)
+		reason = "protected radio NV partition fallocate";
+
+	if (!reason) {
+		xg_log_audited_access("blkdev_fallocate",
+				      "raw block-device fallocate", file, bdev,
+				      start < 0 ? 0 : (u64)start, count, 0);
+		return 0;
+	}
+
+	xg_log_blocked_access("blkdev_fallocate", reason, file, bdev,
+			      start < 0 ? 0 : (u64)start, count, 0);
 	return -EPERM;
 }
 
 int xg_ddk_blkdev_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	struct block_device *bdev = xg_file_bdev(file);
+	enum xg_part_class part_class;
+	const char *reason = NULL;
 
 	if (!bdev || !vma || !(vma->vm_flags & VM_WRITE))
 		return 0;
@@ -1965,9 +1976,20 @@ int xg_ddk_blkdev_mmap(struct file *file, struct vm_area_struct *vma)
 		return 0;
 	}
 
-	xg_log_blocked_access("blkdev_mmap",
-			      "writable raw block-device mmap", file, bdev, 0,
-			      0, 0);
+	part_class = xg_classify_bdev(bdev);
+	if (part_class == XG_PART_FIRMWARE)
+		reason = "protected firmware partition writable mmap";
+	else if (part_class == XG_PART_RADIO_NV)
+		reason = "protected radio NV partition writable mmap";
+
+	if (!reason) {
+		xg_log_audited_access("blkdev_mmap",
+				      "writable raw block-device mmap", file,
+				      bdev, 0, 0, 0);
+		return 0;
+	}
+
+	xg_log_blocked_access("blkdev_mmap", reason, file, bdev, 0, 0, 0);
 	return -EPERM;
 }
 
@@ -2252,6 +2274,7 @@ static int xg_file_permission(struct file *file, int mask)
 
 static int xg_file_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
+	struct block_device *bdev;
 	const char *reason = NULL;
 
 	if (!file || !xg_is_destructive_blk_ioctl(cmd))
@@ -2262,10 +2285,19 @@ static int xg_file_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		return 0;
 
 	if (!xg_raw_block_should_block(file, true, &reason))
-		return 0;
+		goto audit_generic;
 
 	xg_log_blocked_access("file_ioctl", reason, file, NULL, 0, 0, cmd);
 	return -EPERM;
+
+audit_generic:
+	bdev = xg_file_bdev(file);
+	if (bdev && xg_classify_bdev(bdev) == XG_PART_GENERIC &&
+	    !xg_bdev_is_zram(bdev))
+		xg_log_audited_access("file_ioctl",
+				      "destructive raw block-device ioctl", file,
+				      bdev, 0, 0, cmd);
+	return 0;
 }
 
 static int xg_mmap_file(struct file *file, unsigned long reqprot,
@@ -2409,6 +2441,18 @@ static bool xg_load_data_id_is_module(enum kernel_load_data_id id)
 	return id == LOADING_MODULE;
 }
 
+static void xg_log_module_load_audit(const char *hook, const char *path)
+{
+	unsigned int path_len =
+	    path ? strnlen(path, XG_EXEC_PATH_LOG_BYTES) : 0;
+
+	pr_info_ratelimited(XG_TAG ": audited module load via %s stage=%s "
+				   "pid=%d uid=%u comm=%s path=%.*s\n",
+			    hook, xg_stage_name(xg_current_stage()), current->pid,
+			    __kuid_val(current_uid()), current->comm,
+			    (int)path_len, path ? path : "");
+}
+
 static int xg_kernel_read_file(struct file *file, enum kernel_read_file_id id,
 			       bool contents)
 {
@@ -2419,9 +2463,9 @@ static int xg_kernel_read_file(struct file *file, enum kernel_read_file_id id,
 		path = xg_file_path(file, path_buf, sizeof(path_buf));
 
 	if (xg_read_file_id_is_module(id))
-		xg_enter_enforced("kernel_read_file module load", path);
-	else
-		xg_maybe_enforce_for_root_manager("kernel_read_file", path);
+		xg_log_module_load_audit("kernel_read_file", path);
+
+	xg_maybe_enforce_for_root_manager("kernel_read_file", path);
 
 	return 0;
 }
@@ -2429,7 +2473,7 @@ static int xg_kernel_read_file(struct file *file, enum kernel_read_file_id id,
 static int xg_kernel_load_data(enum kernel_load_data_id id, bool contents)
 {
 	if (xg_load_data_id_is_module(id))
-		xg_enter_enforced("kernel_load_data module load", NULL);
+		xg_log_module_load_audit("kernel_load_data", NULL);
 	else
 		xg_maybe_enforce_for_root_manager("kernel_load_data", NULL);
 
