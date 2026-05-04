@@ -2120,11 +2120,6 @@ static const char *xg_exec_block_reason(const char *path,
 		return "ELF disguised as .sh";
 
 	if (xg_block_disguised_shell_exec && features->elf && shell_name &&
-	    xg_path_is_trusted_system_shell(path, base) &&
-	    !features->trusted_system_shell)
-		return "untrusted system shell identity";
-
-	if (xg_block_disguised_shell_exec && features->elf && shell_name &&
 	    (features->elf_no_sections || features->elf_packed_layout))
 		return "suspicious ELF shell payload";
 
