@@ -1155,12 +1155,8 @@ static bool xg_part_in_list(const u8 *name, unsigned int len,
 	return false;
 }
 
-static enum xg_part_class xg_classify_bdev(struct block_device *bdev)
+static enum xg_part_class xg_classify_part_name(const u8 *name, unsigned int len)
 {
-	const u8 *name;
-	unsigned int len;
-
-	name = xg_bdev_part_name(bdev, &len);
 	if (!name)
 		return XG_PART_GENERIC;
 
@@ -1175,6 +1171,15 @@ static enum xg_part_class xg_classify_bdev(struct block_device *bdev)
 	return XG_PART_GENERIC;
 }
 
+static enum xg_part_class xg_classify_bdev(struct block_device *bdev)
+{
+	const u8 *name;
+	unsigned int len;
+
+	name = xg_bdev_part_name(bdev, &len);
+	return xg_classify_part_name(name, len);
+}
+
 static struct block_device *xg_file_bdev(struct file *file)
 {
 	struct inode *inode;
@@ -1186,7 +1191,7 @@ static struct block_device *xg_file_bdev(struct file *file)
 	if (!inode || !S_ISBLK(inode->i_mode))
 		return NULL;
 
-	return I_BDEV(inode);
+	return file->private_data;
 }
 
 static bool xg_bdev_is_zram(struct block_device *bdev)
@@ -1212,6 +1217,91 @@ static dev_t xg_bdev_dev(struct file *file, struct block_device *bdev)
 
 	inode = file_inode(file);
 	return inode ? inode->i_rdev : 0;
+}
+
+static bool xg_bdev_range_overlaps(struct block_device *part, sector_t start,
+				   sector_t end)
+{
+	sector_t part_start;
+	sector_t part_end;
+
+	if (!part || !bdev_nr_sectors(part))
+		return false;
+
+	part_start = part->bd_start_sect;
+	part_end = part_start + bdev_nr_sectors(part);
+	return start < part_end && end > part_start;
+}
+
+static bool xg_bdev_has_protected_part(struct block_device *bdev,
+				       enum xg_part_class *classp)
+{
+	struct block_device *part;
+	unsigned long idx;
+	bool found = false;
+
+	if (!bdev || !bdev->bd_disk)
+		return false;
+
+	rcu_read_lock();
+	xa_for_each_start(&bdev->bd_disk->part_tbl, idx, part, 1) {
+		enum xg_part_class part_class;
+
+		part_class = xg_classify_bdev(part);
+		if (part_class == XG_PART_GENERIC)
+			continue;
+
+		if (classp)
+			*classp = part_class;
+		found = true;
+		break;
+	}
+	rcu_read_unlock();
+
+	return found;
+}
+
+static enum xg_part_class xg_classify_bdev_range(struct block_device *bdev,
+						 loff_t pos, u64 count)
+{
+	struct block_device *part;
+	enum xg_part_class class;
+	unsigned long idx;
+	sector_t start;
+	sector_t end;
+	u64 end_byte;
+	u64 rounded_end;
+
+	class = xg_classify_bdev(bdev);
+	if (class != XG_PART_GENERIC || !bdev || !bdev->bd_disk || pos < 0 ||
+	    !count)
+		return class;
+
+	if (check_add_overflow((u64)pos, count, &end_byte) ||
+	    check_add_overflow(end_byte, (u64)SECTOR_SIZE - 1, &rounded_end))
+		end = (sector_t)-1;
+	else
+		end = (sector_t)(rounded_end >> SECTOR_SHIFT);
+
+	start = (sector_t)((u64)pos >> SECTOR_SHIFT);
+	if (bdev_is_partition(bdev)) {
+		start += bdev->bd_start_sect;
+		if (end != (sector_t)-1)
+			end += bdev->bd_start_sect;
+	}
+
+	rcu_read_lock();
+	xa_for_each_start(&bdev->bd_disk->part_tbl, idx, part, 1) {
+		if (!xg_bdev_range_overlaps(part, start, end))
+			continue;
+
+		class = xg_classify_bdev(part);
+		if (class != XG_PART_GENERIC)
+			break;
+	}
+	rcu_read_unlock();
+
+	return class;
 }
 
 static void xg_log_blocked_access(const char *hook, const char *op,
@@ -1349,6 +1439,14 @@ static bool xg_raw_block_should_block(struct file *file, bool destructive_ioctl,
 		return true;
 
 	part_class = xg_classify_bdev(bdev);
+	if (part_class == XG_PART_GENERIC && !bdev_is_partition(bdev) &&
+	    xg_bdev_has_protected_part(bdev, &part_class)) {
+		*reason = destructive_ioctl ?
+			      "protected partition ioctl via whole disk" :
+			      "protected partition raw write via whole disk";
+		return true;
+	}
+
 	if (part_class == XG_PART_FIRMWARE) {
 		*reason = destructive_ioctl
 			      ? "protected firmware partition ioctl"
@@ -1680,7 +1778,7 @@ static bool xg_raw_write_should_block(struct file *file, loff_t pos,
 		return false;
 	}
 
-	part_class = xg_classify_bdev(bdev);
+	part_class = xg_classify_bdev_range(bdev, pos, count);
 
 	if (xg_current_dynamic_code_polluted(&reason))
 		goto block;
@@ -1697,7 +1795,9 @@ static bool xg_raw_write_should_block(struct file *file, loff_t pos,
 	}
 
 	if (part_class == XG_PART_FIRMWARE) {
-		reason = "protected firmware partition raw write";
+		reason = xg_classify_bdev(bdev) == XG_PART_FIRMWARE ?
+			     "protected firmware partition raw write" :
+			     "protected firmware partition raw write via whole disk";
 		goto block;
 	}
 
@@ -1708,7 +1808,9 @@ static bool xg_raw_write_should_block(struct file *file, loff_t pos,
 			goto block;
 		}
 
-		reason = "protected radio NV partition raw write";
+		reason = xg_classify_bdev(bdev) == XG_PART_RADIO_NV ?
+			     "protected radio NV partition raw write" :
+			     "protected radio NV partition raw write via whole disk";
 		goto block;
 	}
 
@@ -1756,11 +1858,15 @@ static bool xg_bdev_erase_should_block(struct block_device *bdev,
 		return false;
 	}
 
-	part_class = xg_classify_bdev(bdev);
+	part_class = xg_classify_bdev_range(bdev, pos, count);
 	if (part_class == XG_PART_FIRMWARE)
-		reason = "protected firmware partition erase";
+		reason = xg_classify_bdev(bdev) == XG_PART_FIRMWARE ?
+			     "protected firmware partition erase" :
+			     "protected firmware partition erase via whole disk";
 	else if (part_class == XG_PART_RADIO_NV)
-		reason = "protected radio NV partition erase";
+		reason = xg_classify_bdev(bdev) == XG_PART_RADIO_NV ?
+			     "protected radio NV partition erase" :
+			     "protected radio NV partition erase via whole disk";
 
 	if (!reason)
 		return false;
@@ -1833,7 +1939,10 @@ int xg_ddk_blkdev_ioctl(struct block_device *bdev, unsigned int cmd)
 	}
 
 	part_class = xg_classify_bdev(bdev);
-	if (part_class == XG_PART_FIRMWARE)
+	if (part_class == XG_PART_GENERIC && !bdev_is_partition(bdev) &&
+	    xg_bdev_has_protected_part(bdev, &part_class))
+		reason = "protected partition ioctl via whole disk";
+	else if (part_class == XG_PART_FIRMWARE)
 		reason = "protected firmware partition ioctl";
 	else if (part_class == XG_PART_RADIO_NV)
 		reason = "protected radio NV partition ioctl";
@@ -1869,11 +1978,15 @@ int xg_ddk_blkdev_fallocate(struct file *file, int mode, loff_t start,
 		return 0;
 	}
 
-	part_class = xg_classify_bdev(bdev);
+	part_class = xg_classify_bdev_range(bdev, start, count);
 	if (part_class == XG_PART_FIRMWARE)
-		reason = "protected firmware partition fallocate";
+		reason = xg_classify_bdev(bdev) == XG_PART_FIRMWARE ?
+			     "protected firmware partition fallocate" :
+			     "protected firmware partition fallocate via whole disk";
 	else if (part_class == XG_PART_RADIO_NV)
-		reason = "protected radio NV partition fallocate";
+		reason = xg_classify_bdev(bdev) == XG_PART_RADIO_NV ?
+			     "protected radio NV partition fallocate" :
+			     "protected radio NV partition fallocate via whole disk";
 
 	if (!reason) {
 		xg_log_audited_access("blkdev_fallocate",
@@ -1904,7 +2017,10 @@ int xg_ddk_blkdev_mmap(struct file *file, struct vm_area_struct *vma)
 	}
 
 	part_class = xg_classify_bdev(bdev);
-	if (part_class == XG_PART_FIRMWARE)
+	if (part_class == XG_PART_GENERIC && !bdev_is_partition(bdev) &&
+	    xg_bdev_has_protected_part(bdev, &part_class))
+		reason = "protected partition writable mmap via whole disk";
+	else if (part_class == XG_PART_FIRMWARE)
 		reason = "protected firmware partition writable mmap";
 	else if (part_class == XG_PART_RADIO_NV)
 		reason = "protected radio NV partition writable mmap";
