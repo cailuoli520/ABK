@@ -5,7 +5,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.net.Uri
 import android.os.Build
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -66,11 +65,7 @@ data class MainUiState(
     val autoDownload: Boolean = true,
     val notifyBuild: Boolean = true,
     val themeMode: String = "dark",
-    val downloadMirrorBaseUrl: String = "",
-    val showWorkflowEnableDialog: Boolean = false,
-    val workflowEnableChecking: Boolean = false,
-    val workflowEnableMessage: String = "",
-    val workflowActionsUrl: String? = null
+    val downloadMirrorBaseUrl: String = ""
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -82,7 +77,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var monitoredRunId: Long = -1L
     private val preparedMirrorArtifacts = mutableMapOf<Long, Set<String>>()
     private val artifactDownloadJobs = mutableMapOf<Long, Job>()
-    private var hasShownWorkflowEnablePrompt = false
+    private var hasCheckedWorkflowEnablementThisLaunch = false
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
@@ -153,7 +148,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                 } else {
-                    hasShownWorkflowEnablePrompt = false
+                    hasCheckedWorkflowEnablementThisLaunch = false
                     _uiState.update {
                         it.copy(
                             isLoggedIn = false,
@@ -376,7 +371,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun logout() {
         viewModelScope.launch {
             prefs.clearAuth()
-            hasShownWorkflowEnablePrompt = false
+            hasCheckedWorkflowEnablementThisLaunch = false
             _uiState.update {
                 MainUiState(
                     rootGranted = it.rootGranted,
@@ -425,6 +420,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 showSyncDialog = behind > 0
                             )
                         }
+                        ensureBuildWorkflowEnabled()
                         if (behind == 0) finishSetup()
                     }
                 }
@@ -474,40 +470,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun finishSetup() {
         _uiState.update { it.copy(authStep = AuthStep.READY) }
         loadRecentRuns()
-        prepareWorkflowEnablePrompt()
+        ensureBuildWorkflowEnabled()
     }
 
-    private fun prepareWorkflowEnablePrompt() {
-        if (hasShownWorkflowEnablePrompt) return
+    private fun ensureBuildWorkflowEnabled() {
+        if (hasCheckedWorkflowEnablementThisLaunch) return
         val state = _uiState.value
         val owner = state.user?.login ?: return
         val repo = state.forkRepo ?: return
-        hasShownWorkflowEnablePrompt = true
+        hasCheckedWorkflowEnablementThisLaunch = true
         viewModelScope.launch {
             when (val workflow = github.getWorkflow(owner, repo.name, KERNEL_WORKFLOW_FILE)) {
                 is Result.Success -> {
                     if (workflow.data.state == "active") {
                         return@launch
                     }
-                    _uiState.update {
-                        it.copy(
-                            showWorkflowEnableDialog = true,
-                            workflowEnableChecking = true,
-                            workflowEnableMessage = "正在通过 GitHub API 启用构建工作流...",
-                            workflowActionsUrl = "${repo.htmlUrl}/actions"
-                        )
-                    }
-                    val message = when (val enabled = github.enableWorkflow(owner, repo.name, workflow.data.id)) {
-                        is Result.Success -> "已通过 GitHub API 请求启用构建工作流。请打开 Actions 页面确认工作流状态。"
-                        is Result.Error -> "自动启用工作流失败: ${enabled.message}。请打开 Actions 页面手动启用。"
-                        Result.Loading -> "正在启用构建工作流..."
-                    }
-                    _uiState.update {
-                        it.copy(
-                            workflowEnableChecking = false,
-                            workflowEnableMessage = message
-                        )
-                    }
+                    github.enableWorkflow(owner, repo.name, workflow.data.id)
                 }
                 is Result.Error -> {}
                 Result.Loading -> {}
@@ -1088,31 +1066,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         prefs.clearPendingAutoDownloadRunId()
         targets.forEach { startArtifactDownload(it) }
-    }
-
-    fun openWorkflowActionsPage() {
-        val actionsUrl = _uiState.value.workflowActionsUrl
-        if (!actionsUrl.isNullOrBlank()) {
-            openUrl(actionsUrl)
-            return
-        }
-        val repo = _uiState.value.forkRepo ?: return
-        openActionsPage(repo)
-    }
-
-    fun dismissWorkflowEnableDialog() {
-        _uiState.update { it.copy(showWorkflowEnableDialog = false) }
-    }
-
-    private fun openActionsPage(repo: GitHubRepo) {
-        openUrl("${repo.htmlUrl}/actions")
-    }
-
-    private fun openUrl(url: String) {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        runCatching { getApplication<Application>().startActivity(intent) }
     }
 
     // ── Settings ──────────────────────────────────────────────────────────

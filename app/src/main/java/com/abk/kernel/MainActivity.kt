@@ -40,7 +40,6 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -251,18 +250,6 @@ private fun AbkMainScaffold(vm: MainViewModel) {
         }
     }
 
-    if (state.showWorkflowEnableDialog) {
-        WorkflowEnableDialog(
-            checking = state.workflowEnableChecking,
-            message = state.workflowEnableMessage,
-            onOpenActions = {
-                vm.openWorkflowActionsPage()
-                vm.dismissWorkflowEnableDialog()
-            },
-            onDismiss = vm::dismissWorkflowEnableDialog
-        )
-    }
-
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
         bottomBar = {
@@ -349,41 +336,6 @@ private fun AbkMainScaffold(vm: MainViewModel) {
             }
         }
     }
-}
-
-@Composable
-private fun WorkflowEnableDialog(
-    checking: Boolean,
-    message: String,
-    onOpenActions: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("启用 GitHub Actions 工作流") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("GitHub 首次运行 fork 仓库的 Actions 时，可能需要在网页端手动启用工作流。")
-                if (checking) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
-                Text(
-                    message.ifBlank { "请打开 Actions 页面确认工作流状态。" },
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        },
-        confirmButton = {
-            Button(onClick = onOpenActions) {
-                Text("打开 Actions 页面")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("稍后")
-            }
-        }
-    )
 }
 
 private fun AbkTab.displayLabel(rootGranted: Boolean): String = when (this) {
