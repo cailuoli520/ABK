@@ -1,0 +1,168 @@
+name: 全属性内核构建矩阵
+
+permissions:
+  contents: write
+  actions: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernelsu_variant:
+        description: "KernelSU 变体"
+        required: true
+        type: choice
+        options:
+          - ReSukiSU
+          - SukiSU
+        default: ReSukiSU
+      kernelsu_branch:
+        description: "KSU 分支"
+        required: true
+        type: choice
+        options:
+          - Stable(标准)
+          - Dev(开发)
+          - Other(其他/指定)
+        default: Dev(开发)
+      version:
+        description: "自定义版本名 (可选)"
+        required: false
+        type: string
+        default: ""
+      build_time:
+        description: "自定义构建时间 (可选，N或留空=当前UTC)"
+        required: false
+        type: string
+        default: "Sun Dec 01 08:10:00 UTC 2024"
+      kpm_password:
+        description: "自定义 KPM 超级密码（留空=使用默认密码）"
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  prepare-matrix:
+    name: 准备内核小版本矩阵
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.kernel-matrix.outputs.matrix }}
+      count: ${{ steps.kernel-matrix.outputs.count }}
+    steps:
+      - name: 检出代码仓库
+        uses: actions/checkout@v6
+
+      - name: 生成矩阵
+        id: kernel-matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 <<'PY'
+          import json
+          import os
+          import re
+          from collections import Counter
+          from pathlib import Path
+
+          build_yml = Path(".github/workflows/build.yml").read_text(encoding="utf-8")
+          match = re.search(
+              r"KNOWN_KERNEL_PAIRS=\$\(cat <<'EOF'\n(.*?)\n\s*EOF\n\s*\)",
+              build_yml,
+              re.S,
+          )
+          if not match:
+              raise SystemExit("KNOWN_KERNEL_PAIRS block not found in build.yml")
+
+          latest = {}
+          for raw_line in match.group(1).splitlines():
+              line = raw_line.strip()
+              if not line:
+                  continue
+              parts = line.split()
+              if len(parts) != 4:
+                  continue
+
+              android_version, kernel_version, sub_level, os_patch_level = parts
+              if sub_level == "X" or os_patch_level == "lts":
+                  continue
+
+              row = {
+                  "android_version": android_version,
+                  "kernel_version": kernel_version,
+                  "sub_level": sub_level,
+                  "os_patch_level": os_patch_level,
+              }
+              key = (android_version, kernel_version, sub_level)
+              if key not in latest or os_patch_level > latest[key]["os_patch_level"]:
+                  latest[key] = row
+
+          android_order = {
+              "android12": 12,
+              "android13": 13,
+              "android14": 14,
+              "android15": 15,
+              "android16": 16,
+          }
+
+          def version_key(value):
+              return tuple(int(part) for part in value.split("."))
+
+          def sort_key(row):
+              return (
+                  android_order.get(row["android_version"], 999),
+                  version_key(row["kernel_version"]),
+                  int(row["sub_level"]),
+              )
+
+          matrix = sorted(latest.values(), key=sort_key)
+          matrix_json = json.dumps({"include": matrix}, separators=(",", ":"))
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"matrix={matrix_json}\n")
+              output.write(f"count={len(matrix)}\n")
+
+          counts = Counter(f'{row["android_version"]}-{row["kernel_version"]}' for row in matrix)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("## 全属性内核构建矩阵\n\n")
+              summary.write(f"- 总任务数: {len(matrix)}\n")
+              summary.write("- Droidspaces: off\n")
+              summary.write("- 自定义外部模块: off\n")
+              summary.write("- LTS: 已排除\n\n")
+              for combo in sorted(counts):
+                  summary.write(f"- {combo}: {counts[combo]}\n")
+
+          print(matrix_json)
+          PY
+
+  build-full-feature-matrix:
+    name: "${{ matrix.kernel_version }}.${{ matrix.sub_level }}-${{ matrix.android_version }}-${{ matrix.os_patch_level }}"
+    needs: prepare-matrix
+    if: ${{ needs.prepare-matrix.outputs.count != '0' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJson(needs.prepare-matrix.outputs.matrix) }}
+    uses: ./.github/workflows/build.yml
+    secrets: inherit
+    with:
+      android_version: ${{ matrix.android_version }}
+      kernel_version: ${{ matrix.kernel_version }}
+      sub_level: ${{ matrix.sub_level }}
+      os_patch_level: ${{ matrix.os_patch_level }}
+      ksu_variant: ${{ inputs.kernelsu_variant }}
+      ksu_branch: ${{ inputs.kernelsu_branch }}
+      version: ${{ inputs.version || '' }}
+      build_time: ${{ inputs.build_time || '' }}
+      use_zram: true
+      use_bbg: true
+      use_ddk: true
+      use_kpm: true
+      use_rekernel: true
+      enable_susfs: true
+      supp_op: true
+      droidspaces: "off"
+      zram_full_algo: true
+      zram_extra_algos: ""
+      kpm_password: ${{ inputs.kpm_password || '' }}
+      use_custom_external_modules: false
+      custom_external_modules: ""
