@@ -169,7 +169,7 @@ fun SettingsScreen(vm: MainViewModel) {
             SettingsGroup(title = stringResource(R.string.settings_about)) {
                 ListItem(
                     headlineContent = { Text(stringResource(R.string.app_full_name)) },
-                    supportingContent = { Text("ABK v${BuildConfig.VERSION_NAME}") },
+                    supportingContent = { Text("AnyBase Kernel v${BuildConfig.VERSION_NAME}") },
                     leadingContent = { Icon(Icons.Default.Info, null) }
                 )
                 HorizontalDivider()
@@ -196,7 +196,7 @@ private fun AboutDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Info, null) },
-        title = { Text("关于 ABK") },
+        title = { Text("关于 AnyBase Kernel") },
         text = {
             Column(
                 modifier = Modifier
@@ -301,7 +301,7 @@ private fun SettingsHero(
     themeMode: String
 ) {
     ExpressiveHeroCard(
-        title = login?.let { "已连接 GitHub：$it" } ?: "ABK 设置中心",
+        title = login?.let { "已连接 GitHub：$it" } ?: "AnyBase Kernel 设置中心",
         subtitle = forkName ?: "管理构建自动化、通知、主题和仓库来源。",
         icon = Icons.Default.Tune,
         containerColor = MaterialTheme.colorScheme.primaryContainer,
