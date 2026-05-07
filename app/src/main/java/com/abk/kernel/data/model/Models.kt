@@ -209,6 +209,26 @@ data class WorkflowsResponse(
     val workflows: List<Workflow>
 )
 
+object CustomExternalModuleStage {
+    const val AFTER_PATCH = "after_patch"
+    const val BEFORE_BUILD = "before_build"
+
+    val options = listOf(AFTER_PATCH, BEFORE_BUILD)
+
+    fun normalize(stage: String): String = when (
+        stage.trim().lowercase().replace('-', '_').replace(' ', '_')
+    ) {
+        AFTER_PATCH -> AFTER_PATCH
+        BEFORE_BUILD, "befor_build" -> BEFORE_BUILD
+        else -> AFTER_PATCH
+    }
+}
+
+data class CustomExternalModule(
+    val url: String = "",
+    val stage: String = CustomExternalModuleStage.AFTER_PATCH
+)
+
 // App-level build config model (mirrors kernel-custom.yml inputs)
 data class KernelBuildConfig(
     val androidVersion: String = "android12",
@@ -229,7 +249,9 @@ data class KernelBuildConfig(
     val suppOp: Boolean = false,
     val zramFullAlgo: Boolean = false,
     val zramExtraAlgos: String = "",
-    val kpmPassword: String = ""
+    val kpmPassword: String = "",
+    val useCustomExternalModules: Boolean = false,
+    val customExternalModules: List<CustomExternalModule> = emptyList()
 )
 
 data class DownloadedArtifact(

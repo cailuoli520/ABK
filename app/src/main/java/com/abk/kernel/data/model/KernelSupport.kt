@@ -174,7 +174,19 @@ object KernelSupport {
             androidVersion = line.androidVersion,
             kernelVersion = line.kernelVersion,
             subLevel = subLevel,
-            osPatchLevel = osPatch
+            osPatchLevel = osPatch,
+            customExternalModules = config.customExternalModules.orEmpty()
+                .mapNotNull { module ->
+                    val url = module.url.trim()
+                    if (url.isBlank()) {
+                        null
+                    } else {
+                        module.copy(
+                            url = url,
+                            stage = CustomExternalModuleStage.normalize(module.stage)
+                        )
+                    }
+                }
         )
     }
 

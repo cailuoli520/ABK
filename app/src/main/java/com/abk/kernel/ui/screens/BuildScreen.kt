@@ -20,11 +20,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.abk.kernel.R
 import com.abk.kernel.data.model.BuildProgress
 import com.abk.kernel.data.model.BuildStepProgress
 import com.abk.kernel.data.model.BuildStatus
+import com.abk.kernel.data.model.CustomExternalModule
+import com.abk.kernel.data.model.CustomExternalModuleStage
 import com.abk.kernel.data.model.KernelSupport
 import com.abk.kernel.data.model.KernelBuildConfig
 import com.abk.kernel.ui.components.ExpressiveHeroCard
@@ -48,6 +51,8 @@ fun BuildScreen(vm: MainViewModel) {
         KernelSupport.patchLevelOptions(config.androidVersion, config.kernelVersion, config.subLevel)
     }
     var showConfirmDialog by remember { mutableStateOf(false) }
+    var customModuleUrl by remember { mutableStateOf("") }
+    var customModuleStage by remember { mutableStateOf(CustomExternalModuleStage.AFTER_PATCH) }
 
     LaunchedEffect(config, rawConfig) {
         if (config != rawConfig) vm.updateBuildConfig(config)
@@ -66,6 +71,11 @@ fun BuildScreen(vm: MainViewModel) {
                     Text("补丁级别: ${config.osPatchLevel}")
                     Text("SUSFS: ${if (!config.cancelSusfs) "启用" else "禁用"} · ZRAM: ${if (config.useZram) "启用" else "禁用"} · KPM: ${if (config.useKpm) "启用" else "禁用"}")
                     Text("BBG: ${if (config.useBbg) "启用" else "禁用"} · DDK: ${if (config.useDdk) "启用" else "禁用"}")
+                    Text(
+                        "外部模块: ${
+                            if (config.useCustomExternalModules) "${config.customExternalModules.size} 个" else "未启用"
+                        }"
+                    )
                 }
             },
             confirmButton = {
@@ -259,6 +269,99 @@ fun BuildScreen(vm: MainViewModel) {
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
+                }
+            }
+
+            // ── 自定义外部模块 ───────────────────────────────────────────
+            SectionCard(title = "自定义外部模块") {
+                SwitchRow("启用自定义外部模块", config.useCustomExternalModules) {
+                    vm.updateBuildConfig(config.copy(useCustomExternalModules = it))
+                }
+                AnimatedVisibility(config.useCustomExternalModules) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            value = customModuleUrl,
+                            onValueChange = { customModuleUrl = it },
+                            label = { Text("仓库链接") },
+                            placeholder = { Text("https://github.com/user/module") },
+                            shape = FieldShape(),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        DropdownField(
+                            label = "注入阶段",
+                            value = customModuleStage,
+                            options = CustomExternalModuleStage.options,
+                            onSelect = { customModuleStage = it }
+                        )
+                        Button(
+                            onClick = {
+                                val cleanUrl = customModuleUrl.trim()
+                                if (cleanUrl.isNotEmpty()) {
+                                    vm.updateBuildConfig(
+                                        config.copy(
+                                            customExternalModules = config.customExternalModules + CustomExternalModule(
+                                                url = cleanUrl,
+                                                stage = customModuleStage
+                                            )
+                                        )
+                                    )
+                                    customModuleUrl = ""
+                                }
+                            },
+                            enabled = customModuleUrl.isNotBlank(),
+                            shape = FieldShape(),
+                            modifier = Modifier.fillMaxWidth().height(48.dp)
+                        ) {
+                            Icon(Icons.Default.Add, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("添加模块")
+                        }
+
+                        config.customExternalModules.forEachIndexed { index, module ->
+                            Surface(
+                                shape = RoundedCornerShape(18.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        Text(
+                                            CustomExternalModuleStage.normalize(module.stage),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            module.url,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            vm.updateBuildConfig(
+                                                config.copy(
+                                                    customExternalModules = config.customExternalModules
+                                                        .filterIndexed { i, _ -> i != index }
+                                                )
+                                            )
+                                        }
+                                    ) {
+                                        Icon(Icons.Default.Delete, null)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -485,6 +588,7 @@ fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
             "功能开关" -> "按需开启模块能力，越少改动越利于排查问题。"
             "ZRAM 扩展选项" -> "为内存压缩算法加入额外内核支持。"
             "KPM 扩展选项" -> "用于 KPM 功能的可选安全参数。"
+            "自定义外部模块" -> "按阶段执行外部仓库根目录的 setup.sh。"
             else -> "这些字段会被保存，下次打开不会重置。"
         },
         icon = when (title) {
@@ -493,6 +597,7 @@ fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
             "功能开关" -> Icons.Default.Tune
             "ZRAM 扩展选项" -> Icons.Default.Compress
             "KPM 扩展选项" -> Icons.Default.Key
+            "自定义外部模块" -> Icons.Default.Extension
             else -> Icons.Default.Edit
         },
         content = content

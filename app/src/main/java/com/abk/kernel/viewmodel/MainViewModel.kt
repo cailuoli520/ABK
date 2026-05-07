@@ -1015,8 +1015,21 @@ private fun KernelBuildConfig.toInputMap(): Map<String, String> = mapOf(
     "supp_op" to suppOp.toString(),
     "zram_full_algo" to zramFullAlgo.toString(),
     "zram_extra_algos" to zramExtraAlgos,
-    "kpm_password" to kpmPassword
+    "kpm_password" to kpmPassword,
+    "use_custom_external_modules" to useCustomExternalModules.toString(),
+    "custom_external_modules" to if (useCustomExternalModules) customExternalModules.toWorkflowInput() else ""
 )
+
+private fun List<CustomExternalModule>?.toWorkflowInput(): String = this.orEmpty()
+    .mapNotNull { module ->
+        val url = module.url.trim()
+        if (url.isBlank()) {
+            null
+        } else {
+            "$url;${CustomExternalModuleStage.normalize(module.stage)}"
+        }
+    }
+    .joinToString("|")
 
 private const val MAX_REMOTE_ARTIFACT_RUNS = 30
 private const val MAX_PERSISTED_REMOTE_ARTIFACTS = 240

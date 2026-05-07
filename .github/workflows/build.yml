@@ -87,6 +87,16 @@ on:
         type: string
         default: ""
 
+      # ==================== 自定义外部模块 ====================
+      use_custom_external_modules:
+        required: false
+        type: boolean
+        default: false
+      custom_external_modules:
+        required: false
+        type: string
+        default: ""
+
 jobs:
   build-kernel:
     name: "${{ inputs.kernel_version }}.${{ inputs.sub_level }}-${{ inputs.android_version }}-${{ inputs.os_patch_level }}-${{ inputs.ksu_variant }}"
@@ -120,6 +130,7 @@ jobs:
           echo "KPM 功能      : ${{ inputs.use_kpm }}"
           echo "KPM 密码      : ${{ inputs.kpm_password && '已自定义' || '默认' }}"
           echo "Re-Kernel     : ${{ inputs.use_rekernel }}"
+          echo "自定义注入    : ${{ inputs.use_custom_external_modules }}"
           echo "Stock Config  : 自动检测 config/stock_defconfig"
           echo "========================================"
 
@@ -330,6 +341,7 @@ jobs:
           KERNEL_PATCHES=$GITHUB_WORKSPACE/kernel_patches
           SUKISU_PATCHES=$GITHUB_WORKSPACE/SukiSU_patch
           ZZH_PATCHES=$GITHUB_WORKSPACE
+          CUSTOM_EXTERNAL_MODULES_MANIFEST=$GITHUB_WORKSPACE/custom_external_modules.tsv
           ANYKERNEL3=$GITHUB_WORKSPACE/AnyKernel3
           ACTION_BUILD=$GITHUB_WORKSPACE/Action-Build
           AVBTOOL=$GITHUB_WORKSPACE/kernel-build-tools/linux-x86/bin/avbtool
@@ -448,6 +460,94 @@ jobs:
           git clone https://github.com/ShirkNeko/SukiSU_patch.git
           echo "使用当前仓库补丁目录: $ZZH_PATCHES"
           git clone https://github.com/Numbersf/Action-Build.git --depth=1
+
+      - name: 克隆自定义外部模块
+        if: inputs.use_custom_external_modules
+        env:
+          CUSTOM_EXTERNAL_MODULES: ${{ inputs.custom_external_modules }}
+        run: |
+          set -euo pipefail
+
+          trim() {
+            sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
+          }
+
+          normalize_stage() {
+            local raw="$1"
+            local stage
+            stage=$(printf '%s' "$raw" | tr '[:upper:] -' '[:lower:]__')
+            case "$stage" in
+              after_patch)
+                printf '%s\n' "after_patch"
+                ;;
+              before_build|befor_build)
+                printf '%s\n' "before_build"
+                ;;
+              *)
+                return 1
+                ;;
+            esac
+          }
+
+          modules_input="$(printf '%s' "$CUSTOM_EXTERNAL_MODULES" | tr -d '\r')"
+          manifest="$CUSTOM_EXTERNAL_MODULES_MANIFEST"
+          : > "$manifest"
+
+          if [ -z "$(printf '%s' "$modules_input" | trim)" ]; then
+            echo "已启用自定义外部模块，但未配置模块字符串，跳过克隆。"
+            exit 0
+          fi
+
+          IFS='|' read -r -a module_blocks <<< "$modules_input"
+          index=0
+          for block in "${module_blocks[@]}"; do
+            block="$(printf '%s' "$block" | trim)"
+            [ -n "$block" ] || continue
+
+            if [[ "$block" != *";"* ]]; then
+              echo "::error::自定义外部模块格式错误，缺少分号: $block"
+              exit 1
+            fi
+
+            repo_url="$(printf '%s' "${block%%;*}" | trim)"
+            stage_raw="$(printf '%s' "${block#*;}" | trim)"
+
+            if [ -z "$repo_url" ] || [ -z "$stage_raw" ]; then
+              echo "::error::自定义外部模块格式错误，链接或阶段为空: $block"
+              exit 1
+            fi
+
+            case "$repo_url" in
+              http://*|https://*|git://*|ssh://*|git@*) ;;
+              *)
+                echo "::error::自定义外部模块链接不支持: $repo_url"
+                exit 1
+                ;;
+            esac
+
+            if ! stage="$(normalize_stage "$stage_raw")"; then
+              echo "::error::自定义外部模块阶段不支持: $stage_raw（仅支持 after_patch / before_build）"
+              exit 1
+            fi
+
+            index=$((index + 1))
+            repo_name="${repo_url##*/}"
+            repo_name="${repo_name%.git}"
+            repo_name="$(printf '%s' "$repo_name" | sed 's/[^A-Za-z0-9._-]/_/g')"
+            [ -n "$repo_name" ] || repo_name="module"
+            module_dir="$GITHUB_WORKSPACE/custom_external_module_$(printf '%02d' "$index")-$repo_name"
+
+            echo "克隆自定义外部模块 #$index ($stage): $repo_url"
+            git clone --depth 1 "$repo_url" "$module_dir"
+            printf '%s\t%s\t%s\n' "$stage" "$module_dir" "$repo_url" >> "$manifest"
+          done
+
+          if [ ! -s "$manifest" ]; then
+            echo "未解析到有效自定义外部模块。"
+          else
+            echo "自定义外部模块清单:"
+            cut -f1,3 "$manifest"
+          fi
 
       - name: 初始化并同步内核源码
         working-directory: ${{ env.KERNEL_ROOT }}
@@ -1176,6 +1276,43 @@ jobs:
           grep -q '^CONFIG_REKERNEL=y$' "$DEFCONFIG" || echo "CONFIG_REKERNEL=y" >> "$DEFCONFIG"
           grep -q '^CONFIG_REKERNEL_NETWORK=y$' "$DEFCONFIG" || echo "CONFIG_REKERNEL_NETWORK=y" >> "$DEFCONFIG"
 
+      - name: 执行自定义外部模块 (after_patch)
+        if: inputs.use_custom_external_modules
+        env:
+          CUSTOM_EXTERNAL_MODULE_STAGE: after_patch
+        run: |
+          set -euo pipefail
+
+          manifest="$CUSTOM_EXTERNAL_MODULES_MANIFEST"
+          if [ ! -s "$manifest" ]; then
+            echo "未找到自定义外部模块清单，跳过 $CUSTOM_EXTERNAL_MODULE_STAGE。"
+            exit 0
+          fi
+
+          executed=0
+          while IFS=$'\t' read -r stage module_dir repo_url; do
+            [ "$stage" = "$CUSTOM_EXTERNAL_MODULE_STAGE" ] || continue
+
+            setup="$module_dir/setup.sh"
+            if [ ! -f "$setup" ]; then
+              echo "::error::自定义外部模块缺少入口文件 setup.sh: $repo_url ($module_dir)"
+              exit 1
+            fi
+
+            chmod +x "$setup"
+            echo "::group::执行自定义外部模块 [$stage] $repo_url"
+            (
+              cd "$module_dir"
+              bash "$setup"
+            )
+            echo "::endgroup::"
+            executed=$((executed + 1))
+          done < "$manifest"
+
+          if [ "$executed" -eq 0 ]; then
+            echo "没有配置 $CUSTOM_EXTERNAL_MODULE_STAGE 阶段的自定义外部模块。"
+          fi
+
       - name: 配置内核选项
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
@@ -1297,6 +1434,43 @@ jobs:
                 perl -0777 -pi -e "s{cat <<EOF}{cat <<EOF\n#undef UTS_VERSION\n#define UTS_VERSION \"#1 SMP PREEMPT $DATESTR\" } unless /UTS_VERSION/" "$f"
               fi
             fi
+          fi
+
+      - name: 执行自定义外部模块 (before_build)
+        if: inputs.use_custom_external_modules
+        env:
+          CUSTOM_EXTERNAL_MODULE_STAGE: before_build
+        run: |
+          set -euo pipefail
+
+          manifest="$CUSTOM_EXTERNAL_MODULES_MANIFEST"
+          if [ ! -s "$manifest" ]; then
+            echo "未找到自定义外部模块清单，跳过 $CUSTOM_EXTERNAL_MODULE_STAGE。"
+            exit 0
+          fi
+
+          executed=0
+          while IFS=$'\t' read -r stage module_dir repo_url; do
+            [ "$stage" = "$CUSTOM_EXTERNAL_MODULE_STAGE" ] || continue
+
+            setup="$module_dir/setup.sh"
+            if [ ! -f "$setup" ]; then
+              echo "::error::自定义外部模块缺少入口文件 setup.sh: $repo_url ($module_dir)"
+              exit 1
+            fi
+
+            chmod +x "$setup"
+            echo "::group::执行自定义外部模块 [$stage] $repo_url"
+            (
+              cd "$module_dir"
+              bash "$setup"
+            )
+            echo "::endgroup::"
+            executed=$((executed + 1))
+          done < "$manifest"
+
+          if [ "$executed" -eq 0 ]; then
+            echo "没有配置 $CUSTOM_EXTERNAL_MODULE_STAGE 阶段的自定义外部模块。"
           fi
 
       - name: 编译内核
