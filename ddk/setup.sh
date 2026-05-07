@@ -27,6 +27,78 @@ if [ ! -d "$SRC_DIR" ]; then
 	exit 127
 fi
 
+function_has_call() {
+	file="$1"
+	signature="$2"
+	marker="$3"
+	awk -v signature="$signature" -v marker="$marker" '
+		$0 ~ "^[[:space:]]*" signature "\\(" { in_func=1 }
+		in_func && index($0, marker) { found=1; exit }
+		in_func && /^}/ { exit }
+		END { exit found ? 0 : 1 }
+	' "$file"
+}
+
+ensure_ddk_include() {
+	file="$1"
+	include='#include <linux/xingguang_ddk.h>'
+
+	if [ ! -f "$file" ]; then
+		echo "[ERROR] DDK target file not found: $file"
+		return 1
+	fi
+
+	if grep -qF "$include" "$file"; then
+		return 0
+	fi
+
+	if ! grep -q '^#include "blk.h"$' "$file"; then
+		echo "[ERROR] DDK include anchor not found in $file"
+		return 1
+	fi
+
+	sed -i '/^#include "blk.h"$/a\
+#include <linux/xingguang_ddk.h>' "$file"
+}
+
+apply_ddk_0030_compat() {
+	ioctl_file="$COMMON_ROOT/block/ioctl.c"
+	blk_lib_file="$COMMON_ROOT/block/blk-lib.c"
+
+	ensure_ddk_include "$ioctl_file" || return 1
+	ensure_ddk_include "$blk_lib_file" || return 1
+
+	if ! function_has_call "$ioctl_file" "long blkdev_ioctl" "xg_ddk_blkdev_ioctl(bdev, cmd)"; then
+		perl -0pi -e 's/(long blkdev_ioctl\s*\([^)]*\)\s*\{.*?\n\s*int ret;\n)(\s*switch \(cmd\) \{)/$1\n\tret = xg_ddk_blkdev_ioctl(bdev, cmd);\n\tif (ret)\n\t\treturn ret;\n$2/s or die "blkdev_ioctl anchor not found\n";' "$ioctl_file" || return 1
+	fi
+
+	if ! function_has_call "$ioctl_file" "long compat_blkdev_ioctl" "xg_ddk_blkdev_ioctl(bdev, cmd)"; then
+		perl -0pi -e 's/(long compat_blkdev_ioctl\s*\([^)]*\)\s*\{.*?\n\s*(?:blk_mode_t|fmode_t) mode = [^\n]+;\n)(\s*switch \(cmd\) \{)/$1\n\tret = xg_ddk_blkdev_ioctl(bdev, cmd);\n\tif (ret)\n\t\treturn ret;\n$2/s or die "compat_blkdev_ioctl anchor not found\n";' "$ioctl_file" || return 1
+	fi
+
+	if ! function_has_call "$blk_lib_file" "int __blkdev_issue_discard" "xg_ddk_blkdev_issue_discard(bdev, sector, nr_sects)"; then
+		if function_has_call "$blk_lib_file" "int __blkdev_issue_discard" "int ret;"; then
+			perl -0pi -e 's/(int __blkdev_issue_discard\s*\([^)]*\)\s*\{.*?\n)(\s*if \(bdev_read_only\(bdev\)\))/$1\tret = xg_ddk_blkdev_issue_discard(bdev, sector, nr_sects);\n\tif (ret)\n\t\treturn ret;\n\n$2/s or die "__blkdev_issue_discard anchor not found\n";' "$blk_lib_file" || return 1
+		else
+			perl -0pi -e 's/(int __blkdev_issue_discard\s*\([^)]*\)\s*\{.*?\n\s*sector_t bs_mask;\n)(\s*if \(bdev_read_only\(bdev\)\))/$1\tint ret;\n\n\tret = xg_ddk_blkdev_issue_discard(bdev, sector, nr_sects);\n\tif (ret)\n\t\treturn ret;\n\n$2/s or die "__blkdev_issue_discard anchor not found\n";' "$blk_lib_file" || return 1
+		fi
+	fi
+
+	if ! function_has_call "$blk_lib_file" "int __blkdev_issue_zeroout" "xg_ddk_blkdev_issue_zeroout(bdev, sector, nr_sects)"; then
+		perl -0pi -e 's/(int __blkdev_issue_zeroout\s*\([^)]*\)\s*\{.*?\n\s*sector_t bs_mask;\n)(\s*bs_mask = )/$1\n\tret = xg_ddk_blkdev_issue_zeroout(bdev, sector, nr_sects);\n\tif (ret)\n\t\treturn ret;\n\n$2/s or die "__blkdev_issue_zeroout anchor not found\n";' "$blk_lib_file" || return 1
+	fi
+
+	if ! function_has_call "$blk_lib_file" "int blkdev_issue_zeroout" "xg_ddk_blkdev_issue_zeroout(bdev, sector, nr_sects)"; then
+		perl -0pi -e 's/(int blkdev_issue_zeroout\s*\([^)]*\)\s*\{.*?\n\s*bool try_write_zeroes = !!bdev_write_zeroes_sectors\(bdev\);\n)(\s*bs_mask = )/$1\n\tret = xg_ddk_blkdev_issue_zeroout(bdev, sector, nr_sects);\n\tif (ret)\n\t\treturn ret;\n\n$2/s or die "blkdev_issue_zeroout anchor not found\n";' "$blk_lib_file" || return 1
+	fi
+
+	function_has_call "$ioctl_file" "long blkdev_ioctl" "xg_ddk_blkdev_ioctl(bdev, cmd)" || return 1
+	function_has_call "$ioctl_file" "long compat_blkdev_ioctl" "xg_ddk_blkdev_ioctl(bdev, cmd)" || return 1
+	function_has_call "$blk_lib_file" "int __blkdev_issue_discard" "xg_ddk_blkdev_issue_discard(bdev, sector, nr_sects)" || return 1
+	function_has_call "$blk_lib_file" "int __blkdev_issue_zeroout" "xg_ddk_blkdev_issue_zeroout(bdev, sector, nr_sects)" || return 1
+	function_has_call "$blk_lib_file" "int blkdev_issue_zeroout" "xg_ddk_blkdev_issue_zeroout(bdev, sector, nr_sects)" || return 1
+}
+
 echo "[+] Setting up Xingguang DDK LSM"
 
 if [ -d "$PATCH_DIR" ]; then
@@ -43,6 +115,8 @@ if [ -d "$PATCH_DIR" ]; then
 			echo " - applied $name"
 		elif git -C "$COMMON_ROOT" apply --reverse --check "$patch" >/dev/null 2>&1; then
 			echo " - already applied $name"
+		elif [ "$name" = "0030-block-ioctl-erase-callsite.patch" ] && apply_ddk_0030_compat; then
+			echo " - applied $name (compat)"
 		elif [ "$optional" = true ]; then
 			echo " - skipped optional $name"
 		else
