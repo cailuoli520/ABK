@@ -110,16 +110,26 @@ class GitHubRepository(
 
     // ── Workflows ─────────────────────────────────────────────────────────
 
-    suspend fun getWorkflowId(owner: String, repo: String, workflowFile: String): Result<Long> {
+    suspend fun getWorkflow(owner: String, repo: String, workflowFile: String): Result<Workflow> {
         val api = apiService ?: return Result.Error("Not authenticated")
         return runCatching {
             val resp = api.listWorkflows(owner, repo)
             if (resp.isSuccessful) {
                 val wf = resp.body()?.workflows?.find { it.path.endsWith(workflowFile) }
-                if (wf != null) Result.Success(wf.id)
+                if (wf != null) Result.Success(wf)
                 else Result.Error("Workflow $workflowFile not found")
-            } else Result.Error("List workflows failed: ${resp.code()}", resp.code())
+            } else {
+                Result.Error("List workflows failed: ${resp.code()}", resp.code())
+            }
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
+    }
+
+    suspend fun getWorkflowId(owner: String, repo: String, workflowFile: String): Result<Long> {
+        return when (val result = getWorkflow(owner, repo, workflowFile)) {
+            is Result.Success -> Result.Success(result.data.id)
+            is Result.Error -> result
+            Result.Loading -> Result.Loading
+        }
     }
 
     suspend fun dispatchWorkflow(

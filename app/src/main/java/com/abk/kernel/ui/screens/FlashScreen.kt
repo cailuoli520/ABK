@@ -154,7 +154,7 @@ fun FlashScreen(vm: MainViewModel) {
                 "无法打开文件",
                 listOf(
                     "${'$'} open ${item.filePath}",
-                    "系统没有可用应用处理该文件，或 FileProvider 授权失败。",
+                    "没有可用应用打开该文件，或 FileProvider 授权失败。",
                     "文件: ${item.name}"
                 )
             )
@@ -246,6 +246,20 @@ fun FlashScreen(vm: MainViewModel) {
         )
     }
 
+    state.error?.let { error ->
+        AlertDialog(
+            onDismissRequest = { vm.clearError() },
+            icon = { Icon(Icons.Default.Error, null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("操作失败") },
+            text = { Text(error) },
+            confirmButton = {
+                TextButton(onClick = { vm.clearError() }) {
+                    Text("知道了")
+                }
+            }
+        )
+    }
+
     deleteFileTarget?.let { item ->
         AlertDialog(
             onDismissRequest = { deleteFileTarget = null },
@@ -279,7 +293,12 @@ fun FlashScreen(vm: MainViewModel) {
                             if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}"
                         }"
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { deleteRemoteWorkflowRun = !deleteRemoteWorkflowRun },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Checkbox(
                             checked = deleteRemoteWorkflowRun,
                             onCheckedChange = { deleteRemoteWorkflowRun = it }
@@ -291,8 +310,10 @@ fun FlashScreen(vm: MainViewModel) {
             confirmButton = {
                 Button(
                     onClick = {
-                        vm.deleteWorkflowArtifacts(group.runId, deleteRemoteWorkflowRun)
-                        if (selectedRunId == group.runId) selectedRunId = null
+                        val targetRunId = group.runId
+                        val shouldDeleteRemoteRun = deleteRemoteWorkflowRun
+                        vm.deleteWorkflowArtifacts(targetRunId, shouldDeleteRemoteRun)
+                        if (selectedRunId == targetRunId) selectedRunId = null
                         deleteWorkflowTarget = null
                         deleteRemoteWorkflowRun = false
                     },
@@ -782,6 +803,13 @@ private fun DownloadedOutputRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            IconButton(onClick = onDelete) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "删除文件",
+                    tint = MaterialTheme.colorScheme.error
+                )
+            }
         }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
@@ -828,15 +856,6 @@ private fun DownloadedOutputRow(
                     }
                     else -> {}
                 }
-            }
-            OutlinedButton(
-                onClick = onDelete,
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.weight(1f).height(42.dp)
-            ) {
-                Icon(Icons.Default.Delete, null, modifier = Modifier.size(17.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("删除")
             }
         }
     }

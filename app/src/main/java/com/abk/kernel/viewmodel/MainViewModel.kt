@@ -59,13 +59,18 @@ data class MainUiState(
     val isDownloading: Boolean = false,
     val downloadProgress: Map<Long, Int> = emptyMap(),
     val pendingAutoDownloadRunId: Long = -1L,
+    val deletingWorkflowRunId: Long? = null,
     // Settings
     val termsLoaded: Boolean = false,
     val termsAccepted: Boolean = false,
     val autoDownload: Boolean = true,
     val notifyBuild: Boolean = true,
     val themeMode: String = "dark",
-    val downloadMirrorBaseUrl: String = ""
+    val downloadMirrorBaseUrl: String = "",
+    val showWorkflowEnableDialog: Boolean = false,
+    val workflowEnableChecking: Boolean = false,
+    val workflowEnableMessage: String = "",
+    val workflowActionsUrl: String? = null
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -77,6 +82,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var monitoredRunId: Long = -1L
     private val preparedMirrorArtifacts = mutableMapOf<Long, Set<String>>()
     private val artifactDownloadJobs = mutableMapOf<Long, Job>()
+    private var hasShownWorkflowEnablePrompt = false
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
@@ -147,6 +153,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                 } else {
+                    hasShownWorkflowEnablePrompt = false
                     _uiState.update {
                         it.copy(
                             isLoggedIn = false,
@@ -362,6 +369,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun logout() {
         viewModelScope.launch {
             prefs.clearAuth()
+            hasShownWorkflowEnablePrompt = false
             _uiState.update {
                 MainUiState(
                     rootGranted = it.rootGranted,
@@ -426,7 +434,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 is Result.Success -> {
                     prefs.saveForkRepoName(r.data.name)
                     _uiState.update { it.copy(isLoading = false, forkRepo = r.data) }
-                    openActionsPage(r.data)
                     finishSetup()
                 }
                 is Result.Error -> _uiState.update { it.copy(isLoading = false, error = r.message) }
@@ -460,6 +467,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun finishSetup() {
         _uiState.update { it.copy(authStep = AuthStep.READY) }
         loadRecentRuns()
+        prepareWorkflowEnablePrompt()
+    }
+
+    private fun prepareWorkflowEnablePrompt() {
+        if (hasShownWorkflowEnablePrompt) return
+        val state = _uiState.value
+        val owner = state.user?.login ?: return
+        val repo = state.forkRepo ?: return
+        hasShownWorkflowEnablePrompt = true
+        _uiState.update {
+            it.copy(
+                showWorkflowEnableDialog = true,
+                workflowEnableChecking = true,
+                workflowEnableMessage = "正在通过 GitHub API 检查并启用构建工作流...",
+                workflowActionsUrl = "${repo.htmlUrl}/actions"
+            )
+        }
+        viewModelScope.launch {
+            val message = when (val workflow = github.getWorkflow(owner, repo.name, KERNEL_WORKFLOW_FILE)) {
+                is Result.Success -> {
+                    if (workflow.data.state == "active") {
+                        "构建工作流已处于启用状态。首次使用仍建议打开 Actions 页面确认 GitHub 是否要求手动启用。"
+                    } else {
+                        when (val enabled = github.enableWorkflow(owner, repo.name, workflow.data.id)) {
+                            is Result.Success -> "已通过 GitHub API 请求启用构建工作流。请打开 Actions 页面确认工作流状态。"
+                            is Result.Error -> "自动启用工作流失败: ${enabled.message}。请打开 Actions 页面手动启用。"
+                            Result.Loading -> "正在启用构建工作流..."
+                        }
+                    }
+                }
+                is Result.Error -> "无法检查构建工作流: ${workflow.message}。请打开 Actions 页面确认 fork 已同步。"
+                Result.Loading -> "正在检查构建工作流..."
+            }
+            _uiState.update {
+                it.copy(
+                    workflowEnableChecking = false,
+                    workflowEnableMessage = message
+                )
+            }
+        }
     }
 
     // ── Build ─────────────────────────────────────────────────────────────
@@ -472,7 +519,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val ref = state.forkRepo?.defaultBranch ?: "main"
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
-            val wfResult = github.getWorkflowId(username, repoName, "kernel-custom.yml")
+            val wfResult = github.getWorkflowId(username, repoName, KERNEL_WORKFLOW_FILE)
             if (wfResult is Result.Error) {
                 _uiState.update { it.copy(isLoading = false, error = wfResult.message) }
                 return@launch
@@ -557,7 +604,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repoName: String,
         recentRuns: List<WorkflowRun>
     ) {
-        val workflowId = when (val wf = github.getWorkflowId(owner, repoName, "kernel-custom.yml")) {
+        val workflowId = when (val wf = github.getWorkflowId(owner, repoName, KERNEL_WORKFLOW_FILE)) {
             is Result.Success -> wf.data
             else -> return
         }
@@ -657,55 +704,66 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteWorkflowArtifacts(runId: Long, deleteRemoteRun: Boolean) {
+        val shouldDeleteRemoteRun = deleteRemoteRun
         viewModelScope.launch {
-            if (deleteRemoteRun) {
-                val owner = _uiState.value.user?.login
-                val repoName = _uiState.value.forkRepo?.name
-                if (owner.isNullOrBlank() || repoName.isNullOrBlank()) {
-                    _uiState.update { it.copy(error = "无法删除远程工作流记录: 仓库信息不完整") }
-                    return@launch
-                }
-                when (val result = github.deleteWorkflowRun(owner, repoName, runId)) {
-                    is Result.Error -> {
-                        _uiState.update { it.copy(error = "删除远程工作流记录失败: ${result.message}") }
+            _uiState.update { it.copy(deletingWorkflowRunId = runId, error = null) }
+            try {
+                if (shouldDeleteRemoteRun) {
+                    val owner = _uiState.value.user?.login
+                    val repoName = _uiState.value.forkRepo?.name
+                    if (owner.isNullOrBlank() || repoName.isNullOrBlank()) {
+                        _uiState.update { it.copy(error = "无法删除远程工作流记录: 仓库信息不完整") }
                         return@launch
                     }
-                    else -> {}
+                    when (val result = github.deleteWorkflowRun(owner, repoName, runId)) {
+                        is Result.Error -> {
+                            _uiState.update { it.copy(error = "删除远程工作流记录失败: ${result.message}") }
+                            return@launch
+                        }
+                        else -> {}
+                    }
+                }
+
+                val currentDownloads = _uiState.value.downloadedArtifacts
+                currentDownloads
+                    .filter { it.runId == runId }
+                    .forEach(::deleteDownloadedFile)
+
+                val updatedDownloads = currentDownloads
+                    .filterNot { it.runId == runId }
+                    .sortedDownloadedForDisplay()
+                val removedRemoteIds = _uiState.value.artifacts
+                    .filter { it.runId == runId }
+                    .map { it.id }
+                    .toSet()
+                removedRemoteIds.forEach { artifactId ->
+                    artifactDownloadJobs[artifactId]?.cancel()
+                    artifactDownloadJobs.remove(artifactId)
+                }
+                val updatedRemote = _uiState.value.artifacts
+                    .filterNot { it.runId == runId }
+                    .sortedForDisplay()
+
+                _uiState.update { state ->
+                    state.copy(
+                        downloadedArtifacts = updatedDownloads,
+                        artifacts = updatedRemote,
+                        downloadProgress = state.downloadProgress.filterKeys { it !in removedRemoteIds },
+                        recentRuns = state.recentRuns.filterNot { it.id == runId },
+                        currentRun = state.currentRun?.takeUnless { it.id == runId },
+                        buildStatus = if (state.currentRun?.id == runId) BuildStatus.IDLE else state.buildStatus
+                    )
+                }
+                if (_uiState.value.pendingAutoDownloadRunId == runId) {
+                    prefs.clearPendingAutoDownloadRunId()
+                }
+                prefs.saveDownloadedArtifactsJson(gson.toJson(updatedDownloads))
+                prefs.saveRemoteArtifactsJson(gson.toJson(updatedRemote))
+            } finally {
+                _uiState.update {
+                    if (it.deletingWorkflowRunId == runId) it.copy(deletingWorkflowRunId = null) else it
                 }
             }
-
-            val currentDownloads = _uiState.value.downloadedArtifacts
-            currentDownloads
-                .filter { it.runId == runId }
-                .forEach(::deleteDownloadedFile)
-
-            val updatedDownloads = currentDownloads
-                .filterNot { it.runId == runId }
-                .sortedDownloadedForDisplay()
-            val removedRemoteIds = _uiState.value.artifacts
-                .filter { it.runId == runId }
-                .map { it.id }
-                .toSet()
-            removedRemoteIds.forEach { artifactId ->
-                artifactDownloadJobs[artifactId]?.cancel()
-                artifactDownloadJobs.remove(artifactId)
-            }
-            val updatedRemote = _uiState.value.artifacts
-                .filterNot { it.runId == runId }
-                .sortedForDisplay()
-
-            _uiState.update { state ->
-                state.copy(
-                    downloadedArtifacts = updatedDownloads,
-                    artifacts = updatedRemote,
-                    downloadProgress = state.downloadProgress.filterKeys { it !in removedRemoteIds }
-                )
-            }
-            if (_uiState.value.pendingAutoDownloadRunId == runId) {
-                prefs.clearPendingAutoDownloadRunId()
-            }
-            prefs.saveDownloadedArtifactsJson(gson.toJson(updatedDownloads))
-            prefs.saveRemoteArtifactsJson(gson.toJson(updatedRemote))
         }
     }
 
@@ -1026,8 +1084,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         targets.forEach { startArtifactDownload(it) }
     }
 
+    fun openWorkflowActionsPage() {
+        val actionsUrl = _uiState.value.workflowActionsUrl
+        if (!actionsUrl.isNullOrBlank()) {
+            openUrl(actionsUrl)
+            return
+        }
+        val repo = _uiState.value.forkRepo ?: return
+        openActionsPage(repo)
+    }
+
+    fun dismissWorkflowEnableDialog() {
+        _uiState.update { it.copy(showWorkflowEnableDialog = false) }
+    }
+
     private fun openActionsPage(repo: GitHubRepo) {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("${repo.htmlUrl}/actions")).apply {
+        openUrl("${repo.htmlUrl}/actions")
+    }
+
+    private fun openUrl(url: String) {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         runCatching { getApplication<Application>().startActivity(intent) }
@@ -1129,6 +1205,7 @@ private fun List<CustomExternalModule>?.toWorkflowInput(): String = this.orEmpty
 
 private const val MAX_REMOTE_ARTIFACT_RUNS = 30
 private const val MAX_PERSISTED_REMOTE_ARTIFACTS = 240
+private const val KERNEL_WORKFLOW_FILE = "kernel-custom.yml"
 private const val MIRROR_WORKFLOW_FILE = "mirror-custom-artifacts.yml"
 private const val MIRROR_WORKFLOW_MAX_POLLS = 40
 private const val MIRROR_RELEASE_ASSET_MAX_POLLS = 6
