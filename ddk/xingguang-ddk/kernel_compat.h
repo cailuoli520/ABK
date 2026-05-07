@@ -9,6 +9,14 @@
 #define XG_DDK_USE_DEFINE_LSM 1
 #endif
 
+#ifndef __ro_after_init
+#define __ro_after_init
+#endif
+
+#ifndef __lsm_ro_after_init
+#define __lsm_ro_after_init __ro_after_init
+#endif
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
 static const struct lsm_id xg_ddk_lsmid = {
     .name = "xingguang_ddk",
