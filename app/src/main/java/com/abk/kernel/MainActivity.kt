@@ -14,17 +14,24 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.RocketLaunch
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -61,23 +68,73 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
 
         setContent {
             val vm: MainViewModel = viewModel()
             val state by vm.uiState.collectAsState()
 
+            LaunchedEffect(state.termsAccepted) {
+                if (state.termsAccepted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+
             AbkTheme(themeMode = state.themeMode) {
-                if (state.authStep != AuthStep.READY) {
-                    AuthGateScreen(vm)
-                } else {
-                    AbkMainScaffold(vm)
+                when {
+                    !state.termsLoaded -> Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.surface
+                    ) {}
+                    !state.termsAccepted -> TermsAgreementDialog(onAccept = vm::acceptTerms)
+                    state.authStep != AuthStep.READY -> AuthGateScreen(vm)
+                    else -> AbkMainScaffold(vm)
                 }
             }
         }
     }
+}
+
+@Composable
+private fun TermsAgreementDialog(onAccept: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = {},
+        title = {
+            Text(
+                text = "用户协议与风险免责声明",
+                style = MaterialTheme.typography.titleLarge
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                TermsText("ABK 用于触发 GitHub Actions 构建、下载、刷写或安装 GKI KernelSU / SUSFS 相关产物。继续使用前，请确认你理解内核修改和刷写的风险。")
+                TermsText("刷写 boot、init_boot、内核镜像或安装底层模块可能导致无法开机、数据损坏、系统异常、保修或售后受限，并可能需要恢复官方镜像、清除数据或重新刷机。所有操作由你自行决定并自行承担后果。")
+                TermsText("你只能在本人拥有或已获得明确授权的设备、账号和仓库中使用 ABK。禁止将本软件、工作流、补丁、构建产物或自定义外部模块用于灰黑产、未授权访问、绕过风控、破坏服务、窃取数据、作弊、恶意隐藏行为或其他违法违规用途。")
+                TermsText("ABK 聚合多个第三方项目、补丁和下载来源。第三方代码、模块、许可证、稳定性和适配性由对应上游负责；ABK 不保证任何构建一定成功、可启动、可刷写或适配你的设备。")
+                TermsText("使用 Root、GitHub 授权、Fork、Actions、自定义外部模块和下载镜像站时，你应自行确认权限范围、脚本内容、仓库可信度和产物来源。执行外部 setup.sh 前尤其应审查代码。")
+                TermsText("开发者和贡献者在法律允许范围内不对因使用、修改、分发或依赖 ABK 造成的设备损坏、数据丢失、账号风险、服务中断、合规问题或任何直接/间接损失承担责任。")
+                TermsText("点击“同意并继续”表示你已阅读、理解并接受以上协议和免责声明。")
+            }
+        },
+        confirmButton = {
+            Button(onClick = onAccept) {
+                Text("同意并继续")
+            }
+        }
+    )
+}
+
+@Composable
+private fun TermsText(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 }
 
 private enum class AbkTab(val label: String) {

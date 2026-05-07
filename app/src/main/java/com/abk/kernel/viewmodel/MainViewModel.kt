@@ -60,6 +60,8 @@ data class MainUiState(
     val downloadProgress: Map<Long, Int> = emptyMap(),
     val pendingAutoDownloadRunId: Long = -1L,
     // Settings
+    val termsLoaded: Boolean = false,
+    val termsAccepted: Boolean = false,
     val autoDownload: Boolean = true,
     val notifyBuild: Boolean = true,
     val themeMode: String = "dark",
@@ -153,6 +155,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             notifyBuild = notify
                         )
                     }
+                }
+            }
+        }
+        viewModelScope.launch {
+            prefs.termsAcceptedVersion.collect { version ->
+                _uiState.update {
+                    it.copy(
+                        termsLoaded = true,
+                        termsAccepted = version >= PreferencesRepository.CURRENT_TERMS_VERSION
+                    )
                 }
             }
         }
@@ -353,7 +365,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 MainUiState(
                     rootGranted = it.rootGranted,
-                    authStep = AuthStep.LOGIN
+                    authStep = AuthStep.LOGIN,
+                    termsLoaded = it.termsLoaded,
+                    termsAccepted = it.termsAccepted,
+                    autoDownload = it.autoDownload,
+                    notifyBuild = it.notifyBuild,
+                    themeMode = it.themeMode,
+                    downloadMirrorBaseUrl = it.downloadMirrorBaseUrl
                 )
             }
         }
@@ -946,6 +964,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
     fun setNotifyBuild(v: Boolean) = viewModelScope.launch { prefs.setNotifyBuild(v) }
     fun setThemeMode(mode: String) = viewModelScope.launch { prefs.setThemeMode(mode) }
+    fun acceptTerms() = viewModelScope.launch { prefs.acceptCurrentTerms() }
     fun setDownloadMirrorBaseUrl(url: String) = viewModelScope.launch {
         prefs.setDownloadMirrorBaseUrl(url.trim())
     }
