@@ -18,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -44,6 +45,7 @@ import java.util.Locale
 @Composable
 fun BuildScreen(vm: MainViewModel) {
     val state by vm.uiState.collectAsState()
+    val uriHandler = LocalUriHandler.current
     val rawConfig = state.buildConfig
     val config = remember(rawConfig) { KernelSupport.normalize(rawConfig) }
     val recommended = state.recommendedBuildConfig
@@ -100,6 +102,43 @@ fun BuildScreen(vm: MainViewModel) {
             },
             dismissButton = {
                 TextButton(onClick = { showConfirmDialog = false }) { Text(stringResource(R.string.cancel)) }
+            }
+        )
+    }
+
+    state.workflowEnablementPrompt?.let { prompt ->
+        AlertDialog(
+            onDismissRequest = { vm.dismissWorkflowEnablementPrompt() },
+            icon = { Icon(Icons.Default.OpenInBrowser, null) },
+            title = { Text("需要启用工作流") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("提交构建前，ABK 无法确认或启用 GitHub Actions 构建工作流。")
+                    Text("请在浏览器中登录 GitHub，并确认当前账号有此 Fork 仓库的 Actions/Workflow 权限。")
+                    Text("打开页面后，如果看到 Enable workflow 或启用工作流，请手动启用，再返回 ABK 重新提交构建。")
+                    Text(
+                        text = "检查结果：${prompt.message}",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        runCatching { uriHandler.openUri(prompt.actionUrl) }
+                        vm.dismissWorkflowEnablementPrompt()
+                    }
+                ) {
+                    Icon(Icons.Default.OpenInBrowser, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("打开 Actions 页面")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { vm.dismissWorkflowEnablementPrompt() }) {
+                    Text("稍后处理")
+                }
             }
         )
     }

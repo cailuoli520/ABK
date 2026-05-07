@@ -31,6 +31,11 @@ import java.io.File
 
 enum class AuthStep { CHECK_ROOT, LOGIN, FORK_CHECK, READY }
 
+data class WorkflowEnablementPrompt(
+    val message: String,
+    val actionUrl: String
+)
+
 data class MainUiState(
     val authStep: AuthStep = AuthStep.LOGIN,
     val rootGranted: Boolean = false,
@@ -53,6 +58,7 @@ data class MainUiState(
     val buildProgress: BuildProgress = BuildProgress(),
     val buildConfig: KernelBuildConfig = KernelBuildConfig(),
     val recommendedBuildConfig: KernelBuildConfig? = null,
+    val workflowEnablementPrompt: WorkflowEnablementPrompt? = null,
     // Download
     val downloadedArtifacts: List<DownloadedArtifact> = emptyList(),
     val artifacts: List<BuildArtifact> = emptyList(),
@@ -490,14 +496,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         repoName: String,
         reportError: Boolean
     ): Long? {
+        val actionUrl = workflowActionsUrl(owner, repoName)
         return when (val workflow = github.getWorkflow(owner, repoName, KERNEL_WORKFLOW_FILE)) {
             is Result.Success -> {
                 if (workflow.data.state != "active") {
                     when (val enabled = github.enableWorkflow(owner, repoName, workflow.data.id)) {
-                        is Result.Success -> {}
+                        is Result.Success -> {
+                            delay(1000)
+                            when (val refreshed = github.getWorkflow(owner, repoName, KERNEL_WORKFLOW_FILE)) {
+                                is Result.Success -> {
+                                    if (refreshed.data.state == "active") {
+                                        return refreshed.data.id
+                                    }
+                                    if (reportError) {
+                                        showWorkflowEnablementPrompt(
+                                            "工作流仍未启用，当前状态: ${refreshed.data.state}",
+                                            actionUrl
+                                        )
+                                    }
+                                    return null
+                                }
+                                is Result.Error -> {
+                                    if (reportError) {
+                                        showWorkflowEnablementPrompt(refreshed.message, actionUrl)
+                                    }
+                                    return null
+                                }
+                                Result.Loading -> return null
+                            }
+                        }
                         is Result.Error -> {
                             if (reportError) {
-                                _uiState.update { it.copy(isLoading = false, error = enabled.message) }
+                                showWorkflowEnablementPrompt(enabled.message, actionUrl)
                             }
                             return null
                         }
@@ -508,12 +538,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             is Result.Error -> {
                 if (reportError) {
-                    _uiState.update { it.copy(isLoading = false, error = workflow.message) }
+                    showWorkflowEnablementPrompt(workflow.message, actionUrl)
                 }
                 null
             }
             Result.Loading -> null
         }
+    }
+
+    private fun showWorkflowEnablementPrompt(reason: String, actionUrl: String) {
+        _uiState.update {
+            it.copy(
+                isLoading = false,
+                error = null,
+                workflowEnablementPrompt = WorkflowEnablementPrompt(
+                    message = reason,
+                    actionUrl = actionUrl
+                )
+            )
+        }
+    }
+
+    fun dismissWorkflowEnablementPrompt() {
+        _uiState.update { it.copy(workflowEnablementPrompt = null) }
     }
 
     // ── Build ─────────────────────────────────────────────────────────────
@@ -544,7 +591,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     delay(5000) // wait for GH to create the run
                     findAndMonitorLatestRun(username, repoName, wfId, previousRunId)
                 }
-                is Result.Error -> _uiState.update { it.copy(isLoading = false, error = r.message) }
+                is Result.Error -> {
+                    if (r.code == 403 || r.code == 404) {
+                        showWorkflowEnablementPrompt("触发工作流失败: ${r.message}", workflowActionsUrl(username, repoName))
+                    } else {
+                        _uiState.update { it.copy(isLoading = false, error = r.message) }
+                    }
+                }
                 else -> {}
             }
         }
@@ -1186,6 +1239,9 @@ private const val MAX_REMOTE_ARTIFACT_RUNS = 30
 private const val MAX_PERSISTED_REMOTE_ARTIFACTS = 240
 private const val KERNEL_WORKFLOW_FILE = "kernel-custom.yml"
 private const val MIRROR_WORKFLOW_FILE = "mirror-custom-artifacts.yml"
+
+private fun workflowActionsUrl(owner: String, repoName: String): String =
+    "https://github.com/$owner/$repoName/actions/workflows/$KERNEL_WORKFLOW_FILE"
 private const val MIRROR_WORKFLOW_MAX_POLLS = 40
 private const val MIRROR_RELEASE_ASSET_MAX_POLLS = 6
 
