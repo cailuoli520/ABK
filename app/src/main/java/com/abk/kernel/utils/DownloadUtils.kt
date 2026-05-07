@@ -4,7 +4,6 @@ import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Environment
 import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
@@ -265,12 +264,10 @@ object DownloadUtils {
                 context, "${context.packageName}.fileprovider", file
             )
             val mimeType = guessMimeType(file)
-            val viewIntent = buildViewIntent(context, uri, mimeType, file.name)
-            val genericViewIntent = buildViewIntent(context, uri, "*/*", file.name)
-            val sendIntent = buildSendIntent(context, uri, mimeType, file.name)
-            context.startActivityChooser(viewIntent, "打开文件") ||
-                context.startActivityChooser(genericViewIntent, "打开文件") ||
-                context.startActivityChooser(sendIntent, "发送文件")
+            context.startActivityChooser(
+                buildSendIntent(context, uri, mimeType, file.name),
+                "分享文件"
+            )
         }.getOrDefault(false)
     }
 
@@ -294,7 +291,6 @@ object DownloadUtils {
     }
 
     private fun Context.startActivityChooser(intent: Intent, title: String): Boolean {
-        if (!canHandle(intent)) return false
         val chooser = Intent.createChooser(intent, title).apply {
             clipData = intent.clipData
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -302,9 +298,6 @@ object DownloadUtils {
         }
         return startActivitySafely(chooser)
     }
-
-    private fun Context.canHandle(intent: Intent): Boolean =
-        packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY).isNotEmpty()
 
     private fun Context.startActivitySafely(intent: Intent): Boolean {
         return try {

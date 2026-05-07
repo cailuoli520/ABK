@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.RunCircle
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Warning
@@ -151,10 +152,10 @@ fun FlashScreen(vm: MainViewModel) {
         val ok = DownloadUtils.openFile(context, item.filePath)
         if (!ok) {
             showFailure(
-                "无法打开文件",
+                "无法分享文件",
                 listOf(
-                    "${'$'} open ${item.filePath}",
-                    "没有可用应用打开该文件，或 FileProvider 授权失败。",
+                    "${'$'} share ${item.filePath}",
+                    "系统分享面板不可用，或 FileProvider 授权失败。",
                     "文件: ${item.name}"
                 )
             )
@@ -817,9 +818,9 @@ private fun DownloadedOutputRow(
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.weight(1f).height(42.dp)
             ) {
-                Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(17.dp))
+                Icon(Icons.Default.Share, null, modifier = Modifier.size(17.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("查看文件")
+                Text("分享文件")
             }
             if (allowRootActions) {
                 when (artifact.type) {
