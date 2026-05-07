@@ -78,6 +78,7 @@ inject_blkdev_ioctl_compat() {
 
 	perl -0pi -e 's/(long blkdev_ioctl\s*\([^)]*\)\s*\{.*?\n\s*int ret;\n)/$1\n\tret = xg_ddk_blkdev_ioctl(bdev, cmd);\n\tif (ret)\n\t\treturn ret;\n/s or die "long blkdev_ioctl anchor not found\n";' "$file" 2>/dev/null && return 0
 	perl -0pi -e 's/(int blkdev_ioctl\s*\([^)]*\)\s*\{.*?\n\s*int ret;\n)/$1\n\tret = xg_ddk_blkdev_ioctl(bdev, cmd);\n\tif (ret)\n\t\treturn ret;\n/s or die "int blkdev_ioctl anchor not found\n";' "$file" 2>/dev/null && return 0
+	inject_ioctl_after_ret_and_bdev "$file" "blkdev_ioctl" && return 0
 
 	echo "blkdev_ioctl anchor not found"
 	return 1
@@ -88,8 +89,43 @@ inject_compat_blkdev_ioctl_compat() {
 
 	perl -0pi -e 's/(long compat_blkdev_ioctl\s*\([^)]*\)\s*\{.*?\n\s*fmode_t mode = [^\n]+;\n)/$1\n\tret = xg_ddk_blkdev_ioctl(bdev, cmd);\n\tif (ret)\n\t\treturn ret;\n/s or die "compat_blkdev_ioctl fmode_t anchor not found\n";' "$file" 2>/dev/null && return 0
 	perl -0pi -e 's/(long compat_blkdev_ioctl\s*\([^)]*\)\s*\{.*?\n\s*blk_mode_t mode = [^\n]+;\n)/$1\n\tret = xg_ddk_blkdev_ioctl(bdev, cmd);\n\tif (ret)\n\t\treturn ret;\n/s or die "compat_blkdev_ioctl blk_mode_t anchor not found\n";' "$file" 2>/dev/null && return 0
+	inject_ioctl_after_ret_and_bdev "$file" "compat_blkdev_ioctl" && return 0
 
 	echo "compat_blkdev_ioctl anchor not found"
+	return 1
+}
+
+inject_ioctl_after_ret_and_bdev() {
+	file="$1"
+	name="$2"
+	xg_tmp="${file}.xg-ddk.tmp"
+
+	awk -v name="$name" '
+		BEGIN { in_func=0; saw_ret=0; saw_bdev=0; inserted=0 }
+		!in_func && $0 ~ "^[[:space:]]*([_[:alnum:]]+[[:space:]*]+)+" name "[[:space:]]*\\(" {
+			in_func=1
+			saw_ret=0
+			saw_bdev=0
+		}
+		{
+			if (in_func) {
+				if ($0 ~ /^[[:space:]]*int[[:space:]]+ret[[:space:]]*;/) saw_ret=1
+				if ($0 ~ /^[[:space:]]*struct[[:space:]]+block_device[[:space:]]+\*bdev[[:space:]]*=/) saw_bdev=1
+				if (!inserted && saw_ret && saw_bdev &&
+				    $0 ~ /^[[:space:]]*(switch[[:space:]]*\(cmd\)|ret[[:space:]]*=|if[[:space:]]*\(|return[[:space:]])/) {
+					print "\tret = xg_ddk_blkdev_ioctl(bdev, cmd);"
+					print "\tif (ret)"
+					print "\t\treturn ret;"
+					inserted=1
+				}
+				if ($0 ~ /^}/) in_func=0
+			}
+			print
+		}
+		END { exit inserted ? 0 : 1 }
+	' "$file" > "$xg_tmp" && mv "$xg_tmp" "$file" && return 0
+
+	rm -f "$xg_tmp"
 	return 1
 }
 
