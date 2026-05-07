@@ -56,8 +56,8 @@ on:
         default: false
       use_kpm:
         required: true
-        type: string
-        default: "disabled (关闭)"
+        type: boolean
+        default: true
       use_rekernel:
         required: false
         type: boolean
@@ -1059,34 +1059,105 @@ jobs:
         if: inputs.droidspaces != 'off'
         working-directory: ${{ env.KERNEL_ROOT }}/common
         run: |
+          set -euo pipefail
           KERNEL_VER="${{ inputs.kernel_version }}"
           SLOT="${{ inputs.droidspaces }}"
 
-          # 678 -> 6_7_8, 123 -> 1_2_3, 345 -> 3_4_5
-          SLOT_NAME=$(echo "$SLOT" | sed 's/\(.\)/\1_/g; s/_$//')
-          echo "应用 Droidspaces SYSVIPC kABI 修复补丁 (槽位: $SLOT / $SLOT_NAME)..."
+          fail() {
+            echo "::error::Droidspaces: $*"
+            exit 1
+          }
+
+          try_apply_patch() {
+            local patch_file="$1"
+            local name
+            name="$(basename "$patch_file")"
+            if git apply --check "$patch_file" >/dev/null 2>&1; then
+              git apply "$patch_file"
+              echo "已应用 Droidspaces patch: $name"
+              return 0
+            fi
+            if git apply --reverse --check "$patch_file" >/dev/null 2>&1; then
+              echo "Droidspaces patch 已应用: $name"
+              return 0
+            fi
+            return 1
+          }
+
+          apply_sysvipc_below_612_compat() {
+            local sched="include/linux/sched.h"
+            [ -f "$sched" ] || fail "缺少 $sched"
+            if grep -qF 'ANDROID_KABI_USE(6, struct sysv_sem sysvsem);' "$sched"; then
+              echo "SYSVIPC below-6.12 kABI fallback 已应用"
+              return 0
+            fi
+            perl -0pi -e 's/#ifdef CONFIG_SYSVIPC\n\tstruct sysv_sem\s+sysvsem;\n\tstruct sysv_shm\s+sysvshm;\n#endif/#ifdef CONFIG_SYSVIPC\n\t\/\/ struct sysv_sem\t\t\tsysvsem;\n\t\/\/ struct sysv_shm\t\t\tsysvshm;\n#endif/s' "$sched"
+            perl -0pi -e 's/\tANDROID_KABI_RESERVE\(6\);\n\tANDROID_KABI_RESERVE\(7\);\n\tANDROID_KABI_RESERVE\(8\);/\n#ifdef CONFIG_SYSVIPC\n\tANDROID_KABI_USE(6, struct sysv_sem sysvsem);\n\t_ANDROID_KABI_REPLACE(ANDROID_KABI_RESERVE(7); ANDROID_KABI_RESERVE(8), struct sysv_shm sysvshm);\n#else\n\tANDROID_KABI_RESERVE(6);\n\tANDROID_KABI_RESERVE(7);\n\tANDROID_KABI_RESERVE(8);\n#endif/s' "$sched"
+            grep -qF '// struct sysv_sem' "$sched" || fail "SYSVIPC 原字段注释失败"
+            grep -qF 'ANDROID_KABI_USE(6, struct sysv_sem sysvsem);' "$sched" || fail "SYSVIPC kABI fallback 注入失败"
+            echo "已应用 SYSVIPC below-6.12 kABI fallback"
+          }
+
+          apply_mqueue_510_compat() {
+            local user_h="include/linux/sched/user.h"
+            [ -f "$user_h" ] || fail "缺少 $user_h"
+            if grep -qF 'ANDROID_KABI_USE(1, unsigned long mq_bytes);' "$user_h"; then
+              echo "POSIX_MQUEUE kABI fallback 已应用"
+              return 0
+            fi
+            perl -0pi -e 's/#ifdef CONFIG_POSIX_MQUEUE\n\t\/\* protected by mq_lock\t\*\/\n\tunsigned long mq_bytes;\t\/\* How many bytes can be allocated to mqueue\? \*\/\n#endif/#ifdef CONFIG_POSIX_MQUEUE\n\t\/\* protected by mq_lock\t\*\/\n\t\/\/unsigned long mq_bytes;\t\/\* How many bytes can be allocated to mqueue? \*\/\n#endif/s' "$user_h"
+            perl -0pi -e 's/\tANDROID_KABI_RESERVE\(1\);\n\tANDROID_KABI_RESERVE\(2\);\n\tANDROID_OEM_DATA_ARRAY\(1, 2\);/\n#if defined(CONFIG_POSIX_MQUEUE)\n\tANDROID_KABI_USE(1, unsigned long mq_bytes);\n\tANDROID_KABI_RESERVE(2);\n\tANDROID_OEM_DATA_ARRAY(1, 2);\n#else\n\tANDROID_KABI_RESERVE(1);\n\tANDROID_KABI_RESERVE(2);\n\tANDROID_OEM_DATA_ARRAY(1, 2);\n#endif/s' "$user_h"
+            grep -qF 'ANDROID_KABI_USE(1, unsigned long mq_bytes);' "$user_h" || fail "POSIX_MQUEUE kABI fallback 注入失败"
+            echo "已应用 POSIX_MQUEUE 5.10 kABI fallback"
+          }
+
+          apply_sysvipc_612_plus_compat() {
+            local sched="include/linux/sched.h"
+            [ -f "$sched" ] || fail "缺少 $sched"
+            if grep -qF 'char __kabi_ignored_0;' "$sched"; then
+              echo "SYSVIPC 6.12+ kABI fallback 已应用"
+              return 0
+            fi
+            perl -0pi -e 's/(\n\tunsigned int\s+rt_priority;\n)/$1\n#ifdef CONFIG_SYSVIPC\n\tunion {\n\t\tchar __kabi_ignored_0;\n\t\tstruct sysv_sem\t\t\tsysvsem;\n\t}__attribute__((packed));\n\tunion {\n\t\tchar __kabi_ignored_1;\n\t\tstruct sysv_shm\t\t\tsysvshm;\n\t}__attribute__((packed));\n#endif\n/s or die "rt_priority anchor not found\n";' "$sched" || fail "SYSVIPC 6.12+ packed 字段注入失败"
+            perl -0pi -e 's/#ifdef CONFIG_SYSVIPC\n\tstruct sysv_sem\s+sysvsem;\n\tstruct sysv_shm\s+sysvshm;\n#endif/#ifdef CONFIG_SYSVIPC\n\t\/\/ struct sysv_sem\t\t\tsysvsem;\n\t\/\/ struct sysv_shm\t\t\tsysvshm;\n#endif/s' "$sched"
+            grep -qF 'char __kabi_ignored_0;' "$sched" || fail "SYSVIPC 6.12+ ignored 字段注入失败"
+            grep -qF '// struct sysv_sem' "$sched" || fail "SYSVIPC 6.12+ 原字段注释失败"
+            echo "已应用 SYSVIPC 6.12+ kABI fallback"
+          }
+
           case "$KERNEL_VER" in
             6.12)
               PATCH_FILE="$DROIDSPACES_PATCHES/kernel-6.12/001.GKI-6.12-or-above-fix_sysvipc_kabi.patch"
+              if ! try_apply_patch "$PATCH_FILE"; then
+                apply_sysvipc_612_plus_compat
+              fi
               ;;
             5.10|5.15|6.1|6.6)
+              case "$SLOT" in
+                678|123|345) ;;
+                *) fail "$KERNEL_VER 需要选择 678、123 或 345 槽位，当前为 $SLOT" ;;
+              esac
+              SLOT_NAME=$(echo "$SLOT" | sed 's/\(.\)/\1_/g; s/_$//')
               PATCH_FILE="$DROIDSPACES_PATCHES/below-kernel-6.12/001.GKI-below-6.12-fix_sysvipc_kabi_${SLOT_NAME}.patch"
+              if ! try_apply_patch "$PATCH_FILE"; then
+                if [ "$SLOT" = "678" ]; then
+                  apply_sysvipc_below_612_compat
+                else
+                  fail "SYSVIPC kABI patch 应用失败: $(basename "$PATCH_FILE")"
+                fi
+              fi
               ;;
             *)
-              echo "::warning::Droidspaces: 未适配的内核版本 $KERNEL_VER，跳过补丁"
-              exit 0
+              fail "未适配的内核版本 $KERNEL_VER"
               ;;
           esac
-          if ! patch -p1 --forward < "$PATCH_FILE"; then
-            echo "::warning::SYSVIPC kABI 补丁应用失败，可能已应用或上下文不匹配"
-          fi
 
           # 5.10 及以下还需要 POSIX_MQUEUE 的 kABI 修复
           if [ "$KERNEL_VER" = "5.10" ]; then
             echo "应用 Droidspaces POSIX_MQUEUE kABI 修复补丁 (5.10)..."
             POSIX_PATCH="$DROIDSPACES_PATCHES/below-kernel-6.12/002.5.10_or_lower_use_android_abi_padding_for_posix_mqueue.patch"
-            if ! patch -p1 --forward < "$POSIX_PATCH"; then
-              echo "::warning::POSIX_MQUEUE kABI 补丁应用失败，可能已应用或上下文不匹配"
+            if ! try_apply_patch "$POSIX_PATCH"; then
+              apply_mqueue_510_compat
             fi
           fi
 
@@ -1122,7 +1193,22 @@ jobs:
 
           config_defined() {
             local name="${1#CONFIG_}"
-            grep -RqsE --include='Kconfig*' "^[[:space:]]*(menuconfig|config)[[:space:]]+${name}$" .
+            local file
+            while IFS= read -r -d '' file; do
+              if grep -Eq "^[[:space:]]*(menuconfig|config)[[:space:]]+${name}([[:space:]]|$)" "$file"; then
+                return 0
+              fi
+            done < <(find . -type f -name 'Kconfig*' -print0)
+            return 1
+          }
+
+          enable_required_config() {
+            local cfg="$1"
+            if config_defined "$cfg"; then
+              enable_config "$cfg"
+            else
+              fail "当前内核未定义必要配置: $cfg"
+            fi
           }
 
           enable_config_if_defined() {
@@ -1135,11 +1221,11 @@ jobs:
           }
 
           # 必要配置
-          enable_config CONFIG_SYSVIPC
-          enable_config CONFIG_POSIX_MQUEUE
-          enable_config CONFIG_IPC_NS
-          enable_config CONFIG_PID_NS
-          enable_config CONFIG_DEVTMPFS
+          enable_required_config CONFIG_SYSVIPC
+          enable_required_config CONFIG_POSIX_MQUEUE
+          enable_required_config CONFIG_IPC_NS
+          enable_required_config CONFIG_PID_NS
+          enable_required_config CONFIG_DEVTMPFS
 
           # 可选: 网络相关配置 (Docker/NAT 模式)
           enable_config_if_defined CONFIG_NETFILTER_XT_MATCH_ADDRTYPE

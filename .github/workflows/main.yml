@@ -61,20 +61,13 @@ on:
         type: string
         default: "Sun Dec 01 08:10:00 UTC 2024"
         required: false
-      # ==================== 选项配置 ====================
-      use_kpm:
-        description: "KPM 功能（patched 尚不支持）"
-        type: choice
-        default: "disabled (关闭)"
-        options:
-          - "disabled (关闭)"
-          - "enabled (开启)"
-          - "patched (开启并修补，尚不支持)"
+      # ==================== Droidspaces 配置 ====================
       droidspaces:
         description: "Droidspaces 容器支持 (5.10~6.6: 槽位补丁, 6.12: 开/关)"
         type: choice
         options:
           - "off"
+          - "on"
           - "678"
           - "123"
           - "345"
@@ -354,10 +347,8 @@ jobs:
           # 功能开关显示
           echo "LZ4_STATUS=${{ inputs.use_zram && '开启' || '未开启' }}" >> $GITHUB_ENV
           echo "BBG_STATUS=${{ inputs.use_bbg && '支持' || '不支持' }}" >> $GITHUB_ENV
-          if [[ "${{ inputs.use_kpm }}" == enabled* ]]; then
+          if [[ "${{ inputs.use_kpm }}" == "true" ]]; then
             echo "KPM_STATUS=支持" >> $GITHUB_ENV
-          elif [[ "${{ inputs.use_kpm }}" == patched* ]]; then
-            echo "KPM_STATUS=支持（补丁尚不支持）" >> $GITHUB_ENV
           else
             echo "KPM_STATUS=未开启" >> $GITHUB_ENV
           fi

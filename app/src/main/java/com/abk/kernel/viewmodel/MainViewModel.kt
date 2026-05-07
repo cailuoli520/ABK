@@ -1166,6 +1166,7 @@ private fun KernelBuildConfig.toInputMap(): Map<String, String> = mapOf(
     "zram_full_algo" to zramFullAlgo.toString(),
     "zram_extra_algos" to zramExtraAlgos,
     "kpm_password" to kpmPassword,
+    "droidspaces" to droidspaces,
     "use_custom_external_modules" to useCustomExternalModules.toString(),
     "custom_external_modules" to if (useCustomExternalModules) customExternalModules.toWorkflowInput() else ""
 )

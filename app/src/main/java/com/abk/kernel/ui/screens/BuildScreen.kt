@@ -48,6 +48,9 @@ fun BuildScreen(vm: MainViewModel) {
     val config = remember(rawConfig) { KernelSupport.normalize(rawConfig) }
     val recommended = state.recommendedBuildConfig
     val ksuBranchOptions = listOf("Stable(标准)", "Dev(开发)")
+    val droidspacesOptions = remember(config.kernelVersion) {
+        KernelSupport.droidspacesOptions(config.kernelVersion)
+    }
     val subLevelOptions = remember(config.androidVersion, config.kernelVersion) {
         KernelSupport.subLevelOptions(config.androidVersion, config.kernelVersion)
     }
@@ -81,6 +84,7 @@ fun BuildScreen(vm: MainViewModel) {
                     Text("补丁级别: ${config.osPatchLevel}")
                     Text("SUSFS: ${if (!config.cancelSusfs) "启用" else "禁用"} · ZRAM: ${if (config.useZram) "启用" else "禁用"} · KPM: ${if (config.useKpm) "启用" else "禁用"}")
                     Text("BBG: ${if (config.useBbg) "启用" else "禁用"} · DDK: ${if (config.useDdk) "启用" else "禁用"}")
+                    Text("Droidspaces: ${droidspacesLabel(config.droidspaces)}")
                     Text(
                         "外部模块: ${
                             if (config.useCustomExternalModules) "${config.customExternalModules.size} 个" else "未启用"
@@ -242,6 +246,12 @@ fun BuildScreen(vm: MainViewModel) {
                 SwitchRow("启用 Re-Kernel 驱动 (测试)", config.useRekernel) {
                     vm.updateBuildConfig(config.copy(useRekernel = it))
                 }
+                DropdownField(
+                    label = "Droidspaces 容器支持",
+                    value = config.droidspaces,
+                    options = droidspacesOptions,
+                    onSelect = { vm.updateBuildConfig(config.copy(droidspaces = it)) }
+                )
                 SwitchRow("启用一加 8E 支持", config.suppOp) {
                     vm.updateBuildConfig(config.copy(suppOp = it))
                 }
@@ -503,6 +513,13 @@ private fun BuildPlanHero(
                 icon = Icons.Default.Extension,
                 color = if (!config.cancelSusfs) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outline
             )
+            if (config.droidspaces != "off") {
+                ExpressiveStatusChip(
+                    label = "Droidspaces ${droidspacesLabel(config.droidspaces)}",
+                    icon = Icons.Default.Extension,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+            }
             ExpressiveStatusChip(
                 label = if (isRecommended) "设备推荐" else buildStatusLabel(status),
                 icon = if (isRecommended) Icons.Default.AutoAwesome else Icons.Default.RunCircle,
@@ -510,6 +527,15 @@ private fun BuildPlanHero(
             )
         }
     )
+}
+
+private fun droidspacesLabel(value: String): String = when (value) {
+    "off" -> "关闭"
+    "on" -> "开启"
+    "678" -> "槽位 6/7/8"
+    "123" -> "槽位 1/2/3"
+    "345" -> "槽位 3/4/5"
+    else -> value
 }
 
 private fun buildVersionPreview(config: KernelBuildConfig): String {
