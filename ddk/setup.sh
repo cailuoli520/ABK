@@ -39,6 +39,18 @@ function_has_call() {
 	' "$file"
 }
 
+function_has_call_name() {
+	file="$1"
+	name="$2"
+	marker="$3"
+	awk -v name="$name" -v marker="$marker" '
+		$0 ~ "^[[:space:]]*([_[:alnum:]]+[[:space:]*]+)+" name "[[:space:]]*\\(" { in_func=1 }
+		in_func && index($0, marker) { found=1; exit }
+		in_func && /^}/ { exit }
+		END { exit found ? 0 : 1 }
+	' "$file"
+}
+
 ensure_ddk_include() {
 	file="$1"
 	include='#include <linux/xingguang_ddk.h>'
@@ -61,6 +73,25 @@ ensure_ddk_include() {
 #include <linux/xingguang_ddk.h>' "$file"
 }
 
+inject_blkdev_ioctl_compat() {
+	file="$1"
+
+	perl -0pi -e 's/(long blkdev_ioctl\s*\([^)]*\)\s*\{.*?\n\s*int ret;\n)/$1\n\tret = xg_ddk_blkdev_ioctl(bdev, cmd);\n\tif (ret)\n\t\treturn ret;\n/s or die "long blkdev_ioctl anchor not found\n";' "$file" 2>/dev/null && return 0
+	perl -0pi -e 's/(int blkdev_ioctl\s*\([^)]*\)\s*\{.*?\n\s*int ret;\n)/$1\n\tret = xg_ddk_blkdev_ioctl(bdev, cmd);\n\tif (ret)\n\t\treturn ret;\n/s or die "int blkdev_ioctl anchor not found\n";' "$file" 2>/dev/null && return 0
+
+	echo "blkdev_ioctl anchor not found"
+	return 1
+}
+
+inject_compat_blkdev_ioctl_compat() {
+	file="$1"
+
+	perl -0pi -e 's/(long compat_blkdev_ioctl\s*\([^)]*\)\s*\{.*?\n\s*fmode_t mode = [^\n]+;\n)/$1\n\tret = xg_ddk_blkdev_ioctl(bdev, cmd);\n\tif (ret)\n\t\treturn ret;\n/s or die "compat_blkdev_ioctl anchor not found\n";' "$file" 2>/dev/null && return 0
+
+	echo "compat_blkdev_ioctl anchor not found"
+	return 1
+}
+
 apply_ddk_0030_compat() {
 	ioctl_file="$COMMON_ROOT/block/ioctl.c"
 	blk_lib_file="$COMMON_ROOT/block/blk-lib.c"
@@ -68,12 +99,12 @@ apply_ddk_0030_compat() {
 	ensure_ddk_include "$ioctl_file" || return 1
 	ensure_ddk_include "$blk_lib_file" || return 1
 
-	if ! function_has_call "$ioctl_file" "long blkdev_ioctl" "xg_ddk_blkdev_ioctl(bdev, cmd)"; then
-		perl -0pi -e 's/(long blkdev_ioctl\s*\([^)]*\)\s*\{.*?\n\s*int ret;\n)(\s*switch \(cmd\) \{)/$1\n\tret = xg_ddk_blkdev_ioctl(bdev, cmd);\n\tif (ret)\n\t\treturn ret;\n$2/s or die "blkdev_ioctl anchor not found\n";' "$ioctl_file" || return 1
+	if ! function_has_call_name "$ioctl_file" "blkdev_ioctl" "xg_ddk_blkdev_ioctl(bdev, cmd)"; then
+		inject_blkdev_ioctl_compat "$ioctl_file" || return 1
 	fi
 
-	if ! function_has_call "$ioctl_file" "long compat_blkdev_ioctl" "xg_ddk_blkdev_ioctl(bdev, cmd)"; then
-		perl -0pi -e 's/(long compat_blkdev_ioctl\s*\([^)]*\)\s*\{.*?\n\s*(?:blk_mode_t|fmode_t) mode = [^\n]+;\n)(\s*switch \(cmd\) \{)/$1\n\tret = xg_ddk_blkdev_ioctl(bdev, cmd);\n\tif (ret)\n\t\treturn ret;\n$2/s or die "compat_blkdev_ioctl anchor not found\n";' "$ioctl_file" || return 1
+	if ! function_has_call_name "$ioctl_file" "compat_blkdev_ioctl" "xg_ddk_blkdev_ioctl(bdev, cmd)"; then
+		inject_compat_blkdev_ioctl_compat "$ioctl_file" || return 1
 	fi
 
 	if ! function_has_call "$blk_lib_file" "int __blkdev_issue_discard" "xg_ddk_blkdev_issue_discard(bdev, sector, nr_sects)"; then
@@ -92,8 +123,8 @@ apply_ddk_0030_compat() {
 		perl -0pi -e 's/(int blkdev_issue_zeroout\s*\([^)]*\)\s*\{.*?\n\s*bool try_write_zeroes = !!bdev_write_zeroes_sectors\(bdev\);\n)(\s*bs_mask = )/$1\n\tret = xg_ddk_blkdev_issue_zeroout(bdev, sector, nr_sects);\n\tif (ret)\n\t\treturn ret;\n\n$2/s or die "blkdev_issue_zeroout anchor not found\n";' "$blk_lib_file" || return 1
 	fi
 
-	function_has_call "$ioctl_file" "long blkdev_ioctl" "xg_ddk_blkdev_ioctl(bdev, cmd)" || return 1
-	function_has_call "$ioctl_file" "long compat_blkdev_ioctl" "xg_ddk_blkdev_ioctl(bdev, cmd)" || return 1
+	function_has_call_name "$ioctl_file" "blkdev_ioctl" "xg_ddk_blkdev_ioctl(bdev, cmd)" || return 1
+	function_has_call_name "$ioctl_file" "compat_blkdev_ioctl" "xg_ddk_blkdev_ioctl(bdev, cmd)" || return 1
 	function_has_call "$blk_lib_file" "int __blkdev_issue_discard" "xg_ddk_blkdev_issue_discard(bdev, sector, nr_sects)" || return 1
 	function_has_call "$blk_lib_file" "int __blkdev_issue_zeroout" "xg_ddk_blkdev_issue_zeroout(bdev, sector, nr_sects)" || return 1
 	function_has_call "$blk_lib_file" "int blkdev_issue_zeroout" "xg_ddk_blkdev_issue_zeroout(bdev, sector, nr_sects)" || return 1
