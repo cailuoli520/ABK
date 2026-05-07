@@ -643,6 +643,72 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         startArtifactDownload(artifact)
     }
 
+    fun deleteDownloadedArtifact(filePath: String) {
+        viewModelScope.launch {
+            val current = _uiState.value.downloadedArtifacts
+            val target = current.firstOrNull { it.filePath == filePath } ?: return@launch
+            deleteDownloadedFile(target)
+            val updated = current
+                .filterNot { it.filePath == filePath }
+                .sortedDownloadedForDisplay()
+            _uiState.update { it.copy(downloadedArtifacts = updated) }
+            prefs.saveDownloadedArtifactsJson(gson.toJson(updated))
+        }
+    }
+
+    fun deleteWorkflowArtifacts(runId: Long, deleteRemoteRun: Boolean) {
+        viewModelScope.launch {
+            if (deleteRemoteRun) {
+                val owner = _uiState.value.user?.login
+                val repoName = _uiState.value.forkRepo?.name
+                if (owner.isNullOrBlank() || repoName.isNullOrBlank()) {
+                    _uiState.update { it.copy(error = "无法删除远程工作流记录: 仓库信息不完整") }
+                    return@launch
+                }
+                when (val result = github.deleteWorkflowRun(owner, repoName, runId)) {
+                    is Result.Error -> {
+                        _uiState.update { it.copy(error = "删除远程工作流记录失败: ${result.message}") }
+                        return@launch
+                    }
+                    else -> {}
+                }
+            }
+
+            val currentDownloads = _uiState.value.downloadedArtifacts
+            currentDownloads
+                .filter { it.runId == runId }
+                .forEach(::deleteDownloadedFile)
+
+            val updatedDownloads = currentDownloads
+                .filterNot { it.runId == runId }
+                .sortedDownloadedForDisplay()
+            val removedRemoteIds = _uiState.value.artifacts
+                .filter { it.runId == runId }
+                .map { it.id }
+                .toSet()
+            removedRemoteIds.forEach { artifactId ->
+                artifactDownloadJobs[artifactId]?.cancel()
+                artifactDownloadJobs.remove(artifactId)
+            }
+            val updatedRemote = _uiState.value.artifacts
+                .filterNot { it.runId == runId }
+                .sortedForDisplay()
+
+            _uiState.update { state ->
+                state.copy(
+                    downloadedArtifacts = updatedDownloads,
+                    artifacts = updatedRemote,
+                    downloadProgress = state.downloadProgress.filterKeys { it !in removedRemoteIds }
+                )
+            }
+            if (_uiState.value.pendingAutoDownloadRunId == runId) {
+                prefs.clearPendingAutoDownloadRunId()
+            }
+            prefs.saveDownloadedArtifactsJson(gson.toJson(updatedDownloads))
+            prefs.saveRemoteArtifactsJson(gson.toJson(updatedRemote))
+        }
+    }
+
     private fun startArtifactDownload(artifact: BuildArtifact) {
         artifactDownloadJobs[artifact.id]?.cancel()
         artifactDownloadJobs[artifact.id] = viewModelScope.launch {
@@ -721,6 +787,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 error = it.error ?: message,
                 downloadProgress = it.downloadProgress - artifactId
             )
+        }
+    }
+
+    private fun deleteDownloadedFile(artifact: DownloadedArtifact) {
+        runCatching {
+            val file = File(artifact.filePath)
+            if (file.exists()) file.delete()
+            val parent = file.parentFile
+            if (parent?.listFiles()?.isEmpty() == true) {
+                parent.delete()
+            }
         }
     }
 

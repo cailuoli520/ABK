@@ -27,6 +27,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.RocketLaunch
 import androidx.compose.material.icons.filled.Settings
@@ -217,14 +218,8 @@ private enum class AbkTab(val label: String) {
 private fun AbkMainScaffold(vm: MainViewModel) {
     val state by vm.uiState.collectAsState()
     var selectedTab by rememberSaveable { mutableStateOf(AbkTab.Status) }
-    val visibleTabs = if (state.rootGranted) AbkTab.entries else AbkTab.entries.filterNot { it == AbkTab.Flash }
-    val activeTab = if (!state.rootGranted && selectedTab == AbkTab.Flash) AbkTab.Status else selectedTab
-
-    LaunchedEffect(state.rootGranted, selectedTab) {
-        if (!state.rootGranted && selectedTab == AbkTab.Flash) {
-            selectedTab = AbkTab.Status
-        }
-    }
+    val visibleTabs = AbkTab.entries
+    val activeTab = selectedTab
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
@@ -259,16 +254,16 @@ private fun AbkMainScaffold(vm: MainViewModel) {
                                     imageVector = when (tab) {
                                         AbkTab.Status -> Icons.Default.Home
                                         AbkTab.Build -> Icons.Default.RocketLaunch
-                                        AbkTab.Flash -> Icons.Default.FlashOn
+                                        AbkTab.Flash -> if (state.rootGranted) Icons.Default.FlashOn else Icons.Default.FolderOpen
                                         AbkTab.Settings -> Icons.Default.Settings
                                     },
-                                    contentDescription = tab.label,
+                                    contentDescription = tab.displayLabel(state.rootGranted),
                                     modifier = Modifier.size(22.dp)
                                 )
                             },
                             label = {
                                 Text(
-                                    text = tab.label,
+                                    text = tab.displayLabel(state.rootGranted),
                                     style = MaterialTheme.typography.labelSmall
                                 )
                             }
@@ -312,4 +307,9 @@ private fun AbkMainScaffold(vm: MainViewModel) {
             }
         }
     }
+}
+
+private fun AbkTab.displayLabel(rootGranted: Boolean): String = when (this) {
+    AbkTab.Flash -> if (rootGranted) label else "文件"
+    else -> label
 }

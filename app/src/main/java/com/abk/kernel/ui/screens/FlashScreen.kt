@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Extension
@@ -50,6 +51,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -106,6 +108,9 @@ fun FlashScreen(vm: MainViewModel) {
     val scope = rememberCoroutineScope()
     var selectedRunId by remember { mutableStateOf<Long?>(null) }
     var selectedItem by remember { mutableStateOf<DownloadedArtifact?>(null) }
+    var deleteFileTarget by remember { mutableStateOf<DownloadedArtifact?>(null) }
+    var deleteWorkflowTarget by remember { mutableStateOf<WorkflowArtifactGroup?>(null) }
+    var deleteRemoteWorkflowRun by remember { mutableStateOf(false) }
     var showFlashConfirm by remember { mutableStateOf(false) }
     var showTerminal by remember { mutableStateOf(false) }
     var terminalTitle by remember { mutableStateOf("终端") }
@@ -113,6 +118,7 @@ fun FlashScreen(vm: MainViewModel) {
     var terminalRunning by remember { mutableStateOf(false) }
     var terminalLog by remember { mutableStateOf<List<String>>(emptyList()) }
     var terminalSuccess by remember { mutableStateOf<Boolean?>(null) }
+    val rootGranted = state.rootGranted
 
     val remoteArtifacts = remember(state.artifacts) {
         state.artifacts.filter {
@@ -170,6 +176,17 @@ fun FlashScreen(vm: MainViewModel) {
     }
 
     fun startFlash(item: DownloadedArtifact) {
+        if (!rootGranted) {
+            showFailure(
+                "Root 未授权",
+                listOf(
+                    "${'$'} ${flashCommandPreview(item)}",
+                    "当前处于部分激活状态，文件页只允许查看已下载文件。",
+                    "如需刷写或安装模块，请先授予 Root 权限。"
+                )
+            )
+            return
+        }
         terminalTitle = flashOperationLabel(item.type)
         terminalCanReboot = true
         terminalRunning = true
@@ -229,6 +246,68 @@ fun FlashScreen(vm: MainViewModel) {
         )
     }
 
+    deleteFileTarget?.let { item ->
+        AlertDialog(
+            onDismissRequest = { deleteFileTarget = null },
+            icon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("删除文件") },
+            text = { Text("将删除本地文件记录和已下载文件：\n${item.name}") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        vm.deleteDownloadedArtifact(item.filePath)
+                        deleteFileTarget = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("删除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteFileTarget = null }) { Text(stringResource(R.string.cancel)) }
+            }
+        )
+    }
+
+    deleteWorkflowTarget?.let { group ->
+        AlertDialog(
+            onDismissRequest = { deleteWorkflowTarget = null },
+            icon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("删除工作流记录") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "将删除此工作流在 ABK 中缓存的产物记录，并删除本地已下载文件。\n\n工作流 ${
+                            if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}"
+                        }"
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = deleteRemoteWorkflowRun,
+                            onCheckedChange = { deleteRemoteWorkflowRun = it }
+                        )
+                        Text("同时删除远程 GitHub Actions 工作流记录")
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        vm.deleteWorkflowArtifacts(group.runId, deleteRemoteWorkflowRun)
+                        if (selectedRunId == group.runId) selectedRunId = null
+                        deleteWorkflowTarget = null
+                        deleteRemoteWorkflowRun = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("删除") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    deleteWorkflowTarget = null
+                    deleteRemoteWorkflowRun = false
+                }) { Text(stringResource(R.string.cancel)) }
+            }
+        )
+    }
+
     if (showTerminal) {
         FlashTerminalDialog(
             title = terminalTitle,
@@ -247,7 +326,7 @@ fun FlashScreen(vm: MainViewModel) {
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
-        topBar = { ExpressiveTopBar(title = stringResource(R.string.flash_title)) }
+        topBar = { ExpressiveTopBar(title = if (rootGranted) stringResource(R.string.flash_title) else "文件") }
     ) { padding ->
         LazyColumn(
             modifier = Modifier
@@ -262,7 +341,8 @@ fun FlashScreen(vm: MainViewModel) {
                     FlashHero(
                         buildStatus = state.buildStatus,
                         availableCount = remoteArtifacts.size,
-                        downloadedCount = state.downloadedArtifacts.size
+                        downloadedCount = state.downloadedArtifacts.size,
+                        rootGranted = rootGranted
                     )
                 }
 
@@ -282,14 +362,22 @@ fun FlashScreen(vm: MainViewModel) {
                     items(workflowGroups, key = { "workflow-${it.runId}" }) { group ->
                         WorkflowRunCard(
                             group = group,
-                            onClick = { selectedRunId = group.runId }
+                            onClick = { selectedRunId = group.runId },
+                            onDelete = {
+                                deleteWorkflowTarget = group
+                                deleteRemoteWorkflowRun = false
+                            }
                         )
                     }
                 } else {
                     item {
                         ExpressiveEmptyState(
-                            title = "暂无可刷写产物",
-                            subtitle = "构建成功后，ABK 会联网同步并按工作流整理产物。",
+                            title = if (rootGranted) "暂无可刷写产物" else "暂无可查看文件",
+                            subtitle = if (rootGranted) {
+                                "构建成功后，ABK 会联网同步并按工作流整理产物。"
+                            } else {
+                                "构建成功后，可在这里下载并查看产物文件。"
+                            },
                             icon = Icons.Default.Inbox
                         )
                     }
@@ -298,7 +386,11 @@ fun FlashScreen(vm: MainViewModel) {
                 item {
                     WorkflowDetailHeader(
                         group = selectedGroup,
-                        onBack = { selectedRunId = null }
+                        onBack = { selectedRunId = null },
+                        onDelete = {
+                            deleteWorkflowTarget = selectedGroup
+                            deleteRemoteWorkflowRun = false
+                        }
                     )
                 }
 
@@ -335,7 +427,9 @@ fun FlashScreen(vm: MainViewModel) {
                             onFlash = {
                                 selectedItem = it
                                 showFlashConfirm = true
-                            }
+                            },
+                            onDelete = { deleteFileTarget = it },
+                            allowRootActions = rootGranted
                         )
                     }
 
@@ -347,7 +441,9 @@ fun FlashScreen(vm: MainViewModel) {
                             onFlash = {
                                 selectedItem = it
                                 showFlashConfirm = true
-                            }
+                            },
+                            onDelete = { deleteFileTarget = it },
+                            allowRootActions = rootGranted
                         )
                     }
                 }
@@ -360,12 +456,17 @@ fun FlashScreen(vm: MainViewModel) {
 private fun FlashHero(
     buildStatus: BuildStatus,
     availableCount: Int,
-    downloadedCount: Int
+    downloadedCount: Int,
+    rootGranted: Boolean
 ) {
     ExpressiveHeroCard(
-        title = "产物中心",
-        subtitle = "先选工作流，再处理内核、管理器和模块。",
-        icon = Icons.Default.FlashOn,
+        title = if (rootGranted) "产物中心" else "文件中心",
+        subtitle = if (rootGranted) {
+            "先选工作流，再处理内核、管理器和模块。"
+        } else {
+            "部分激活状态下只提供产物下载和文件查看。"
+        },
+        icon = if (rootGranted) Icons.Default.FlashOn else Icons.Default.FolderOpen,
         containerColor = MaterialTheme.colorScheme.tertiaryContainer,
         contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
         badge = {
@@ -402,7 +503,8 @@ private fun FlashHero(
 @Composable
 private fun WorkflowRunCard(
     group: WorkflowArtifactGroup,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onDelete: () -> Unit
 ) {
     val sourceCount = group.remote.size
     val downloadedCount = group.local.size
@@ -448,6 +550,9 @@ private fun WorkflowRunCard(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Default.Delete, contentDescription = "删除工作流")
+                }
             }
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -466,7 +571,8 @@ private fun WorkflowRunCard(
 @Composable
 private fun WorkflowDetailHeader(
     group: WorkflowArtifactGroup,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onDelete: () -> Unit
 ) {
     ExpressiveSectionCard(
         title = "工作流 ${if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}"}",
@@ -480,8 +586,12 @@ private fun WorkflowDetailHeader(
             Text(
                 text = "${group.remote.size} 个源产物 / ${group.local.size} 个已下载",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
             )
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Default.Delete, contentDescription = "删除工作流")
+            }
         }
     }
 }
@@ -512,7 +622,9 @@ private fun ArtifactSourceCard(
     onDownload: () -> Unit,
     onOpen: (DownloadedArtifact) -> Unit,
     onInstall: (DownloadedArtifact) -> Unit,
-    onFlash: (DownloadedArtifact) -> Unit
+    onFlash: (DownloadedArtifact) -> Unit,
+    onDelete: (DownloadedArtifact) -> Unit,
+    allowRootActions: Boolean
 ) {
     val type = DownloadUtils.classifyArtifact(artifact.name)
     val animatedProgress by animateFloatAsState(
@@ -560,7 +672,9 @@ private fun ArtifactSourceCard(
                             artifact = file,
                             onOpen = { onOpen(file) },
                             onInstall = { onInstall(file) },
-                            onFlash = { onFlash(file) }
+                            onFlash = { onFlash(file) },
+                            onDelete = { onDelete(file) },
+                            allowRootActions = allowRootActions
                         )
                     }
                 }
@@ -574,7 +688,9 @@ private fun LocalOnlyArtifactCard(
     artifact: DownloadedArtifact,
     onOpen: (DownloadedArtifact) -> Unit,
     onInstall: (DownloadedArtifact) -> Unit,
-    onFlash: (DownloadedArtifact) -> Unit
+    onFlash: (DownloadedArtifact) -> Unit,
+    onDelete: (DownloadedArtifact) -> Unit,
+    allowRootActions: Boolean
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -593,7 +709,9 @@ private fun LocalOnlyArtifactCard(
                 artifact = artifact,
                 onOpen = { onOpen(artifact) },
                 onInstall = { onInstall(artifact) },
-                onFlash = { onFlash(artifact) }
+                onFlash = { onFlash(artifact) },
+                onDelete = { onDelete(artifact) },
+                allowRootActions = allowRootActions
             )
         }
     }
@@ -638,7 +756,9 @@ private fun DownloadedOutputRow(
     artifact: DownloadedArtifact,
     onOpen: () -> Unit,
     onInstall: () -> Unit,
-    onFlash: () -> Unit
+    onFlash: () -> Unit,
+    onDelete: () -> Unit,
+    allowRootActions: Boolean
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -673,39 +793,50 @@ private fun DownloadedOutputRow(
                 Spacer(Modifier.width(4.dp))
                 Text("查看文件")
             }
-            when (artifact.type) {
-                ArtifactType.KERNEL_IMG,
-                ArtifactType.ANYKERNEL3,
-                ArtifactType.SUSFS_MODULE -> Button(
-                    onClick = onFlash,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.weight(1f).height(42.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (artifact.type == ArtifactType.KERNEL_IMG) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.primary
-                        }
-                    )
-                ) {
-                    Icon(
-                        if (artifact.type == ArtifactType.SUSFS_MODULE) Icons.Default.Extension else Icons.Default.FlashOn,
-                        null,
-                        modifier = Modifier.size(17.dp)
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(flashButtonLabel(artifact.type))
+            if (allowRootActions) {
+                when (artifact.type) {
+                    ArtifactType.KERNEL_IMG,
+                    ArtifactType.ANYKERNEL3,
+                    ArtifactType.SUSFS_MODULE -> Button(
+                        onClick = onFlash,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.weight(1f).height(42.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (artifact.type == ArtifactType.KERNEL_IMG) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.primary
+                            }
+                        )
+                    ) {
+                        Icon(
+                            if (artifact.type == ArtifactType.SUSFS_MODULE) Icons.Default.Extension else Icons.Default.FlashOn,
+                            null,
+                            modifier = Modifier.size(17.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(flashButtonLabel(artifact.type))
+                    }
+                    ArtifactType.KSU_MANAGER -> Button(
+                        onClick = onInstall,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.weight(1f).height(42.dp)
+                    ) {
+                        Icon(Icons.Default.InstallMobile, null, modifier = Modifier.size(17.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("安装")
+                    }
+                    else -> {}
                 }
-                ArtifactType.KSU_MANAGER -> Button(
-                    onClick = onInstall,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.weight(1f).height(42.dp)
-                ) {
-                    Icon(Icons.Default.InstallMobile, null, modifier = Modifier.size(17.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("安装")
-                }
-                else -> {}
+            }
+            OutlinedButton(
+                onClick = onDelete,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.weight(1f).height(42.dp)
+            ) {
+                Icon(Icons.Default.Delete, null, modifier = Modifier.size(17.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("删除")
             }
         }
     }

@@ -178,6 +178,17 @@ class GitHubRepository(
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
 
+    suspend fun deleteWorkflowRun(owner: String, repo: String, runId: Long): Result<Unit> {
+        val api = apiService ?: return Result.Error("Not authenticated")
+        return runCatching {
+            val resp = api.deleteWorkflowRun(owner, repo, runId)
+            when {
+                resp.isSuccessful || resp.code() == 404 -> Result.Success(Unit)
+                else -> Result.Error("Delete run failed: ${resp.code()}", resp.code())
+            }
+        }.getOrElse { Result.Error(it.message ?: "Unknown error") }
+    }
+
     suspend fun listRunJobs(owner: String, repo: String, runId: Long): Result<List<WorkflowJob>> {
         val api = apiService ?: return Result.Error("Not authenticated")
         return runCatching<Result<List<WorkflowJob>>> {
