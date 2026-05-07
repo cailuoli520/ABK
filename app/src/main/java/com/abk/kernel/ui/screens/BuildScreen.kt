@@ -35,6 +35,10 @@ import com.abk.kernel.ui.components.ExpressiveSectionCard
 import com.abk.kernel.ui.components.ExpressiveStatusChip
 import com.abk.kernel.ui.components.ExpressiveTopBar
 import com.abk.kernel.viewmodel.MainViewModel
+import java.time.ZoneOffset
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,6 +56,9 @@ fun BuildScreen(vm: MainViewModel) {
     }
     val versionPreview = remember(config.version, config.kernelVersion, config.subLevel) {
         buildVersionPreview(config)
+    }
+    val buildTimePreview = remember(config.buildTime) {
+        buildTimePreview(config.buildTime)
     }
     var showConfirmDialog by remember { mutableStateOf(false) }
     var customModuleUrl by remember { mutableStateOf("") }
@@ -378,16 +385,17 @@ fun BuildScreen(vm: MainViewModel) {
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
-                VersionPreviewText(versionPreview)
+                ConfigPreviewText(versionPreview)
                 OutlinedTextField(
                     value = config.buildTime,
                     onValueChange = { vm.updateBuildConfig(config.copy(buildTime = it)) },
                     label = { Text("自定义构建时间 (可选)") },
-                    placeholder = { Text("留空=当前 UTC 时间") },
+                    placeholder = { Text("留空/N=当前 UTC 时间") },
                     shape = FieldShape(),
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
+                ConfigPreviewText(buildTimePreview)
             }
 
             // Submit button
@@ -438,7 +446,7 @@ fun BuildScreen(vm: MainViewModel) {
 }
 
 @Composable
-private fun VersionPreviewText(preview: String) {
+private fun ConfigPreviewText(preview: String) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
@@ -513,6 +521,18 @@ private fun buildVersionPreview(config: KernelBuildConfig): String {
     val preview = "${config.kernelVersion}.${config.subLevel}$cleanVersion"
     return "预览：$preview"
 }
+
+private fun buildTimePreview(buildTime: String): String {
+    val input = buildTime.trim()
+    if (input.isBlank() || input.equals("N", ignoreCase = true)) {
+        val sample = ZonedDateTime.now(ZoneOffset.UTC).format(BUILD_TIME_FORMATTER)
+        return "预览：使用工作流运行时当前 UTC（示例：$sample）"
+    }
+    return "预览：KBUILD_BUILD_TIMESTAMP=$input"
+}
+
+private val BUILD_TIME_FORMATTER: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("EEE MMM dd HH:mm:ss z yyyy", Locale.US)
 
 @Composable
 private fun BuildStatusBanner(status: BuildStatus, progress: BuildProgress) {
