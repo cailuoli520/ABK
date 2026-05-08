@@ -203,7 +203,7 @@ jobs:
       contents: write
       actions: read
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
       REPO: ${{ github.repository }}
     steps:
       - name: 检出代码仓库
