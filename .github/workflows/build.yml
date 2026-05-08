@@ -1013,6 +1013,18 @@ jobs:
                   fi
                   echo "已修复 android13-5.15.41 namespace.c 的 SUSFS sdcard static key 声明"
                 fi
+                if [[ "$CURRENT_SUB" -eq 41 ]]; then
+                  if grep -qF 'static DEFINE_IDA(susfs_mnt_id_ida);' ./fs/namespace.c \
+                    && [ "$(grep -F 'susfs_mnt_id_ida' ./fs/namespace.c | wc -l)" -eq 1 ]; then
+                    sed -i '/static DEFINE_IDA(susfs_mnt_id_ida);/d' ./fs/namespace.c
+                    echo "已移除 android13-5.15.41 namespace.c 未使用的 susfs_mnt_id_ida"
+                  fi
+                  if grep -qF 'static DEFINE_IDA(susfs_mnt_group_ida);' ./fs/namespace.c \
+                    && [ "$(grep -F 'susfs_mnt_group_ida' ./fs/namespace.c | wc -l)" -eq 1 ]; then
+                    sed -i '/static DEFINE_IDA(susfs_mnt_group_ida);/d' ./fs/namespace.c
+                    echo "已移除 android13-5.15.41 namespace.c 未使用的 susfs_mnt_group_ida"
+                  fi
+                fi
                 cp $KERNEL_PATCHES/wild/susfs_fix_patches/v${SUSFS_VERSION}/a13-5.15/fdinfo.c.patch ./
                 patch -p1 < fdinfo.c.patch || true
                 cp $KERNEL_PATCHES/wild/susfs_fix_patches/v${SUSFS_VERSION}/a13-5.15/open.c.patch ./
