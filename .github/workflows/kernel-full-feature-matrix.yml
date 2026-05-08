@@ -141,7 +141,7 @@ jobs:
     if: ${{ needs.prepare-matrix.outputs.count != '0' }}
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 8
       matrix: ${{ fromJson(needs.prepare-matrix.outputs.matrix) }}
     uses: ./.github/workflows/build.yml
     secrets: inherit
