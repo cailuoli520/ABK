@@ -217,11 +217,113 @@ ensure_ddk_include_after_includes() {
 	return 1
 }
 
+inject_ioctl_after_declarations() {
+	file="$1"
+	name="$2"
+
+	python3 - "$file" "$name" <<'PY'
+import re
+import sys
+
+path, name = sys.argv[1:]
+
+with open(path, "r", encoding="utf-8") as f:
+    lines = f.readlines()
+
+sig_re = re.compile(
+    r"^\s*(?:[A-Za-z_][\w\s\*]*\s+)+" + re.escape(name) + r"\s*\("
+)
+brace_line = None
+i = 0
+while i < len(lines):
+    if sig_re.search(lines[i]):
+        j = i
+        while j < len(lines):
+            if ";" in lines[j] and "{" not in lines[j]:
+                break
+            if "{" in lines[j]:
+                brace_line = j
+                break
+            j += 1
+        if brace_line is not None:
+            break
+        i = j
+    i += 1
+
+if brace_line is None:
+    raise SystemExit(f"{name} anchor not found")
+
+depth = 0
+end_line = None
+for i in range(brace_line, len(lines)):
+    depth += lines[i].count("{") - lines[i].count("}")
+    if i > brace_line and depth == 0:
+        end_line = i + 1
+        break
+
+if end_line is None:
+    raise SystemExit(f"{name} body end not found")
+
+body = "".join(lines[brace_line:end_line])
+if "xg_ddk_blkdev_ioctl(bdev, cmd)" in body:
+    raise SystemExit(0)
+
+decl_re = re.compile(
+    r"^\s*(?:"
+    r"const\s+|volatile\s+|static\s+|struct\s+|union\s+|enum\s+|"
+    r"unsigned\s+|signed\s+|long\s+|short\s+|int\s+|bool\s+|char\s+|"
+    r"void\s+|size_t\s+|ssize_t\s+|loff_t\s+|sector_t\s+|gfp_t\s+|"
+    r"blk_mode_t\s+|fmode_t\s+|umode_t\s+|u\d+\s+|s\d+\s+|"
+    r"[A-Za-z_]\w*_t\s+|[A-Za-z_]\w+\s+\*"
+    r")"
+)
+
+insert_at = brace_line + 1
+in_decl = False
+in_comment = False
+while insert_at < end_line:
+    stripped = lines[insert_at].strip()
+    if in_comment:
+        if "*/" in stripped:
+            in_comment = False
+        insert_at += 1
+        continue
+    if stripped == "":
+        insert_at += 1
+        continue
+    if stripped.startswith("/*"):
+        if "*/" not in stripped:
+            in_comment = True
+        insert_at += 1
+        continue
+    if in_decl:
+        if ";" in stripped:
+            in_decl = False
+        insert_at += 1
+        continue
+    if decl_re.match(lines[insert_at]):
+        if ";" not in stripped:
+            in_decl = True
+        insert_at += 1
+        continue
+    break
+
+lines[insert_at:insert_at] = [
+    "\tret = xg_ddk_blkdev_ioctl(bdev, cmd);\n",
+    "\tif (ret)\n",
+    "\t\treturn ret;\n",
+    "\n",
+]
+
+with open(path, "w", encoding="utf-8") as f:
+    f.writelines(lines)
+PY
+}
+
 inject_blkdev_ioctl_compat() {
 	file="$1"
 
-	perl -0pi -e 's/(long blkdev_ioctl\s*\([^)]*\)\s*\{.*?\n\s*int ret;\n)/$1\n\tret = xg_ddk_blkdev_ioctl(bdev, cmd);\n\tif (ret)\n\t\treturn ret;\n/s or die "long blkdev_ioctl anchor not found\n";' "$file" 2>/dev/null && return 0
-	perl -0pi -e 's/(int blkdev_ioctl\s*\([^)]*\)\s*\{.*?\n\s*int ret;\n)/$1\n\tret = xg_ddk_blkdev_ioctl(bdev, cmd);\n\tif (ret)\n\t\treturn ret;\n/s or die "int blkdev_ioctl anchor not found\n";' "$file" 2>/dev/null && return 0
+	inject_ioctl_after_declarations "$file" "blkdev_ioctl" && return 0
 	inject_ioctl_after_ret_and_bdev "$file" "blkdev_ioctl" && return 0
 
 	echo "blkdev_ioctl anchor not found"
@@ -231,8 +333,7 @@ inject_blkdev_ioctl_compat() {
 inject_compat_blkdev_ioctl_compat() {
 	file="$1"
 
-	perl -0pi -e 's/(long compat_blkdev_ioctl\s*\([^)]*\)\s*\{.*?\n\s*fmode_t mode = [^\n]+;\n)/$1\n\tret = xg_ddk_blkdev_ioctl(bdev, cmd);\n\tif (ret)\n\t\treturn ret;\n/s or die "compat_blkdev_ioctl fmode_t anchor not found\n";' "$file" 2>/dev/null && return 0
-	perl -0pi -e 's/(long compat_blkdev_ioctl\s*\([^)]*\)\s*\{.*?\n\s*blk_mode_t mode = [^\n]+;\n)/$1\n\tret = xg_ddk_blkdev_ioctl(bdev, cmd);\n\tif (ret)\n\t\treturn ret;\n/s or die "compat_blkdev_ioctl blk_mode_t anchor not found\n";' "$file" 2>/dev/null && return 0
+	inject_ioctl_after_declarations "$file" "compat_blkdev_ioctl" && return 0
 	inject_ioctl_after_ret_and_bdev "$file" "compat_blkdev_ioctl" && return 0
 
 	echo "compat_blkdev_ioctl anchor not found"
