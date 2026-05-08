@@ -1443,7 +1443,11 @@ jobs:
         run: |
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
           BBG_MAKEFILE="Baseband-guard/Makefile"
-          if [ -f "$BBG_MAKEFILE" ]; then
+          if [ "${{ inputs.android_version }}" = "android13" ] && \
+             [ "${{ inputs.kernel_version }}" = "5.15" ] && \
+             [ "${{ inputs.sub_level }}" = "41" ] && \
+             [ -f "$BBG_MAKEFILE" ]; then
+            echo "应用 BBG legacy host header 生成兼容修复: android13-5.15.41"
             python3 - "$BBG_MAKEFILE" <<'PY'
           import sys
           from pathlib import Path
