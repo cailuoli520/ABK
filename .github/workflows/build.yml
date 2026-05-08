@@ -1442,6 +1442,45 @@ jobs:
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
+          BBG_MAKEFILE="Baseband-guard/Makefile"
+          if [ -f "$BBG_MAKEFILE" ]; then
+            python3 - "$BBG_MAKEFILE" <<'PY'
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding="utf-8")
+
+          if "BBG_HOSTCC :=" not in text:
+              text = text.replace(
+                  "obj-$(CONFIG_BBG) += bbg.o\n\n",
+                  "obj-$(CONFIG_BBG) += bbg.o\n\n"
+                  "BBG_HOSTCC := $(shell if [ -x /usr/bin/gcc ]; then "
+                  "printf '%s\\n' /usr/bin/gcc; elif [ -x /usr/bin/cc ]; then "
+                  "printf '%s\\n' /usr/bin/cc; else command -v gcc 2>/dev/null || "
+                  "command -v cc 2>/dev/null || printf '%s\\n' \"$(HOSTCC)\"; fi)\n"
+                  "BBG_SKIP_GENHEADERS := $(filter clean mrproper distclean,$(MAKECMDGOALS))\n\n",
+                  1,
+              )
+
+          text = text.replace(
+              "$(shell $(HOSTCC) -I$(srctree)/scripts/selinux/genheaders",
+              "$(shell $(BBG_HOSTCC) -I$(srctree)/scripts/selinux/genheaders",
+              1,
+          )
+
+          if "ifeq ($(BBG_SKIP_GENHEADERS),)\nifneq ($(wildcard $(objtree)/security/selinux/flask.h),)" not in text:
+              text = text.replace(
+                  "ifneq ($(wildcard $(objtree)/security/selinux/flask.h),)\n",
+                  "ifeq ($(BBG_SKIP_GENHEADERS),)\n"
+                  "ifneq ($(wildcard $(objtree)/security/selinux/flask.h),)\n",
+                  1,
+              )
+              text = text.replace("\nendif\n\nGIT_BIN :=", "\nendif\nendif\n\nGIT_BIN :=", 1)
+
+          path.write_text(text, encoding="utf-8")
+          PY
+          fi
           echo "CONFIG_BBG=y" >> common/arch/arm64/configs/gki_defconfig
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' common/security/Kconfig
 
