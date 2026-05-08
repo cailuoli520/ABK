@@ -1544,6 +1544,7 @@ static bool xg_radio_nv_profile_allows_write(dev_t dev, loff_t pos, u64 count,
 	return true;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
 static bool xg_bdev_range_overlaps(struct block_device *part, sector_t start,
 				   sector_t end)
 {
@@ -1571,6 +1572,7 @@ static bool xg_bdev_range_overlaps(struct block_device *part, sector_t start,
 	part_end = part_start + part_size;
 	return start < part_end && end > part_start;
 }
+#endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
 static bool xg_hd_part_range_overlaps(struct hd_struct *part, sector_t start,
