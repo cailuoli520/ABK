@@ -2100,6 +2100,90 @@ jobs:
             fi
           fi
 
+      - name: 修复 SukiSU android16-6.12 源码兼容
+        if: inputs.ksu_variant == 'SukiSU' && inputs.android_version == 'android16' && inputs.kernel_version == '6.12'
+        working-directory: ${{ env.KERNEL_ROOT }}
+        run: |
+          set -euo pipefail
+
+          KSU_BUILD_DIR=""
+          for dir in common/drivers/kernelsu drivers/kernelsu KernelSU/kernel; do
+            if [ -d "$dir" ]; then
+              KSU_BUILD_DIR="$dir"
+              break
+            fi
+          done
+
+          if [ -z "$KSU_BUILD_DIR" ]; then
+            echo "::error::未找到实际 SukiSU 编译目录"
+            exit 1
+          fi
+
+          python3 - "$KSU_BUILD_DIR" <<'PY'
+          import sys
+          from pathlib import Path
+
+          ksu_dir = Path(sys.argv[1])
+          changed = False
+
+          netlink_h = Path("common/include/linux/netlink.h")
+          super_access_c = ksu_dir / "kpm/super_access.c"
+          if super_access_c.exists() and netlink_h.exists():
+              netlink_text = netlink_h.read_text(errors="ignore")
+              if "cb_mutex" not in netlink_text:
+                  text = super_access_c.read_text()
+                  line = "DEFINE_MEMBER(netlink_kernel_cfg, cb_mutex)\n"
+                  if line in text:
+                      super_access_c.write_text(text.replace(line, "", 1))
+                      changed = True
+                      print("已移除 android16-6.12 不存在的 netlink_kernel_cfg.cb_mutex 成员探测")
+
+          lsm_hooks_h = Path("common/include/linux/lsm_hooks.h")
+          lsm_hook_c = ksu_dir / "hook/lsm_hook.c"
+          if lsm_hook_c.exists() and lsm_hooks_h.exists():
+              lsm_hooks_text = lsm_hooks_h.read_text(errors="ignore")
+              if "const struct lsm_id *lsmid" in lsm_hooks_text:
+                  text = lsm_hook_c.read_text()
+                  old_call = '    security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks), "ksu");'
+                  if old_call in text and "ksu_lsmid" not in text:
+                      anchor = "\nvoid __init ksu_lsm_hook_init(void)\n"
+                      old_block = (
+                          "#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)\n"
+                          f"{old_call}\n"
+                          "#else"
+                      )
+                      new_block = (
+                          "#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0)\n"
+                          "    security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks), &ksu_lsmid);\n"
+                          "#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)\n"
+                          f"{old_call}\n"
+                          "#else"
+                      )
+                      lsmid_block = "\n".join([
+                          "",
+                          "/* ABK: android16-6.12 security_add_hooks() expects struct lsm_id. */",
+                          "#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0)",
+                          "static const struct lsm_id ksu_lsmid = {",
+                          '    .name = "ksu",',
+                          "    .id = 0,",
+                          "};",
+                          "#endif",
+                          "",
+                      ])
+                      if anchor not in text:
+                          raise SystemExit(f"ksu_lsm_hook_init anchor not found: {lsm_hook_c}")
+                      if old_block not in text:
+                          raise SystemExit(f"security_add_hooks compatibility block not found: {lsm_hook_c}")
+                      text = text.replace(anchor, lsmid_block + anchor, 1)
+                      text = text.replace(old_block, new_block, 1)
+                      lsm_hook_c.write_text(text)
+                      changed = True
+                      print("已适配 android16-6.12 security_add_hooks() 的 struct lsm_id 参数")
+
+          if not changed:
+              print("SukiSU android16-6.12 专项兼容修复无需修改。")
+          PY
+
       - name: 编译内核
         uses: nick-fields/retry@v4
         with:
