@@ -39,6 +39,16 @@ on:
         required: false
         type: string
         default: ""
+      use_custom_external_modules:
+        description: "启用自定义外部模块注入"
+        required: false
+        type: boolean
+        default: false
+      custom_external_modules:
+        description: "自定义外部模块（repo;stage|repo;stage，stage=after_patch/before_build）"
+        required: false
+        type: string
+        default: ""
 
 jobs:
   prepare-matrix:
@@ -126,7 +136,7 @@ jobs:
               summary.write("## 全属性内核构建矩阵\n\n")
               summary.write(f"- 总任务数: {len(matrix)}\n")
               summary.write("- Droidspaces: off\n")
-              summary.write("- 自定义外部模块: off\n")
+              summary.write("- 自定义外部模块: ${{ inputs.use_custom_external_modules && 'on' || 'off' }}\n")
               summary.write("- Android16/6.12: ZRAM off\n")
               summary.write("- LTS: 已排除\n\n")
               for combo in sorted(counts):
@@ -165,8 +175,8 @@ jobs:
       zram_full_algo: ${{ matrix.kernel_version != '6.12' }}
       zram_extra_algos: ""
       kpm_password: ${{ inputs.kpm_password || '' }}
-      use_custom_external_modules: false
-      custom_external_modules: ""
+      use_custom_external_modules: ${{ inputs.use_custom_external_modules }}
+      custom_external_modules: ${{ inputs.custom_external_modules || '' }}
 
   release-full-feature-matrix:
     name: 发布全属性矩阵产物
@@ -228,7 +238,7 @@ jobs:
           | Re-Kernel | 开启 |
           | SUSFS | 开启 |
           | Droidspaces | off |
-          | 自定义外部模块 | off |
+          | 自定义外部模块 | ${{ inputs.use_custom_external_modules && 'on' || 'off' }} |
           | Android16 / 6.12 ZRAM | off |
 
           ### 下载说明
