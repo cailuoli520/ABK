@@ -167,3 +167,111 @@ jobs:
       kpm_password: ${{ inputs.kpm_password || '' }}
       use_custom_external_modules: false
       custom_external_modules: ""
+
+  release-full-feature-matrix:
+    name: 发布全属性矩阵产物
+    needs:
+      - prepare-matrix
+      - build-full-feature-matrix
+    if: ${{ needs.prepare-matrix.outputs.count != '0' && needs.build-full-feature-matrix.result == 'success' && github.repository == 'xingguangcuican6666/ABK' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: 检出代码仓库
+        uses: actions/checkout@v6
+
+      - name: 下载矩阵构建产物
+        uses: actions/download-artifact@v8
+        with:
+          path: ./downloaded-artifacts
+
+      - name: 准备 Release 元数据
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_tag="full-feature-${GITHUB_RUN_ID}-a${GITHUB_RUN_ATTEMPT}"
+          release_title="AnyBase Kernel 全属性矩阵 ${{ inputs.kernelsu_variant }} #${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+
+          find ./downloaded-artifacts -type f \
+            \( -name '*AnyKernel3.zip' -o -name '*.img' \) \
+            ! -path '*-Rejects/*' \
+            | sort > release_assets.txt
+
+          asset_count="$(wc -l < release_assets.txt | tr -d '[:space:]')"
+          if [ "$asset_count" -eq 0 ]; then
+            echo "::error::未找到可发布的内核产物。"
+            find ./downloaded-artifacts -maxdepth 3 -type f -print || true
+            exit 1
+          fi
+
+          cat > release_body.md << EOF
+          ## AnyBase Kernel 全属性矩阵构建
+
+          全量矩阵已全部构建成功，本 Release 自动发布本次 workflow run 的所有内核产物。
+
+          | 项目 | 内容 |
+          |:---|:---|
+          | KernelSU 变体 | ${{ inputs.kernelsu_variant }} |
+          | KernelSU 分支 | ${{ inputs.kernelsu_branch }} |
+          | 自定义版本名 | ${{ inputs.version || '未设置' }} |
+          | 构建时间 | ${{ inputs.build_time || '当前 UTC' }} |
+          | 矩阵任务数 | ${{ needs.prepare-matrix.outputs.count }} |
+          | BBG | 开启 |
+          | DDK LSM | 开启 |
+          | KPM | 开启 |
+          | Re-Kernel | 开启 |
+          | SUSFS | 开启 |
+          | Droidspaces | off |
+          | 自定义外部模块 | off |
+          | Android16 / 6.12 ZRAM | off |
+
+          ### 下载说明
+
+          Assets 中包含每个内核小版本对应的 AnyKernel3 刷入包和 boot 镜像。
+
+          > 刷写内核有变砖风险。刷入前请备份原厂 boot / vendor_boot 等镜像，并确认设备、Android 版本、内核版本和补丁级别匹配。
+          EOF
+
+          {
+            echo "RELEASE_TAG=$release_tag"
+            echo "RELEASE_TITLE=$release_title"
+            echo "ASSET_COUNT=$asset_count"
+          } >> "$GITHUB_ENV"
+
+      - name: 创建 GitHub Release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gh release create "$RELEASE_TAG" \
+            --repo "$REPO" \
+            --target "$GITHUB_SHA" \
+            --title "$RELEASE_TITLE" \
+            --notes-file release_body.md
+
+      - name: 上传 Release 产物
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          while IFS= read -r file; do
+            [ -f "$file" ] || continue
+            echo "上传 $file"
+            gh release upload "$RELEASE_TAG" "$file" --repo "$REPO" --clobber
+          done < release_assets.txt
+
+      - name: 发布摘要
+        shell: bash
+        run: |
+          {
+            echo "## 全属性矩阵 Release 已创建"
+            echo "- Release: https://github.com/$REPO/releases/tag/$RELEASE_TAG"
+            echo "- 产物数量: $ASSET_COUNT"
+            echo "- 矩阵任务数: ${{ needs.prepare-matrix.outputs.count }}"
+          } >> "$GITHUB_STEP_SUMMARY"
