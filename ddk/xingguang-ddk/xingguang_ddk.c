@@ -1283,16 +1283,15 @@ static struct partition_meta_info *xg_bdev_meta_info(struct block_device *bdev)
 #endif
 }
 
-static const u8 *xg_bdev_part_name(struct block_device *bdev, unsigned int *len)
+static const u8 *xg_partition_meta_name(struct partition_meta_info *info,
+					unsigned int *len)
 {
-	struct partition_meta_info *info;
 	const u8 *name;
 	unsigned int i;
 
 	if (len)
 		*len = 0;
 
-	info = xg_bdev_meta_info(bdev);
 	if (!info)
 		return NULL;
 
@@ -1309,6 +1308,11 @@ static const u8 *xg_bdev_part_name(struct block_device *bdev, unsigned int *len)
 	if (len)
 		*len = i;
 	return name;
+}
+
+static const u8 *xg_bdev_part_name(struct block_device *bdev, unsigned int *len)
+{
+	return xg_partition_meta_name(xg_bdev_meta_info(bdev), len);
 }
 
 static bool xg_part_name_eq(const u8 *name, unsigned int len, const char *base)
@@ -1366,6 +1370,20 @@ static enum xg_part_class xg_classify_bdev(struct block_device *bdev)
 	name = xg_bdev_part_name(bdev, &len);
 	return xg_classify_part_name(name, len);
 }
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
+static enum xg_part_class xg_classify_hd_part(struct hd_struct *part)
+{
+	const u8 *name;
+	unsigned int len;
+
+	if (!part)
+		return XG_PART_GENERIC;
+
+	name = xg_partition_meta_name(part->info, &len);
+	return xg_classify_part_name(name, len);
+}
+#endif
 
 static struct block_device *xg_file_bdev(struct file *file)
 {
@@ -1531,25 +1549,76 @@ static bool xg_bdev_range_overlaps(struct block_device *part, sector_t start,
 {
 	sector_t part_start;
 	sector_t part_end;
+	sector_t part_size;
 
-	if (!part || !bdev_nr_sectors(part))
+	if (!part)
 		return false;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
+	if (!part->bd_part)
+		return false;
+
+	part_size = part->bd_part->nr_sects;
+	part_start = part->bd_part->start_sect;
+#else
+	part_size = bdev_nr_sectors(part);
 	part_start = part->bd_start_sect;
-	part_end = part_start + bdev_nr_sectors(part);
+#endif
+
+	if (!part_size)
+		return false;
+
+	part_end = part_start + part_size;
 	return start < part_end && end > part_start;
 }
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
+static bool xg_hd_part_range_overlaps(struct hd_struct *part, sector_t start,
+				      sector_t end)
+{
+	sector_t part_start;
+	sector_t part_end;
+
+	if (!part || !part->nr_sects)
+		return false;
+
+	part_start = part->start_sect;
+	part_end = part_start + part->nr_sects;
+	return start < part_end && end > part_start;
+}
+#endif
 
 static bool xg_bdev_has_protected_part(struct block_device *bdev,
 				       enum xg_part_class *classp)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
+	struct disk_part_iter piter;
+	struct hd_struct *part;
+#else
 	struct block_device *part;
 	unsigned long idx;
+#endif
 	bool found = false;
 
 	if (!bdev || !bdev->bd_disk)
 		return false;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
+	disk_part_iter_init(&piter, bdev->bd_disk, DISK_PITER_INCL_EMPTY);
+	while ((part = disk_part_iter_next(&piter))) {
+		enum xg_part_class part_class;
+
+		part_class = xg_classify_hd_part(part);
+		if (part_class == XG_PART_GENERIC)
+			continue;
+
+		if (classp)
+			*classp = part_class;
+		found = true;
+		break;
+	}
+	disk_part_iter_exit(&piter);
+#else
 	rcu_read_lock();
 	xa_for_each_start(&bdev->bd_disk->part_tbl, idx, part, 1) {
 		enum xg_part_class part_class;
@@ -1564,6 +1633,7 @@ static bool xg_bdev_has_protected_part(struct block_device *bdev,
 		break;
 	}
 	rcu_read_unlock();
+#endif
 
 	return found;
 }
@@ -1571,9 +1641,14 @@ static bool xg_bdev_has_protected_part(struct block_device *bdev,
 static enum xg_part_class xg_classify_bdev_range(struct block_device *bdev,
 						 loff_t pos, u64 count)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
+	struct disk_part_iter piter;
+	struct hd_struct *part;
+#else
 	struct block_device *part;
-	enum xg_part_class class;
 	unsigned long idx;
+#endif
+	enum xg_part_class class;
 	sector_t start;
 	sector_t end;
 	u64 end_byte;
@@ -1592,11 +1667,32 @@ static enum xg_part_class xg_classify_bdev_range(struct block_device *bdev,
 
 	start = (sector_t)((u64)pos >> SECTOR_SHIFT);
 	if (bdev_is_partition(bdev)) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
+		if (!bdev->bd_part)
+			return class;
+
+		start += bdev->bd_part->start_sect;
+		if (end != (sector_t)-1)
+			end += bdev->bd_part->start_sect;
+#else
 		start += bdev->bd_start_sect;
 		if (end != (sector_t)-1)
 			end += bdev->bd_start_sect;
+#endif
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 11, 0)
+	disk_part_iter_init(&piter, bdev->bd_disk, DISK_PITER_INCL_EMPTY);
+	while ((part = disk_part_iter_next(&piter))) {
+		if (!xg_hd_part_range_overlaps(part, start, end))
+			continue;
+
+		class = xg_classify_hd_part(part);
+		if (class != XG_PART_GENERIC)
+			break;
+	}
+	disk_part_iter_exit(&piter);
+#else
 	rcu_read_lock();
 	xa_for_each_start(&bdev->bd_disk->part_tbl, idx, part, 1) {
 		if (!xg_bdev_range_overlaps(part, start, end))
@@ -1607,6 +1703,7 @@ static enum xg_part_class xg_classify_bdev_range(struct block_device *bdev,
 			break;
 	}
 	rcu_read_unlock();
+#endif
 
 	return class;
 }
