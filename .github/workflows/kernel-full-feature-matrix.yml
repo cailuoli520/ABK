@@ -39,6 +39,16 @@ on:
         required: false
         type: string
         default: ""
+      use_ntsync:
+        description: "启用 NTsync"
+        required: false
+        type: boolean
+        default: true
+      use_networking:
+        description: "启用网络增强（IPSet + BBR）"
+        required: false
+        type: boolean
+        default: true
       use_custom_external_modules:
         description: "启用自定义外部模块注入"
         required: false
@@ -136,6 +146,8 @@ jobs:
               summary.write("## 全属性内核构建矩阵\n\n")
               summary.write(f"- 总任务数: {len(matrix)}\n")
               summary.write("- Droidspaces: off\n")
+              summary.write("- NTsync: ${{ inputs.use_ntsync && 'on' || 'off' }}\n")
+              summary.write("- Networking: ${{ inputs.use_networking && 'on' || 'off' }}\n")
               summary.write("- 自定义外部模块: ${{ inputs.use_custom_external_modules && 'on' || 'off' }}\n")
               summary.write("- Android16/6.12: ZRAM off\n")
               summary.write("- LTS: 已排除\n\n")
@@ -167,6 +179,8 @@ jobs:
       use_zram: ${{ matrix.kernel_version != '6.12' }}
       use_bbg: true
       use_ddk: true
+      use_ntsync: ${{ inputs.use_ntsync }}
+      use_networking: ${{ inputs.use_networking }}
       use_kpm: true
       use_rekernel: true
       enable_susfs: true
@@ -234,6 +248,8 @@ jobs:
           | 矩阵任务数 | ${{ needs.prepare-matrix.outputs.count }} |
           | BBG | 开启 |
           | DDK LSM | 开启 |
+          | NTsync | ${{ inputs.use_ntsync && '开启' || '关闭' }} |
+          | Networking | ${{ inputs.use_networking && '开启' || '关闭' }} |
           | KPM | 开启 |
           | Re-Kernel | 开启 |
           | SUSFS | 开启 |

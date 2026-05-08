@@ -54,6 +54,14 @@ on:
         required: false
         type: boolean
         default: false
+      use_ntsync:
+        required: false
+        type: boolean
+        default: false
+      use_networking:
+        required: false
+        type: boolean
+        default: false
       use_kpm:
         required: true
         type: boolean
@@ -131,6 +139,8 @@ jobs:
           echo "ZRAM 额外算法 : ${{ inputs.zram_extra_algos || '无' }}"
           echo "BBG 补丁      : ${{ inputs.use_bbg }}"
           echo "DDK LSM       : ${{ inputs.use_ddk }}"
+          echo "NTsync 补丁   : ${{ inputs.use_ntsync }}"
+          echo "Networking    : ${{ inputs.use_networking }}"
           echo "KPM 功能      : ${{ inputs.use_kpm }}"
           echo "KPM 密码      : ${{ inputs.kpm_password && '已自定义' || '默认' }}"
           echo "Re-Kernel     : ${{ inputs.use_rekernel }}"
@@ -1108,6 +1118,80 @@ jobs:
               fi
             fi
           fi
+
+      - name: 应用 NTsync 补丁
+        if: inputs.use_ntsync
+        working-directory: ${{ env.KERNEL_ROOT }}/common
+        run: |
+          echo "启用 NTsync 补丁"
+          echo "应用基础补丁: ntsync_base.patch..."
+          patch -p1 --forward < "$KERNEL_PATCHES/common/ntsync/ntsync_base.patch" || true
+
+          PATCH_FILE="$KERNEL_PATCHES/common/ntsync/ntsync_compat_${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch"
+          echo "应用版本补丁: $(basename "$PATCH_FILE")"
+          patch -p1 --forward < "$PATCH_FILE" || true
+
+          sed -i '/^CONFIG_NTSYNC=/d; /^# CONFIG_NTSYNC is not set$/d' "$DEFCONFIG"
+          echo "CONFIG_NTSYNC=y" >> "$DEFCONFIG"
+          echo "应用 NTsync 补丁完成"
+
+      - name: 应用 Networking 增强 (IPSet + BBR)
+        if: inputs.use_networking
+        working-directory: ${{ env.KERNEL_ROOT }}/common
+        run: |
+          set_config() {
+            local key="$1"
+            local value="$2"
+            sed -i "/^${key}=/d; /^# ${key} is not set$/d" "$DEFCONFIG"
+            echo "${key}=${value}" >> "$DEFCONFIG"
+          }
+
+          echo "添加 IPSet 与 IPv6 NAT 支持"
+          set_config CONFIG_IP_SET y
+          set_config CONFIG_IP_SET_MAX 65534
+          set_config CONFIG_IP_SET_BITMAP_IP y
+          set_config CONFIG_IP_SET_BITMAP_IPMAC y
+          set_config CONFIG_IP_SET_BITMAP_PORT y
+          set_config CONFIG_IP_SET_HASH_IP y
+          set_config CONFIG_IP_SET_HASH_IPMARK y
+          set_config CONFIG_IP_SET_HASH_IPPORT y
+          set_config CONFIG_IP_SET_HASH_IPPORTIP y
+          set_config CONFIG_IP_SET_HASH_IPPORTNET y
+          set_config CONFIG_IP_SET_HASH_IPMAC y
+          set_config CONFIG_IP_SET_HASH_MAC y
+          set_config CONFIG_IP_SET_HASH_NETPORTNET y
+          set_config CONFIG_IP_SET_HASH_NET y
+          set_config CONFIG_IP_SET_HASH_NETNET y
+          set_config CONFIG_IP_SET_HASH_NETPORT y
+          set_config CONFIG_IP_SET_HASH_NETIFACE y
+          set_config CONFIG_IP_SET_LIST_SET y
+          set_config CONFIG_NETFILTER_XT_MATCH_ADDRTYPE y
+          set_config CONFIG_NETFILTER_XT_SET y
+          set_config CONFIG_IP6_NF_NAT y
+          set_config CONFIG_IP6_NF_TARGET_MASQUERADE y
+
+          if [ "${{ inputs.kernel_version }}" = "5.10" ] && [ -f net/netfilter/ipset/ip_set_core.c ]; then
+            sed -i 's/CONFIG_IP_SET_MAX/65534/g' net/netfilter/ipset/ip_set_core.c
+          fi
+
+          echo "添加 TCP BBR 支持"
+          if [ "${{ inputs.kernel_version }}" = "6.1" ]; then
+            PATCH_FILE="$KERNEL_PATCHES/bbr/bbrv3-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch"
+            echo "应用 BBRv3 补丁: $(basename "$PATCH_FILE")"
+            patch -p1 --forward < "$PATCH_FILE" || true
+          fi
+
+          set_config CONFIG_TCP_CONG_ADVANCED y
+          set_config CONFIG_TCP_CONG_BBR y
+          set_config CONFIG_TCP_CONG_CUBIC y
+          set_config CONFIG_TCP_CONG_BIC y
+          set_config CONFIG_TCP_CONG_WESTWOOD y
+          set_config CONFIG_TCP_CONG_HTCP y
+          set_config CONFIG_DEFAULT_BBR y
+          set_config CONFIG_DEFAULT_TCP_CONG '"bbr"'
+          set_config CONFIG_NET_SCH_FQ y
+          set_config CONFIG_NET_SCH_FQ_CODEL y
+          echo "Networking 配置完成"
 
       - name: 克隆 Droidspaces 补丁仓库
         if: inputs.droidspaces != 'off'
