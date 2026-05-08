@@ -273,6 +273,8 @@ private fun aboutLinks(): List<AboutLink> {
         AboutLink("SukiSU patch", "https://github.com/ShirkNeko/SukiSU_patch"),
         AboutLink("AnyKernel3", "https://github.com/WildKernels/AnyKernel3"),
         AboutLink("Kernel patches", "https://github.com/WildKernels/kernel_patches"),
+        AboutLink("NTsync / IPSet / BBR 来源", "https://github.com/WildKernels/kernel_patches"),
+        AboutLink("NTsync / IPSet / BBR PR by huime180", "https://github.com/huime180"),
         AboutLink("Action-Build", "https://github.com/Numbersf/Action-Build"),
         AboutLink("SUSFS 模块构建来源", "https://github.com/sidex15/susfs4ksu-module"),
         AboutLink(
