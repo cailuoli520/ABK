@@ -157,7 +157,7 @@ private fun AppBackgroundHost(
             )
         }
         CompositionLocalProvider(
-            LocalUiSurfaceAlpha provides if (hasBackground) uiSurfaceAlpha.coerceIn(0.72f, 1f) else 1f
+            LocalUiSurfaceAlpha provides if (hasBackground) uiSurfaceAlpha.coerceIn(0f, 1f) else 1f
         ) {
             content()
         }

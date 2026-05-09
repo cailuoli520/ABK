@@ -97,7 +97,7 @@ class PreferencesRepository(private val context: Context) {
         it[KEY_BACKGROUND_IMAGE_ENABLED] = v
     }
     suspend fun setUiSurfaceAlpha(alpha: Float) = context.dataStore.edit {
-        it[KEY_UI_SURFACE_ALPHA] = alpha.coerceIn(0.72f, 1f)
+        it[KEY_UI_SURFACE_ALPHA] = alpha.coerceIn(0f, 1f)
     }
     suspend fun saveBuildConfigJson(json: String) = context.dataStore.edit { it[KEY_BUILD_CONFIG] = json }
     suspend fun saveDownloadedArtifactsJson(json: String) = context.dataStore.edit { it[KEY_DOWNLOADED_ARTIFACTS] = json }

@@ -408,15 +408,15 @@ private fun BackgroundAlphaControl(
                 color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = "${(alpha.coerceIn(0.72f, 1f) * 100).toInt()}%",
+                text = "${(alpha.coerceIn(0f, 1f) * 100).toInt()}%",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         Slider(
-            value = alpha.coerceIn(0.72f, 1f),
+            value = alpha.coerceIn(0f, 1f),
             onValueChange = onAlphaChange,
-            valueRange = 0.72f..1f,
+            valueRange = 0f..1f,
             enabled = enabled
         )
         Text(
