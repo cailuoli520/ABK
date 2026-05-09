@@ -46,6 +46,7 @@ Image.gz
 Image.lz4
 *.img
 *.zip
+!modules/ntsync-ipset-helper/ntsync权限修复&ipset启用.zip
 
 # Temporary files
 *.temp
