@@ -79,6 +79,9 @@ data class MainUiState(
     val dynamicColorEnabled: Boolean = true,
     val customThemeColorArgb: Int? = null,
     val customAccentColorArgb: Int? = null,
+    val customBackgroundUri: String? = null,
+    val backgroundImageEnabled: Boolean = false,
+    val uiSurfaceAlpha: Float = 1f,
     val downloadMirrorBaseUrl: String = "",
     val prebuiltGkiEnabled: Boolean = true
 )
@@ -207,6 +210,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             prefs.downloadMirrorBaseUrl.collect { url ->
                 _uiState.update { it.copy(downloadMirrorBaseUrl = url) }
+            }
+        }
+        viewModelScope.launch {
+            combine(
+                prefs.customBackgroundUri,
+                prefs.backgroundImageEnabled,
+                prefs.uiSurfaceAlpha
+            ) { uri, enabled, alpha ->
+                BackgroundPreferences(uri, enabled, alpha)
+            }.collect { backgroundPrefs ->
+                _uiState.update {
+                    it.copy(
+                        customBackgroundUri = backgroundPrefs.uri,
+                        backgroundImageEnabled = backgroundPrefs.enabled,
+                        uiSurfaceAlpha = backgroundPrefs.alpha
+                    )
+                }
             }
         }
         viewModelScope.launch {
@@ -430,6 +450,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     dynamicColorEnabled = it.dynamicColorEnabled,
                     customThemeColorArgb = it.customThemeColorArgb,
                     customAccentColorArgb = it.customAccentColorArgb,
+                    customBackgroundUri = it.customBackgroundUri,
+                    backgroundImageEnabled = it.backgroundImageEnabled,
+                    uiSurfaceAlpha = it.uiSurfaceAlpha,
                     downloadMirrorBaseUrl = it.downloadMirrorBaseUrl,
                     prebuiltGkiEnabled = it.prebuiltGkiEnabled
                 )
@@ -1359,6 +1382,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setCustomThemeColors(themeColorArgb: Int, accentColorArgb: Int) = viewModelScope.launch {
         prefs.setCustomThemeColors(themeColorArgb, accentColorArgb)
     }
+    fun setBackgroundImageUri(uri: String?) = viewModelScope.launch { prefs.setBackgroundImageUri(uri) }
+    fun setBackgroundImageEnabled(v: Boolean) = viewModelScope.launch { prefs.setBackgroundImageEnabled(v) }
+    fun setUiSurfaceAlpha(alpha: Float) = viewModelScope.launch { prefs.setUiSurfaceAlpha(alpha) }
     fun acceptTerms() = viewModelScope.launch { prefs.acceptCurrentTerms() }
     fun setDownloadMirrorBaseUrl(url: String) = viewModelScope.launch {
         prefs.setDownloadMirrorBaseUrl(url.trim())
@@ -1645,6 +1671,12 @@ private data class ThemePreferences(
     val dynamicColorEnabled: Boolean,
     val customThemeColorArgb: Int?,
     val customAccentColorArgb: Int?
+)
+
+private data class BackgroundPreferences(
+    val uri: String?,
+    val enabled: Boolean,
+    val alpha: Float
 )
 
 private operator fun <A, B, C, D, E> Quintuple<A, B, C, D, E>.component1() = a

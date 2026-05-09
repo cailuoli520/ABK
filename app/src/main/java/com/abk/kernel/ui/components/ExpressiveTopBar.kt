@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.abk.kernel.ui.theme.uiSurfaceColor
 
 @Composable
 fun ExpressiveTopBar(
@@ -43,7 +44,7 @@ fun ExpressiveTopBar(
 
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface,
+        color = uiSurfaceColor(MaterialTheme.colorScheme.surface),
         contentColor = MaterialTheme.colorScheme.onSurface
     ) {
         Row(

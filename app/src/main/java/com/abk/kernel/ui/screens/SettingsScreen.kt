@@ -6,6 +6,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -39,6 +41,7 @@ import com.abk.kernel.ui.components.ExpressiveSectionCard
 import com.abk.kernel.ui.components.ExpressiveStatusChip
 import com.abk.kernel.ui.components.ExpressiveSwitchItem
 import com.abk.kernel.ui.components.ExpressiveTopBar
+import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.viewmodel.MainViewModel
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -80,7 +83,7 @@ fun SettingsScreen(vm: MainViewModel) {
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
         topBar = {
             ExpressiveTopBar(
                 title = if (showThemeSettings) {
@@ -107,13 +110,19 @@ fun SettingsScreen(vm: MainViewModel) {
                 dynamicColorEnabled = state.dynamicColorEnabled,
                 customThemeColorArgb = state.customThemeColorArgb,
                 customAccentColorArgb = state.customAccentColorArgb,
+                backgroundUri = state.customBackgroundUri,
+                backgroundImageEnabled = state.backgroundImageEnabled,
+                uiSurfaceAlpha = state.uiSurfaceAlpha,
                 onThemeModeChange = { vm.setThemeMode(it) },
                 onDynamicColorEnabledChange = { enabled, themeColor, accentColor ->
                     vm.setDynamicColorEnabled(enabled, themeColor, accentColor)
                 },
                 onCustomThemeColorsChange = { themeColor, accentColor ->
                     vm.setCustomThemeColors(themeColor, accentColor)
-                }
+                },
+                onBackgroundImageChange = { vm.setBackgroundImageUri(it) },
+                onBackgroundImageEnabledChange = { vm.setBackgroundImageEnabled(it) },
+                onUiSurfaceAlphaChange = { vm.setUiSurfaceAlpha(it) }
             )
             return@Scaffold
         }
@@ -234,15 +243,35 @@ private fun ThemeSettingsScreen(
     dynamicColorEnabled: Boolean,
     customThemeColorArgb: Int?,
     customAccentColorArgb: Int?,
+    backgroundUri: String?,
+    backgroundImageEnabled: Boolean,
+    uiSurfaceAlpha: Float,
     onThemeModeChange: (String) -> Unit,
     onDynamicColorEnabledChange: (Boolean, Int?, Int?) -> Unit,
-    onCustomThemeColorsChange: (Int, Int) -> Unit
+    onCustomThemeColorsChange: (Int, Int) -> Unit,
+    onBackgroundImageChange: (String?) -> Unit,
+    onBackgroundImageEnabledChange: (Boolean) -> Unit,
+    onUiSurfaceAlphaChange: (Float) -> Unit
 ) {
+    val context = LocalContext.current
     val dynamicColorAvailable = isDynamicColorAvailable()
     val effectiveDynamicColorEnabled = dynamicColorAvailable && dynamicColorEnabled
     val colorScheme = MaterialTheme.colorScheme
     val selectedThemeColorArgb = customThemeColorArgb ?: colorScheme.primary.toArgb()
     val selectedAccentColorArgb = customAccentColorArgb ?: colorScheme.secondary.toArgb()
+    val backgroundPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            onBackgroundImageChange(uri.toString())
+        }
+    }
     val themes = listOf(
         Triple("system", stringResource(R.string.settings_theme_system), Icons.Default.BrightnessMedium),
         Triple("light", stringResource(R.string.settings_theme_light), Icons.Default.LightMode),
@@ -319,7 +348,82 @@ private fun ThemeSettingsScreen(
             }
         }
 
+        SettingsGroup(title = "背景") {
+            SwitchSettingsItem(
+                icon = Icons.Default.Image,
+                title = "自定义背景",
+                subtitle = if (backgroundUri.isNullOrBlank()) {
+                    "选择图片后可启用全局背景"
+                } else {
+                    "已选择背景图片"
+                },
+                checked = backgroundImageEnabled && !backgroundUri.isNullOrBlank(),
+                enabled = !backgroundUri.isNullOrBlank(),
+                onCheckedChange = onBackgroundImageEnabledChange
+            )
+            ExpressiveListItem(
+                title = if (backgroundUri.isNullOrBlank()) "选择背景图片" else "更换背景图片",
+                subtitle = "从本机选择一张图片作为应用背景",
+                leadingIcon = Icons.Default.Image,
+                onClick = { backgroundPicker.launch(arrayOf("image/*")) }
+            )
+            if (!backgroundUri.isNullOrBlank()) {
+                ExpressiveListItem(
+                    title = "移除背景图片",
+                    subtitle = "恢复纯色 Material 主题背景",
+                    leadingIcon = Icons.Default.Delete,
+                    onClick = { onBackgroundImageChange(null) }
+                )
+            }
+            BackgroundAlphaControl(
+                alpha = uiSurfaceAlpha,
+                enabled = backgroundImageEnabled && !backgroundUri.isNullOrBlank(),
+                onAlphaChange = onUiSurfaceAlphaChange
+            )
+        }
+
         Spacer(Modifier.height(80.dp))
+    }
+}
+
+@Composable
+private fun BackgroundAlphaControl(
+    alpha: Float,
+    enabled: Boolean,
+    onAlphaChange: (Float) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "界面不透明度",
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "${(alpha.coerceIn(0.72f, 1f) * 100).toInt()}%",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Slider(
+            value = alpha.coerceIn(0.72f, 1f),
+            onValueChange = onAlphaChange,
+            valueRange = 0.72f..1f,
+            enabled = enabled
+        )
+        Text(
+            text = "调低后卡片、顶部栏和底部栏会透出背景。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -603,6 +707,7 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
             "外观模式" -> "控制应用明暗显示方式。"
             "颜色来源" -> "选择系统动态颜色或自定义色板。"
             "自定义颜色" -> "莫奈关闭时使用的主题色和强调色。"
+            "背景" -> "选择背景图片并调整上层界面透明度。"
             else -> "应用版本与源码信息。"
         },
         icon = when (title) {
@@ -613,6 +718,7 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
             "外观模式" -> Icons.Default.BrightnessMedium
             "颜色来源" -> Icons.Default.AutoAwesome
             "自定义颜色" -> Icons.Default.Palette
+            "背景" -> Icons.Default.Image
             else -> Icons.Default.Info
         }
     ) {

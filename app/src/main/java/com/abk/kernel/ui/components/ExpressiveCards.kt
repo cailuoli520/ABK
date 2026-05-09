@@ -37,6 +37,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.abk.kernel.ui.theme.uiSurfaceColor
 
 @Composable
 fun ExpressiveHeroCard(
@@ -52,7 +53,7 @@ fun ExpressiveHeroCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = containerColor,
+            containerColor = uiSurfaceColor(containerColor),
             contentColor = contentColor
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
@@ -116,7 +117,7 @@ fun ExpressiveSectionCard(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = containerColor),
+        colors = CardDefaults.cardColors(containerColor = uiSurfaceColor(containerColor)),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
@@ -173,7 +174,7 @@ fun ExpressiveListItem(
 ) {
     val colors = MaterialTheme.colorScheme
     val containerColor = when {
-        selected -> colors.primaryContainer
+        selected -> uiSurfaceColor(colors.primaryContainer)
         else -> Color.Transparent
     }
     val titleColor = when {

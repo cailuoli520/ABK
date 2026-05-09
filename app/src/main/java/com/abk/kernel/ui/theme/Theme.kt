@@ -14,6 +14,7 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.expressiveLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
@@ -21,6 +22,14 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import com.google.android.material.color.utilities.CorePalette
 import com.google.android.material.color.utilities.TonalPalette
+
+val LocalUiSurfaceAlpha = staticCompositionLocalOf { 1f }
+
+@Composable
+fun uiSurfaceColor(color: Color): Color {
+    val alpha = LocalUiSurfaceAlpha.current
+    return if (alpha >= 0.995f) color else color.copy(alpha = alpha)
+}
 
 @Composable
 fun AbkTheme(

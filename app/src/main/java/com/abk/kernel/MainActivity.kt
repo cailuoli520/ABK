@@ -18,11 +18,14 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -44,6 +47,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -53,15 +57,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
 import com.abk.kernel.ui.screens.AuthGateScreen
 import com.abk.kernel.ui.screens.BuildScreen
 import com.abk.kernel.ui.screens.FlashScreen
 import com.abk.kernel.ui.screens.SettingsScreen
 import com.abk.kernel.ui.screens.StatusScreen
 import com.abk.kernel.ui.theme.AbkTheme
+import com.abk.kernel.ui.theme.LocalUiSurfaceAlpha
+import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.viewmodel.AuthStep
 import com.abk.kernel.viewmodel.MainViewModel
 import kotlin.coroutines.cancellation.CancellationException
@@ -92,19 +102,65 @@ class MainActivity : ComponentActivity() {
                 customThemeColorArgb = state.customThemeColorArgb,
                 customAccentColorArgb = state.customAccentColorArgb
             ) {
-                when {
-                    !state.termsLoaded -> Surface(
-                        modifier = Modifier.fillMaxSize(),
-                        color = MaterialTheme.colorScheme.surface
-                    ) {}
-                    !state.termsAccepted -> TermsAgreementDialog(
-                        onAccept = vm::acceptTerms,
-                        onDecline = { finishAffinity() }
-                    )
-                    state.authStep != AuthStep.READY -> AuthGateScreen(vm)
-                    else -> AbkMainScaffold(vm)
+                AppBackgroundHost(
+                    backgroundUri = state.customBackgroundUri,
+                    backgroundEnabled = state.backgroundImageEnabled,
+                    uiSurfaceAlpha = state.uiSurfaceAlpha
+                ) {
+                    when {
+                        !state.termsLoaded -> Surface(
+                            modifier = Modifier.fillMaxSize(),
+                            color = MaterialTheme.colorScheme.surface
+                        ) {}
+                        !state.termsAccepted -> TermsAgreementDialog(
+                            onAccept = vm::acceptTerms,
+                            onDecline = { finishAffinity() }
+                        )
+                        state.authStep != AuthStep.READY -> AuthGateScreen(vm)
+                        else -> AbkMainScaffold(vm)
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AppBackgroundHost(
+    backgroundUri: String?,
+    backgroundEnabled: Boolean,
+    uiSurfaceAlpha: Float,
+    content: @Composable () -> Unit
+) {
+    val hasBackground = backgroundEnabled && !backgroundUri.isNullOrBlank()
+    val colorScheme = MaterialTheme.colorScheme
+    val scrimColor = if (colorScheme.surface.luminance() > 0.5f) {
+        colorScheme.surface.copy(alpha = 0.28f)
+    } else {
+        Color.Black.copy(alpha = 0.38f)
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colorScheme.surface)
+    ) {
+        if (hasBackground) {
+            AsyncImage(
+                model = backgroundUri,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(scrimColor)
+            )
+        }
+        CompositionLocalProvider(
+            LocalUiSurfaceAlpha provides if (hasBackground) uiSurfaceAlpha.coerceIn(0.72f, 1f) else 1f
+        ) {
+            content()
         }
     }
 }
@@ -251,10 +307,10 @@ private fun AbkMainScaffold(vm: MainViewModel) {
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
         bottomBar = {
             NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surfaceContainer),
                 tonalElevation = 0.dp
             ) {
                 visibleTabs.forEach { tab ->

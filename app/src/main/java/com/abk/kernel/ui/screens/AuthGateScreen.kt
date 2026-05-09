@@ -29,6 +29,7 @@ import com.abk.kernel.R
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveSectionCard
 import com.abk.kernel.ui.components.ExpressiveStatusChip
+import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.viewmodel.AuthStep
 import com.abk.kernel.viewmodel.MainViewModel
 
@@ -201,11 +202,11 @@ private fun LoginScreen(
 
 @Composable
 private fun AuthShell(content: @Composable ColumnScope.() -> Unit) {
-    Scaffold(containerColor = MaterialTheme.colorScheme.surface) { padding ->
+    Scaffold(containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface)) { padding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surface)
+                .background(uiSurfaceColor(MaterialTheme.colorScheme.surface))
                 .padding(padding),
             contentAlignment = Alignment.Center
         ) {
