@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package com.abk.kernel.ui.screens
 
 import android.content.ClipData
@@ -7,10 +9,8 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -18,7 +18,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -101,15 +100,10 @@ private fun RootCheckScreen(isLoading: Boolean, onRequestRoot: () -> Unit) {
         Button(
             onClick = onRequestRoot,
             enabled = !isLoading,
-            shape = RoundedCornerShape(22.dp),
             modifier = Modifier.fillMaxWidth().height(58.dp)
         ) {
             if (isLoading) {
-                CircularProgressIndicator(
-                    Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onPrimary
-                )
+                LoadingIndicator(Modifier.size(24.dp))
             } else {
                 Icon(Icons.Default.Lock, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
@@ -191,15 +185,10 @@ private fun LoginScreen(
             Button(
                 onClick = { showConsentDialog = true },
                 enabled = !isLoading,
-                shape = RoundedCornerShape(22.dp),
                 modifier = Modifier.fillMaxWidth().height(58.dp)
             ) {
                 if (isLoading) {
-                    CircularProgressIndicator(
-                        Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
+                    LoadingIndicator(Modifier.size(24.dp))
                 } else {
                     Icon(Icons.Default.Code, null)
                     Spacer(Modifier.width(8.dp))
@@ -242,9 +231,7 @@ private fun DeviceCodeCard(
 ) {
     var copied by remember { mutableStateOf(false) }
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(34.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        modifier = Modifier.fillMaxWidth()
     ) {
         Column(
             Modifier.padding(20.dp),
@@ -254,25 +241,18 @@ private fun DeviceCodeCard(
             Text(
                 stringResource(R.string.auth_code_title),
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
+                fontWeight = FontWeight.SemiBold
             )
             Text(
                 stringResource(R.string.auth_code_desc),
                 style = MaterialTheme.typography.bodySmall,
                 textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            // User code display
-            Box(
-                Modifier
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(MaterialTheme.colorScheme.surface)
-                    .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(18.dp))
-                    .padding(horizontal = 24.dp, vertical = 12.dp)
-            ) {
+            OutlinedCard {
                 Text(
                     code,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
                     style = MaterialTheme.typography.headlineMedium,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
@@ -309,11 +289,11 @@ private fun DeviceCodeCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    LoadingIndicator(Modifier.size(22.dp))
                     Text(
                         stringResource(R.string.waiting_auth),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -385,7 +365,6 @@ private fun ForkCheckScreen(
             )
             Button(
                 onClick = onFork,
-                shape = RoundedCornerShape(22.dp),
                 modifier = Modifier.fillMaxWidth().height(58.dp)
             ) {
                 Icon(Icons.Default.ForkRight, null)
@@ -418,7 +397,6 @@ private fun ForkCheckScreen(
 private fun ErrorCard(error: String, onClearError: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(26.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
     ) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {

@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package com.abk.kernel.ui.screens
 
 import android.content.ClipData
@@ -27,7 +29,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Archive
@@ -60,15 +61,16 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -122,7 +124,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun FlashScreen(vm: MainViewModel) {
     val state by vm.uiState.collectAsState()
@@ -614,8 +616,7 @@ fun FlashScreen(vm: MainViewModel) {
                         item {
                             OutlinedButton(
                                 onClick = { vm.loadRecentRuns() },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(18.dp)
+                                modifier = Modifier.fillMaxWidth()
                             ) {
                                 Icon(Icons.Default.Refresh, null, modifier = Modifier.size(17.dp))
                                 Spacer(Modifier.width(6.dp))
@@ -801,7 +802,7 @@ private fun PrebuiltReleaseListHeader(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        OutlinedButton(onClick = onRefresh, enabled = !isLoading, shape = RoundedCornerShape(16.dp)) {
+        OutlinedButton(onClick = onRefresh, enabled = !isLoading) {
             Icon(Icons.Default.Refresh, null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(4.dp))
             Text("刷新")
@@ -815,10 +816,7 @@ private fun PrebuiltReleaseCard(
     onClick: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
     ) {
         Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1000,7 +998,7 @@ private fun LoadingRow(text: String) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
     ) {
-        CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+        LoadingIndicator(modifier = Modifier.size(24.dp))
         Spacer(Modifier.width(8.dp))
         Text(text)
     }
@@ -1022,13 +1020,11 @@ private fun PrebuiltGkiAssetCard(
     val type = prebuiltArtifactType(asset)
     val animatedProgress by animateFloatAsState(
         targetValue = ((progress ?: 0) / 100f).coerceIn(0f, 1f),
+        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
         label = "prebuilt-gki-download"
     )
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        modifier = Modifier.fillMaxWidth()
     ) {
         Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ArtifactHeader(
@@ -1046,11 +1042,6 @@ private fun PrebuiltGkiAssetCard(
                 downloadedFiles.isEmpty() -> {
                     Button(
                         onClick = onDownload,
-                        shape = RoundedCornerShape(18.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (recommended) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = if (recommended) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onPrimaryContainer
-                        ),
                         modifier = Modifier.fillMaxWidth().height(46.dp)
                     ) {
                         Icon(Icons.Default.Download, null, modifier = Modifier.size(17.dp))
@@ -1096,10 +1087,7 @@ private fun WorkflowRunCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(26.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+            .clickable(onClick = onClick)
     ) {
         Column(
             modifier = Modifier
@@ -1109,14 +1097,7 @@ private fun WorkflowRunCard(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(
-                    modifier = Modifier
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), RoundedCornerShape(18.dp))
-                        .padding(9.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.FolderSpecial, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
-                }
+                Icon(Icons.Default.FolderSpecial, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
                         text = if (group.runId == PREBUILT_GKI_RUN_ID) {
@@ -1218,13 +1199,11 @@ private fun ArtifactSourceCard(
     val type = DownloadUtils.classifyArtifact(artifact.name)
     val animatedProgress by animateFloatAsState(
         targetValue = ((progress ?: 0) / 100f).coerceIn(0f, 1f),
+        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
         label = "artifact-download"
     )
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        modifier = Modifier.fillMaxWidth()
     ) {
         Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ArtifactHeader(
@@ -1242,11 +1221,6 @@ private fun ArtifactSourceCard(
                 downloadedFiles.isEmpty() -> {
                     Button(
                         onClick = onDownload,
-                        shape = RoundedCornerShape(18.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        ),
                         modifier = Modifier.fillMaxWidth().height(46.dp)
                     ) {
                         Icon(Icons.Default.Download, null, modifier = Modifier.size(17.dp))
@@ -1282,10 +1256,7 @@ private fun LocalOnlyArtifactCard(
     allowRootActions: Boolean
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        modifier = Modifier.fillMaxWidth()
     ) {
         Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ArtifactHeader(
@@ -1382,7 +1353,6 @@ private fun DownloadedOutputRow(
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
                 onClick = onCopyPath,
-                shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.weight(1f).height(42.dp)
             ) {
                 Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(17.dp))
@@ -1395,7 +1365,6 @@ private fun DownloadedOutputRow(
                     ArtifactType.ANYKERNEL3,
                     ArtifactType.SUSFS_MODULE -> Button(
                         onClick = onFlash,
-                        shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.weight(1f).height(42.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (artifact.type == ArtifactType.KERNEL_IMG) {
@@ -1415,7 +1384,6 @@ private fun DownloadedOutputRow(
                     }
                     ArtifactType.KSU_MANAGER -> Button(
                         onClick = onInstall,
-                        shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.weight(1f).height(42.dp)
                     ) {
                         Icon(Icons.Default.InstallMobile, null, modifier = Modifier.size(17.dp))
@@ -1444,7 +1412,7 @@ private fun FlashTerminalDialog(
         onDismissRequest = { if (!running) onClose() },
         icon = {
             when {
-                running -> CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                running -> LoadingIndicator(modifier = Modifier.size(24.dp))
                 success == true -> Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
                 success == false -> Icon(Icons.Default.Error, null, tint = MaterialTheme.colorScheme.error)
                 else -> Icon(Icons.Default.Terminal, null)
@@ -1454,8 +1422,7 @@ private fun FlashTerminalDialog(
         text = {
             Surface(
                 modifier = Modifier.fillMaxWidth().heightIn(min = 190.dp, max = 360.dp),
-                shape = RoundedCornerShape(18.dp),
-                color = Color(0xFF101418)
+                color = MaterialTheme.colorScheme.inverseSurface
             ) {
                 Column(
                     modifier = Modifier
@@ -1469,7 +1436,11 @@ private fun FlashTerminalDialog(
                             text = line,
                             style = MaterialTheme.typography.labelSmall,
                             fontFamily = FontFamily.Monospace,
-                            color = if (line.startsWith("${'$'}")) Color(0xFF8DE3B0) else Color(0xFFE6EDF3)
+                            color = if (line.startsWith("${'$'}")) {
+                                MaterialTheme.colorScheme.inversePrimary
+                            } else {
+                                MaterialTheme.colorScheme.inverseOnSurface
+                            }
                         )
                     }
                 }

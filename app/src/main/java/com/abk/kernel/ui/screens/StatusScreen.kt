@@ -6,7 +6,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -30,7 +29,7 @@ import com.abk.kernel.ui.components.ExpressiveTopBar
 import com.abk.kernel.utils.RootUtils
 import com.abk.kernel.viewmodel.MainViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun StatusScreen(vm: MainViewModel) {
     val state by vm.uiState.collectAsState()
@@ -88,11 +87,10 @@ fun StatusScreen(vm: MainViewModel) {
                     OutlinedButton(
                         onClick = { vm.requestRoot() },
                         enabled = !state.isLoading,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp)
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         if (state.isLoading) {
-                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            LoadingIndicator(Modifier.size(24.dp))
                         } else {
                             Icon(Icons.Default.Lock, null, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(6.dp))
@@ -119,7 +117,7 @@ fun StatusScreen(vm: MainViewModel) {
                     BuildStatus.IDLE -> StatusRow(Icons.Default.HourglassEmpty, "暂无进行中的构建", false)
                     BuildStatus.QUEUED -> StatusRow(Icons.Default.Queue, "构建已排队，等待 Runner…", false)
                     BuildStatus.IN_PROGRESS -> Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        LoadingIndicator(Modifier.size(24.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("${state.buildProgress.percent}% · ${state.buildProgress.currentStep}")
                     }
@@ -131,6 +129,7 @@ fun StatusScreen(vm: MainViewModel) {
                     Spacer(Modifier.height(8.dp))
                     val animatedProgress by animateFloatAsState(
                         targetValue = (state.buildProgress.percent / 100f).coerceIn(0f, 1f),
+                        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
                         label = "status-progress"
                     )
                     LinearProgressIndicator(
@@ -266,12 +265,13 @@ private fun StatusMetricCard(
     color: androidx.compose.ui.graphics.Color,
     modifier: Modifier = Modifier
 ) {
-    val animatedColor by animateColorAsState(color, label = "metric-color")
+    val animatedColor by animateColorAsState(
+        color,
+        animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
+        label = "metric-color"
+    )
     Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        modifier = modifier
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Icon(icon, null, tint = animatedColor, modifier = Modifier.size(26.dp))

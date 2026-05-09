@@ -76,6 +76,7 @@ data class MainUiState(
     val autoDownload: Boolean = true,
     val notifyBuild: Boolean = true,
     val themeMode: String = "dark",
+    val dynamicColorEnabled: Boolean = true,
     val downloadMirrorBaseUrl: String = "",
     val prebuiltGkiEnabled: Boolean = true
 )
@@ -185,6 +186,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             prefs.themeMode.collect { mode ->
                 _uiState.update { it.copy(themeMode = mode) }
+            }
+        }
+        viewModelScope.launch {
+            prefs.dynamicColorEnabled.collect { enabled ->
+                _uiState.update { it.copy(dynamicColorEnabled = enabled) }
             }
         }
         viewModelScope.launch {
@@ -410,6 +416,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     autoDownload = it.autoDownload,
                     notifyBuild = it.notifyBuild,
                     themeMode = it.themeMode,
+                    dynamicColorEnabled = it.dynamicColorEnabled,
                     downloadMirrorBaseUrl = it.downloadMirrorBaseUrl,
                     prebuiltGkiEnabled = it.prebuiltGkiEnabled
                 )
@@ -1329,6 +1336,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
     fun setNotifyBuild(v: Boolean) = viewModelScope.launch { prefs.setNotifyBuild(v) }
     fun setThemeMode(mode: String) = viewModelScope.launch { prefs.setThemeMode(mode) }
+    fun setDynamicColorEnabled(v: Boolean) = viewModelScope.launch { prefs.setDynamicColorEnabled(v) }
     fun acceptTerms() = viewModelScope.launch { prefs.acceptCurrentTerms() }
     fun setDownloadMirrorBaseUrl(url: String) = viewModelScope.launch {
         prefs.setDownloadMirrorBaseUrl(url.trim())

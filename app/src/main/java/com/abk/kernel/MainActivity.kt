@@ -13,8 +13,6 @@ import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -24,11 +22,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -43,7 +38,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -58,7 +52,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -92,7 +85,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            AbkTheme(themeMode = state.themeMode) {
+            AbkTheme(
+                themeMode = state.themeMode,
+                dynamicColorEnabled = state.dynamicColorEnabled
+            ) {
                 when {
                     !state.termsLoaded -> Surface(
                         modifier = Modifier.fillMaxSize(),
@@ -230,6 +226,7 @@ private fun AbkMainScaffold(vm: MainViewModel) {
     var lastBackAt by remember { mutableStateOf(0L) }
     val visibleTabs = AbkTab.entries
     val activeTab = selectedTab
+    val motionScheme = MaterialTheme.motionScheme
 
     fun handleTopLevelBack() {
         val now = System.currentTimeMillis()
@@ -253,51 +250,26 @@ private fun AbkMainScaffold(vm: MainViewModel) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
         bottomBar = {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .height(82.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
-                tonalElevation = 6.dp,
-                shadowElevation = 0.dp
-            ) {
-                NavigationBar(
-                    containerColor = Color.Transparent,
-                    tonalElevation = 0.dp,
-                    modifier = Modifier.padding(horizontal = 10.dp)
-                ) {
-                    visibleTabs.forEach { tab ->
-                        NavigationBarItem(
-                            selected = activeTab == tab,
-                            onClick = { selectedTab = tab },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
-                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            ),
-                            icon = {
-                                Icon(
-                                    imageVector = when (tab) {
-                                        AbkTab.Status -> Icons.Default.Home
-                                        AbkTab.Build -> Icons.Default.RocketLaunch
-                                        AbkTab.Flash -> if (state.rootGranted) Icons.Default.FlashOn else Icons.Default.FolderOpen
-                                        AbkTab.Settings -> Icons.Default.Settings
-                                    },
-                                    contentDescription = tab.displayLabel(state.rootGranted),
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            },
-                            label = {
-                                Text(
-                                    text = tab.displayLabel(state.rootGranted),
-                                    style = MaterialTheme.typography.labelSmall
-                                )
-                            }
-                        )
-                    }
+            NavigationBar {
+                visibleTabs.forEach { tab ->
+                    NavigationBarItem(
+                        selected = activeTab == tab,
+                        onClick = { selectedTab = tab },
+                        icon = {
+                            Icon(
+                                imageVector = when (tab) {
+                                    AbkTab.Status -> Icons.Default.Home
+                                    AbkTab.Build -> Icons.Default.RocketLaunch
+                                    AbkTab.Flash -> if (state.rootGranted) Icons.Default.FlashOn else Icons.Default.FolderOpen
+                                    AbkTab.Settings -> Icons.Default.Settings
+                                },
+                                contentDescription = tab.displayLabel(state.rootGranted)
+                            )
+                        },
+                        label = {
+                            Text(text = tab.displayLabel(state.rootGranted))
+                        }
+                    )
                 }
             }
         }
@@ -308,20 +280,14 @@ private fun AbkMainScaffold(vm: MainViewModel) {
                 transitionSpec = {
                     val direction = if (targetState.ordinal > initialState.ordinal) 1 else -1
                     (
-                        fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
+                        fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
                             slideInHorizontally(
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                    stiffness = Spring.StiffnessLow
-                                )
+                                animationSpec = motionScheme.defaultSpatialSpec()
                             ) { width -> direction * width / 4 }
                         ) togetherWith (
-                        fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMedium)) +
+                        fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
                             slideOutHorizontally(
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioNoBouncy,
-                                    stiffness = Spring.StiffnessMedium
-                                )
+                                animationSpec = motionScheme.fastSpatialSpec()
                             ) { width -> -direction * width / 6 }
                         )
                 },

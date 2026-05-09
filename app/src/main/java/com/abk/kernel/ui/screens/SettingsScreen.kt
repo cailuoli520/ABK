@@ -1,18 +1,23 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package com.abk.kernel.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -26,13 +31,18 @@ import com.abk.kernel.ui.components.ExpressiveStatusChip
 import com.abk.kernel.ui.components.ExpressiveTopBar
 import com.abk.kernel.viewmodel.MainViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SettingsScreen(vm: MainViewModel) {
     val state by vm.uiState.collectAsState()
     val context = LocalContext.current
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
+    var showThemeSettings by rememberSaveable { mutableStateOf(false) }
+
+    BackHandler(enabled = showThemeSettings) {
+        showThemeSettings = false
+    }
 
     if (showLogoutDialog) {
         AlertDialog(
@@ -63,10 +73,34 @@ fun SettingsScreen(vm: MainViewModel) {
         containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             ExpressiveTopBar(
-                title = stringResource(R.string.settings_title)
+                title = if (showThemeSettings) {
+                    stringResource(R.string.settings_theme)
+                } else {
+                    stringResource(R.string.settings_title)
+                },
+                navigationIcon = if (showThemeSettings) {
+                    {
+                        IconButton(onClick = { showThemeSettings = false }) {
+                            Icon(Icons.Default.ArrowBack, null)
+                        }
+                    }
+                } else {
+                    null
+                }
             )
         }
     ) { padding ->
+        if (showThemeSettings) {
+            ThemeSettingsScreen(
+                padding = padding,
+                themeMode = state.themeMode,
+                dynamicColorEnabled = state.dynamicColorEnabled,
+                onThemeModeChange = vm::setThemeMode,
+                onDynamicColorEnabledChange = vm::setDynamicColorEnabled
+            )
+            return@Scaffold
+        }
+
         Column(
             modifier = Modifier
                 .padding(padding)
@@ -143,34 +177,16 @@ fun SettingsScreen(vm: MainViewModel) {
 
             // ── 主题 ──────────────────────────────────────────────────────
             SettingsGroup(title = stringResource(R.string.settings_theme)) {
-                val themes = listOf(
-                    "system" to stringResource(R.string.settings_theme_system),
-                    "light" to stringResource(R.string.settings_theme_light),
-                    "dark" to stringResource(R.string.settings_theme_dark)
+                ListItem(
+                    headlineContent = { Text("颜色与外观") },
+                    supportingContent = {
+                        Text("${themeModeLabel(state.themeMode)} · ${dynamicColorLabel(state.dynamicColorEnabled)}")
+                    },
+                    leadingContent = { Icon(Icons.Default.Palette, null) },
+                    trailingContent = { Icon(Icons.Default.ChevronRight, null) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    modifier = Modifier.clickable { showThemeSettings = true }
                 )
-                themes.forEach { (key, label) ->
-                    ListItem(
-                        headlineContent = { Text(label) },
-                        leadingContent = {
-                            Icon(
-                                when (key) {
-                                    "light" -> Icons.Default.LightMode
-                                    "dark" -> Icons.Default.DarkMode
-                                    else -> Icons.Default.BrightnessMedium
-                                }, null
-                            )
-                        },
-                        trailingContent = {
-                            RadioButton(
-                                selected = state.themeMode == key,
-                                onClick = { vm.setThemeMode(key) }
-                            )
-                        },
-                        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
-                        modifier = Modifier.clickable { vm.setThemeMode(key) }
-                    )
-                    if (key != themes.last().first) HorizontalDivider()
-                }
             }
 
             // ── 关于 ──────────────────────────────────────────────────────
@@ -194,6 +210,88 @@ fun SettingsScreen(vm: MainViewModel) {
         }
     }
 }
+
+@Composable
+private fun ThemeSettingsScreen(
+    padding: PaddingValues,
+    themeMode: String,
+    dynamicColorEnabled: Boolean,
+    onThemeModeChange: (String) -> Unit,
+    onDynamicColorEnabledChange: (Boolean) -> Unit
+) {
+    val dynamicColorAvailable = isDynamicColorAvailable()
+    val themes = listOf(
+        Triple("system", stringResource(R.string.settings_theme_system), Icons.Default.BrightnessMedium),
+        Triple("light", stringResource(R.string.settings_theme_light), Icons.Default.LightMode),
+        Triple("dark", stringResource(R.string.settings_theme_dark), Icons.Default.DarkMode)
+    )
+
+    Column(
+        modifier = Modifier
+            .padding(padding)
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        SettingsGroup(title = "外观模式") {
+            ButtonGroup(
+                overflowIndicator = { menuState ->
+                    ButtonGroupDefaults.OverflowIndicator(menuState)
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                themes.forEach { (key, label, icon) ->
+                    toggleableItem(
+                        checked = themeMode == key,
+                        label = label,
+                        onCheckedChange = { selected ->
+                            if (selected) onThemeModeChange(key)
+                        },
+                        icon = {
+                            Icon(icon, contentDescription = null)
+                        },
+                        weight = 1f
+                    )
+                }
+            }
+        }
+
+        SettingsGroup(title = "颜色来源") {
+            SwitchSettingsItem(
+                icon = Icons.Default.AutoAwesome,
+                title = "莫奈取色",
+                subtitle = if (dynamicColorAvailable) {
+                    "使用系统壁纸生成的 Material You 动态颜色"
+                } else {
+                    "Android 12 及以上可用，当前使用固定色板"
+                },
+                checked = dynamicColorAvailable && dynamicColorEnabled,
+                enabled = dynamicColorAvailable,
+                onCheckedChange = onDynamicColorEnabledChange
+            )
+        }
+
+        Spacer(Modifier.height(80.dp))
+    }
+}
+
+@Composable
+private fun themeModeLabel(themeMode: String): String = when (themeMode) {
+    "light" -> stringResource(R.string.settings_theme_light)
+    "dark" -> stringResource(R.string.settings_theme_dark)
+    else -> stringResource(R.string.settings_theme_system)
+}
+
+@Composable
+private fun dynamicColorLabel(enabled: Boolean): String = when {
+    !isDynamicColorAvailable() -> "莫奈取色不可用"
+    enabled -> "莫奈取色"
+    else -> "固定色板"
+}
+
+private fun isDynamicColorAvailable(): Boolean =
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
 @Composable
 private fun AboutDialog(
@@ -345,6 +443,8 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
             stringResource(R.string.settings_build) -> "控制构建成功后的自动化行为。"
             stringResource(R.string.settings_notification) -> "同步工作流状态到系统通知。"
             stringResource(R.string.settings_theme) -> "Material 3 Expressive 主题显示模式。"
+            "外观模式" -> "控制应用明暗显示方式。"
+            "颜色来源" -> "选择系统动态颜色或固定色板。"
             else -> "应用版本与源码信息。"
         },
         icon = when (title) {
@@ -352,6 +452,8 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
             stringResource(R.string.settings_build) -> Icons.Default.Build
             stringResource(R.string.settings_notification) -> Icons.Default.Notifications
             stringResource(R.string.settings_theme) -> Icons.Default.Palette
+            "外观模式" -> Icons.Default.BrightnessMedium
+            "颜色来源" -> Icons.Default.AutoAwesome
             else -> Icons.Default.Info
         }
     ) {
@@ -365,34 +467,45 @@ private fun SwitchSettingsItem(
     title: String,
     subtitle: String,
     checked: Boolean,
+    enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit
 ) {
-    Surface(
-        shape = RoundedCornerShape(24.dp),
-        color = if (checked) {
-            MaterialTheme.colorScheme.primaryContainer
-        } else {
-            MaterialTheme.colorScheme.surface.copy(alpha = 0.76f)
-        },
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+    ListItem(
+        leadingContent = {
             Icon(
                 icon,
                 null,
-                tint = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                tint = when {
+                    !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                    checked -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
             )
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Switch(checked = checked, onCheckedChange = onCheckedChange)
-        }
-    }
+        },
+        headlineContent = {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+            )
+        },
+        supportingContent = {
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+            )
+        },
+        trailingContent = {
+            Switch(
+                checked = checked,
+                enabled = enabled,
+                onCheckedChange = onCheckedChange
+            )
+        },
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 @Composable
@@ -400,34 +513,29 @@ private fun MirrorSettingsItem(
     value: String,
     onValueChange: (String) -> Unit
 ) {
-    Surface(
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f),
-        modifier = Modifier.fillMaxWidth()
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Icon(Icons.Default.Public, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("下载镜像站", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                    Text(
-                        "留空直连 GitHub；填写后会先镜像到 Release 再下载",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+        ListItem(
+            leadingContent = { Icon(Icons.Default.Public, contentDescription = null) },
+            headlineContent = {
+                Text("下载镜像站", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            },
+            supportingContent = {
+                Text(
+                    "留空直连 GitHub；填写后会先镜像到 Release 再下载",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            OutlinedTextField(
-                value = value,
-                onValueChange = onValueChange,
-                singleLine = true,
-                placeholder = { Text("https://hk.gh-proxy.org/") },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp)
-            )
-        }
+        )
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            placeholder = { Text("https://hk.gh-proxy.org/") },
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
