@@ -107,7 +107,7 @@ interface GitHubApiService {
     suspend fun listReleases(
         @Path("owner") owner: String,
         @Path("repo") repo: String,
-        @Query("per_page") perPage: Int = 30,
+        @Query("per_page") perPage: Int = 100,
         @Query("page") page: Int = 1
     ): Response<List<GitHubReleaseSummary>>
 

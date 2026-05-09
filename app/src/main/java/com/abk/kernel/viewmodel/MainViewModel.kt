@@ -781,13 +781,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             when (result) {
                 is Result.Success -> {
                     val releases = result.data
+                        .filter(::isPrebuiltGkiReleaseCandidate)
                         .map(::prebuiltGkiReleaseFromGitHub)
                         .distinctBy { it.id }
                         .sortedWith(prebuiltGkiReleaseComparator())
+                    val releaseIds = releases.map { it.id }.toSet()
                     _uiState.update {
                         it.copy(
                             prebuiltGkiReleases = releases,
-                            isLoadingPrebuiltGkiReleases = false
+                            isLoadingPrebuiltGkiReleases = false,
+                            prebuiltGkiAssetsByReleaseId = it.prebuiltGkiAssetsByReleaseId
+                                .filterKeys { id -> id in releaseIds }
                         )
                     }
                 }
@@ -819,7 +823,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     BuildConfig.SOURCE_REPO_NAME,
                     release.tagName
                 )) {
-                    is Result.Success -> Result.Success(fallback.data?.assets.orEmpty())
+                    is Result.Success -> {
+                        val fetched = fallback.data
+                        if (fetched != null && fetched.id > 0L) {
+                            github.listReleaseAssets(BuildConfig.SOURCE_REPO_OWNER, BuildConfig.SOURCE_REPO_NAME, fetched.id)
+                        } else {
+                            Result.Success(fetched?.assets.orEmpty())
+                        }
+                    }
                     is Result.Error -> fallback
                     Result.Loading -> Result.Loading
                 }
@@ -1417,6 +1428,38 @@ private fun prebuiltGkiAssetsFromReleaseAssets(
 private fun prebuiltGkiReleaseComparator(): Comparator<PrebuiltGkiRelease> =
     compareByDescending<PrebuiltGkiRelease> { it.publishedAt }
         .thenBy { it.name }
+
+private fun isPrebuiltGkiReleaseCandidate(release: GitHubReleaseSummary): Boolean {
+    val haystack = listOf(release.tagName, release.name.orEmpty(), release.body.orEmpty())
+        .joinToString(" ")
+        .lowercase()
+        .replace('_', '-')
+    val strongPrebuiltTerms = listOf(
+        "gki",
+        "prebuilt",
+        "pre-built",
+        "预编译",
+        "boot.img",
+        "anykernel",
+        "ak3",
+        "kernel image",
+        "内核镜像",
+        "刷写包"
+    )
+    if (strongPrebuiltTerms.any { haystack.contains(it) }) return true
+
+    val appReleaseTerms = listOf(
+        ".apk",
+        "apk",
+        "app",
+        "android application",
+        "应用",
+        "客户端",
+        "abk"
+    )
+    return appReleaseTerms.none { haystack.contains(it) } &&
+        listOf("boot-", "boot_", "image", "img").any { haystack.contains(it) }
+}
 
 private fun isPrebuiltGkiCandidate(asset: PrebuiltGkiAsset): Boolean {
     val lower = asset.name.lowercase()

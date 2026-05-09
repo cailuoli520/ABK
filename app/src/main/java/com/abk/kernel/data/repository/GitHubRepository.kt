@@ -225,15 +225,22 @@ class GitHubRepository(
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
 
-    suspend fun listReleases(owner: String, repo: String, perPage: Int = 30): Result<List<GitHubReleaseSummary>> {
+    suspend fun listReleases(owner: String, repo: String, perPage: Int = 100): Result<List<GitHubReleaseSummary>> {
         val api = apiService ?: return Result.Error("Not authenticated")
         return runCatching<Result<List<GitHubReleaseSummary>>> {
-            val resp = api.listReleases(owner, repo, perPage = perPage)
-            if (resp.isSuccessful) {
-                Result.Success(resp.body().orEmpty())
-            } else {
-                Result.Error("List releases failed: ${resp.code()}", resp.code())
+            val collected = mutableListOf<GitHubReleaseSummary>()
+            var page = 1
+            while (true) {
+                val resp = api.listReleases(owner, repo, perPage = perPage, page = page)
+                if (!resp.isSuccessful) {
+                    return@runCatching Result.Error("List releases failed: ${resp.code()}", resp.code())
+                }
+                val releases = resp.body().orEmpty()
+                collected += releases
+                if (releases.size < perPage) break
+                page += 1
             }
+            Result.Success(collected)
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
 
@@ -257,12 +264,19 @@ class GitHubRepository(
     ): Result<List<ReleaseAsset>> {
         val api = apiService ?: return Result.Error("Not authenticated")
         return runCatching<Result<List<ReleaseAsset>>> {
-            val resp = api.listReleaseAssets(owner, repo, releaseId, perPage = perPage)
-            if (resp.isSuccessful) {
-                Result.Success(resp.body().orEmpty())
-            } else {
-                Result.Error("List release assets failed: ${resp.code()}", resp.code())
+            val collected = mutableListOf<ReleaseAsset>()
+            var page = 1
+            while (true) {
+                val resp = api.listReleaseAssets(owner, repo, releaseId, perPage = perPage, page = page)
+                if (!resp.isSuccessful) {
+                    return@runCatching Result.Error("List release assets failed: ${resp.code()}", resp.code())
+                }
+                val assets = resp.body().orEmpty()
+                collected += assets
+                if (assets.size < perPage) break
+                page += 1
             }
+            Result.Success(collected)
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
 }

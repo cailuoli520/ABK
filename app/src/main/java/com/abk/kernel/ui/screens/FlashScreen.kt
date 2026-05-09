@@ -61,7 +61,10 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -101,6 +104,7 @@ import com.abk.kernel.data.model.BuildArtifact
 import com.abk.kernel.data.model.BuildStatus
 import com.abk.kernel.data.model.DownloadedArtifact
 import com.abk.kernel.data.model.KernelBuildConfig
+import com.abk.kernel.data.model.KernelSupport
 import com.abk.kernel.data.model.PREBUILT_GKI_RUN_ID
 import com.abk.kernel.data.model.PrebuiltGkiAsset
 import com.abk.kernel.data.model.PrebuiltGkiRelease
@@ -428,7 +432,7 @@ fun FlashScreen(vm: MainViewModel) {
     val selectedPrebuiltAssetsLoading = selectedPrebuiltRelease?.id
         ?.let { it in state.loadingPrebuiltGkiAssetReleaseIds } == true
     var prebuiltFilter by remember(selectedPrebuiltRelease?.id) {
-        mutableStateOf(defaultPrebuiltFilter(state.recommendedBuildConfig ?: state.buildConfig))
+        mutableStateOf(defaultPrebuiltFilter())
     }
     val filteredPrebuiltAssets = remember(selectedPrebuiltAssets, prebuiltFilter) {
         val candidates = selectedPrebuiltAssets.filter(::isPrebuiltGkiCandidateUi)
@@ -886,53 +890,104 @@ private fun PrebuiltGkiFilterCard(
     filter: PrebuiltGkiFilter,
     onFilterChange: (PrebuiltGkiFilter) -> Unit
 ) {
+    val androidOptions = remember { listOf("") + KernelSupport.androidVersions() }
+    val kernelOptions = remember { listOf("") + KernelSupport.kernelVersions() }
+    val subLevelOptions = remember(filter.androidVersion, filter.kernelVersion) {
+        listOf("") + prebuiltSubLevelOptions(filter.androidVersion, filter.kernelVersion)
+    }
+    val patchOptions = remember(filter.androidVersion, filter.kernelVersion, filter.subLevel) {
+        listOf("") + prebuiltPatchOptions(filter.androidVersion, filter.kernelVersion, filter.subLevel)
+    }
+
+    fun updateFilter(next: PrebuiltGkiFilter) {
+        onFilterChange(sanitizePrebuiltFilter(next))
+    }
+
     ExpressiveSectionCard(
         title = "筛选器",
-        subtitle = "按构建参数筛选当前 Release",
+        subtitle = "未选择的条件视为不限",
         icon = Icons.Default.Tune
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedTextField(
+            PrebuiltDropdownField(
+                label = "Android 版本",
                 value = filter.androidVersion,
-                onValueChange = { onFilterChange(filter.copy(androidVersion = it)) },
-                label = { Text("Android 版本") },
-                singleLine = true,
+                options = androidOptions,
+                onSelect = { updateFilter(filter.copy(androidVersion = it)) },
                 modifier = Modifier.fillMaxWidth()
             )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
+                PrebuiltDropdownField(
+                    label = "内核版本",
                     value = filter.kernelVersion,
-                    onValueChange = { onFilterChange(filter.copy(kernelVersion = it)) },
-                    label = { Text("内核版本") },
-                    singleLine = true,
+                    options = kernelOptions,
+                    onSelect = { updateFilter(filter.copy(kernelVersion = it)) },
                     modifier = Modifier.weight(1f)
                 )
-                OutlinedTextField(
+                PrebuiltDropdownField(
+                    label = "小版本",
                     value = filter.subLevel,
-                    onValueChange = { onFilterChange(filter.copy(subLevel = it)) },
-                    label = { Text("小版本") },
-                    singleLine = true,
+                    options = subLevelOptions,
+                    onSelect = { updateFilter(filter.copy(subLevel = it)) },
                     modifier = Modifier.weight(1f)
                 )
             }
-            OutlinedTextField(
+            PrebuiltDropdownField(
+                label = "补丁级别",
                 value = filter.osPatchLevel,
-                onValueChange = { onFilterChange(filter.copy(osPatchLevel = it)) },
-                label = { Text("补丁级别") },
-                singleLine = true,
+                options = patchOptions,
+                onSelect = { updateFilter(filter.copy(osPatchLevel = it)) },
                 modifier = Modifier.fillMaxWidth()
             )
             Row(
                 modifier = Modifier.fillMaxWidth().clickable {
-                    onFilterChange(filter.copy(onlyMatches = !filter.onlyMatches))
+                    updateFilter(filter.copy(onlyMatches = !filter.onlyMatches))
                 },
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Checkbox(
                     checked = filter.onlyMatches,
-                    onCheckedChange = { onFilterChange(filter.copy(onlyMatches = it)) }
+                    onCheckedChange = { updateFilter(filter.copy(onlyMatches = it)) }
                 )
                 Text("只看匹配当前筛选条件的资产")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PrebuiltDropdownField(
+    label: String,
+    value: String,
+    options: List<String>,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        modifier = modifier
+    ) {
+        OutlinedTextField(
+            value = prebuiltOptionLabel(value),
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            modifier = Modifier.fillMaxWidth().menuAnchor()
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.distinct().forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(prebuiltOptionLabel(option)) },
+                    onClick = {
+                        onSelect(option)
+                        expanded = false
+                    },
+                    contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                )
             }
         }
     }
@@ -1527,12 +1582,46 @@ private data class PrebuiltGkiFilter(
     val onlyMatches: Boolean = true
 )
 
-private fun defaultPrebuiltFilter(config: KernelBuildConfig): PrebuiltGkiFilter = PrebuiltGkiFilter(
-    androidVersion = config.androidVersion,
-    kernelVersion = config.kernelVersion,
-    subLevel = config.subLevel.takeUnless { it == "X" }.orEmpty(),
-    osPatchLevel = config.osPatchLevel
+private fun defaultPrebuiltFilter(): PrebuiltGkiFilter = PrebuiltGkiFilter(
+    androidVersion = "",
+    kernelVersion = "",
+    subLevel = "",
+    osPatchLevel = ""
 )
+
+private fun sanitizePrebuiltFilter(filter: PrebuiltGkiFilter): PrebuiltGkiFilter {
+    val subOptions = prebuiltSubLevelOptions(filter.androidVersion, filter.kernelVersion)
+    val subLevel = filter.subLevel.takeIf { it.isBlank() || it in subOptions }.orEmpty()
+    val patchOptions = prebuiltPatchOptions(filter.androidVersion, filter.kernelVersion, subLevel)
+    val patch = filter.osPatchLevel.takeIf { it.isBlank() || it in patchOptions }.orEmpty()
+    return filter.copy(subLevel = subLevel, osPatchLevel = patch)
+}
+
+private fun prebuiltSubLevelOptions(androidVersion: String, kernelVersion: String): List<String> =
+    KernelSupport.entries
+        .filter { androidVersion.isBlank() || it.androidVersion == androidVersion }
+        .filter { kernelVersion.isBlank() || it.kernelVersion == kernelVersion }
+        .map { it.subLevel }
+        .distinct()
+        .sortedBy { it.toIntOrNull() ?: Int.MAX_VALUE }
+
+private fun prebuiltPatchOptions(androidVersion: String, kernelVersion: String, subLevel: String): List<String> =
+    KernelSupport.entries
+        .filter { androidVersion.isBlank() || it.androidVersion == androidVersion }
+        .filter { kernelVersion.isBlank() || it.kernelVersion == kernelVersion }
+        .filter { subLevel.isBlank() || it.subLevel == subLevel }
+        .map { it.osPatchLevel }
+        .distinct()
+        .sortedBy(::patchMonthIndexForUi)
+
+private fun prebuiltOptionLabel(value: String): String = value.ifBlank { "不限" }
+
+private fun patchMonthIndexForUi(value: String): Int {
+    val parts = value.split("-")
+    val year = parts.getOrNull(0)?.toIntOrNull() ?: return Int.MAX_VALUE
+    val month = parts.getOrNull(1)?.toIntOrNull() ?: return Int.MAX_VALUE
+    return year * 12 + month
+}
 
 private fun releaseDateLabel(value: String): String =
     value.takeIf { it.length >= 10 }?.take(10) ?: "未知日期"
