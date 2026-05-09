@@ -6,6 +6,11 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -15,12 +20,16 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.ColorUtils
 import coil.compose.AsyncImage
 import com.abk.kernel.BuildConfig
 import com.abk.kernel.R
@@ -96,8 +105,15 @@ fun SettingsScreen(vm: MainViewModel) {
                 padding = padding,
                 themeMode = state.themeMode,
                 dynamicColorEnabled = state.dynamicColorEnabled,
-                onThemeModeChange = vm::setThemeMode,
-                onDynamicColorEnabledChange = vm::setDynamicColorEnabled
+                customThemeColorArgb = state.customThemeColorArgb,
+                customAccentColorArgb = state.customAccentColorArgb,
+                onThemeModeChange = { vm.setThemeMode(it) },
+                onDynamicColorEnabledChange = { enabled, themeColor, accentColor ->
+                    vm.setDynamicColorEnabled(enabled, themeColor, accentColor)
+                },
+                onCustomThemeColorsChange = { themeColor, accentColor ->
+                    vm.setCustomThemeColors(themeColor, accentColor)
+                }
             )
             return@Scaffold
         }
@@ -216,10 +232,17 @@ private fun ThemeSettingsScreen(
     padding: PaddingValues,
     themeMode: String,
     dynamicColorEnabled: Boolean,
+    customThemeColorArgb: Int?,
+    customAccentColorArgb: Int?,
     onThemeModeChange: (String) -> Unit,
-    onDynamicColorEnabledChange: (Boolean) -> Unit
+    onDynamicColorEnabledChange: (Boolean, Int?, Int?) -> Unit,
+    onCustomThemeColorsChange: (Int, Int) -> Unit
 ) {
     val dynamicColorAvailable = isDynamicColorAvailable()
+    val effectiveDynamicColorEnabled = dynamicColorAvailable && dynamicColorEnabled
+    val colorScheme = MaterialTheme.colorScheme
+    val selectedThemeColorArgb = customThemeColorArgb ?: colorScheme.primary.toArgb()
+    val selectedAccentColorArgb = customAccentColorArgb ?: colorScheme.secondary.toArgb()
     val themes = listOf(
         Triple("system", stringResource(R.string.settings_theme_system), Icons.Default.BrightnessMedium),
         Triple("light", stringResource(R.string.settings_theme_light), Icons.Default.LightMode),
@@ -258,15 +281,156 @@ private fun ThemeSettingsScreen(
                 subtitle = if (dynamicColorAvailable) {
                     "使用系统壁纸生成的 Material You 动态颜色"
                 } else {
-                    "Android 12 及以上可用，当前使用固定色板"
+                    "Android 12 及以上可用，当前使用自定义色板"
                 },
-                checked = dynamicColorAvailable && dynamicColorEnabled,
+                checked = effectiveDynamicColorEnabled,
                 enabled = dynamicColorAvailable,
-                onCheckedChange = onDynamicColorEnabledChange
+                onCheckedChange = { enabled ->
+                    onDynamicColorEnabledChange(
+                        enabled,
+                        if (!enabled) colorScheme.primary.toArgb() else null,
+                        if (!enabled) colorScheme.secondary.toArgb() else null
+                    )
+                }
             )
         }
 
+        if (!effectiveDynamicColorEnabled) {
+            SettingsGroup(title = "自定义颜色") {
+                ThemeColorPicker(
+                    title = "主题色",
+                    subtitle = "主操作、选中状态和主要强调区域",
+                    selectedColorArgb = selectedThemeColorArgb,
+                    presets = themeColorPresets(),
+                    onColorSelected = { color ->
+                        onCustomThemeColorsChange(color, selectedAccentColorArgb)
+                    }
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                ThemeColorPicker(
+                    title = "强调色",
+                    subtitle = "辅助状态、标签和次级强调区域",
+                    selectedColorArgb = selectedAccentColorArgb,
+                    presets = themeColorPresets(),
+                    onColorSelected = { color ->
+                        onCustomThemeColorsChange(selectedThemeColorArgb, color)
+                    }
+                )
+            }
+        }
+
         Spacer(Modifier.height(80.dp))
+    }
+}
+
+@Composable
+private fun ThemeColorPicker(
+    title: String,
+    subtitle: String,
+    selectedColorArgb: Int,
+    presets: List<ThemeColorPreset>,
+    onColorSelected: (Int) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (presets.none { colorsMatch(selectedColorArgb, it.argb) }) {
+                ThemeColorSwatch(
+                    preset = ThemeColorPreset("当前", selectedColorArgb),
+                    selected = true,
+                    enabled = false,
+                    onClick = {}
+                )
+            }
+            presets.forEach { preset ->
+                ThemeColorSwatch(
+                    preset = preset,
+                    selected = colorsMatch(selectedColorArgb, preset.argb),
+                    onClick = { onColorSelected(preset.argb) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemeColorSwatch(
+    preset: ThemeColorPreset,
+    selected: Boolean,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    val borderColor = if (selected) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.outlineVariant
+    }
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(Color(preset.argb))
+            .border(
+                BorderStroke(if (selected) 3.dp else 1.dp, borderColor),
+                CircleShape
+            )
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        if (selected) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = preset.label,
+                tint = readableSwatchContentColor(preset.argb),
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+private data class ThemeColorPreset(
+    val label: String,
+    val argb: Int
+)
+
+private fun themeColorPresets(): List<ThemeColorPreset> = listOf(
+    ThemeColorPreset("绿", 0xFF8BC34A.toInt()),
+    ThemeColorPreset("蓝", 0xFF42A5F5.toInt()),
+    ThemeColorPreset("紫", 0xFF9575CD.toInt()),
+    ThemeColorPreset("粉", 0xFFEC6A9A.toInt()),
+    ThemeColorPreset("橙", 0xFFFFA726.toInt()),
+    ThemeColorPreset("青", 0xFF26C6DA.toInt())
+)
+
+private fun colorsMatch(left: Int, right: Int): Boolean {
+    return (left or 0xFF000000.toInt()) == (right or 0xFF000000.toInt())
+}
+
+private fun readableSwatchContentColor(argb: Int): Color {
+    return if (ColorUtils.calculateLuminance(argb) > 0.5) {
+        Color(0xFF11140F.toInt())
+    } else {
+        Color(0xFFFFFFFF.toInt())
     }
 }
 
@@ -281,7 +445,7 @@ private fun themeModeLabel(themeMode: String): String = when (themeMode) {
 private fun dynamicColorLabel(enabled: Boolean): String = when {
     !isDynamicColorAvailable() -> "莫奈取色不可用"
     enabled -> "莫奈取色"
-    else -> "固定色板"
+    else -> "自定义色板"
 }
 
 private fun isDynamicColorAvailable(): Boolean =
@@ -437,7 +601,8 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
             stringResource(R.string.settings_notification) -> "同步工作流状态到系统通知。"
             stringResource(R.string.settings_theme) -> "Material 3 Expressive 主题显示模式。"
             "外观模式" -> "控制应用明暗显示方式。"
-            "颜色来源" -> "选择系统动态颜色或固定色板。"
+            "颜色来源" -> "选择系统动态颜色或自定义色板。"
+            "自定义颜色" -> "莫奈关闭时使用的主题色和强调色。"
             else -> "应用版本与源码信息。"
         },
         icon = when (title) {
@@ -447,6 +612,7 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
             stringResource(R.string.settings_theme) -> Icons.Default.Palette
             "外观模式" -> Icons.Default.BrightnessMedium
             "颜色来源" -> Icons.Default.AutoAwesome
+            "自定义颜色" -> Icons.Default.Palette
             else -> Icons.Default.Info
         }
     ) {

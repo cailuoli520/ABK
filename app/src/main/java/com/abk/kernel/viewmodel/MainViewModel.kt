@@ -77,6 +77,8 @@ data class MainUiState(
     val notifyBuild: Boolean = true,
     val themeMode: String = "dark",
     val dynamicColorEnabled: Boolean = true,
+    val customThemeColorArgb: Int? = null,
+    val customAccentColorArgb: Int? = null,
     val downloadMirrorBaseUrl: String = "",
     val prebuiltGkiEnabled: Boolean = true
 )
@@ -184,13 +186,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
-            prefs.themeMode.collect { mode ->
-                _uiState.update { it.copy(themeMode = mode) }
-            }
-        }
-        viewModelScope.launch {
-            prefs.dynamicColorEnabled.collect { enabled ->
-                _uiState.update { it.copy(dynamicColorEnabled = enabled) }
+            combine(
+                prefs.themeMode,
+                prefs.dynamicColorEnabled,
+                prefs.customThemeColorArgb,
+                prefs.customAccentColorArgb
+            ) { mode, dynamicColorEnabled, themeColor, accentColor ->
+                ThemePreferences(mode, dynamicColorEnabled, themeColor, accentColor)
+            }.collect { themePrefs ->
+                _uiState.update {
+                    it.copy(
+                        themeMode = themePrefs.themeMode,
+                        dynamicColorEnabled = themePrefs.dynamicColorEnabled,
+                        customThemeColorArgb = themePrefs.customThemeColorArgb,
+                        customAccentColorArgb = themePrefs.customAccentColorArgb
+                    )
+                }
             }
         }
         viewModelScope.launch {
@@ -417,6 +428,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     notifyBuild = it.notifyBuild,
                     themeMode = it.themeMode,
                     dynamicColorEnabled = it.dynamicColorEnabled,
+                    customThemeColorArgb = it.customThemeColorArgb,
+                    customAccentColorArgb = it.customAccentColorArgb,
                     downloadMirrorBaseUrl = it.downloadMirrorBaseUrl,
                     prebuiltGkiEnabled = it.prebuiltGkiEnabled
                 )
@@ -1336,7 +1349,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
     fun setNotifyBuild(v: Boolean) = viewModelScope.launch { prefs.setNotifyBuild(v) }
     fun setThemeMode(mode: String) = viewModelScope.launch { prefs.setThemeMode(mode) }
-    fun setDynamicColorEnabled(v: Boolean) = viewModelScope.launch { prefs.setDynamicColorEnabled(v) }
+    fun setDynamicColorEnabled(
+        v: Boolean,
+        snapshotThemeColorArgb: Int? = null,
+        snapshotAccentColorArgb: Int? = null
+    ) = viewModelScope.launch {
+        prefs.setDynamicColorEnabled(v, snapshotThemeColorArgb, snapshotAccentColorArgb)
+    }
+    fun setCustomThemeColors(themeColorArgb: Int, accentColorArgb: Int) = viewModelScope.launch {
+        prefs.setCustomThemeColors(themeColorArgb, accentColorArgb)
+    }
     fun acceptTerms() = viewModelScope.launch { prefs.acceptCurrentTerms() }
     fun setDownloadMirrorBaseUrl(url: String) = viewModelScope.launch {
         prefs.setDownloadMirrorBaseUrl(url.trim())
@@ -1617,6 +1639,13 @@ private fun List<DownloadedArtifact>.sortedDownloadedForDisplay(): List<Download
     )
 
 private data class Quintuple<A, B, C, D, E>(val a: A, val b: B, val c: C, val d: D, val e: E)
+
+private data class ThemePreferences(
+    val themeMode: String,
+    val dynamicColorEnabled: Boolean,
+    val customThemeColorArgb: Int?,
+    val customAccentColorArgb: Int?
+)
 
 private operator fun <A, B, C, D, E> Quintuple<A, B, C, D, E>.component1() = a
 private operator fun <A, B, C, D, E> Quintuple<A, B, C, D, E>.component2() = b

@@ -88,7 +88,9 @@ class MainActivity : ComponentActivity() {
 
             AbkTheme(
                 themeMode = state.themeMode,
-                dynamicColorEnabled = state.dynamicColorEnabled
+                dynamicColorEnabled = state.dynamicColorEnabled,
+                customThemeColorArgb = state.customThemeColorArgb,
+                customAccentColorArgb = state.customAccentColorArgb
             ) {
                 when {
                     !state.termsLoaded -> Surface(

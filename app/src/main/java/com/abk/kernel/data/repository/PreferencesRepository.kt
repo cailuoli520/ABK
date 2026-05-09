@@ -23,6 +23,9 @@ class PreferencesRepository(private val context: Context) {
         val KEY_LAST_RUN_ID = longPreferencesKey("last_run_id")
         val KEY_THEME = stringPreferencesKey("theme_mode") // "system" | "light" | "dark"
         val KEY_DYNAMIC_COLOR_ENABLED = booleanPreferencesKey("dynamic_color_enabled")
+        val KEY_CUSTOM_THEME_COLOR = intPreferencesKey("custom_theme_color_argb")
+        val KEY_CUSTOM_ACCENT_COLOR = intPreferencesKey("custom_accent_color_argb")
+        val KEY_CUSTOM_COLORS_USER_SET = booleanPreferencesKey("custom_colors_user_set")
         val KEY_BUILD_CONFIG = stringPreferencesKey("build_config_json")
         val KEY_DOWNLOADED_ARTIFACTS = stringPreferencesKey("downloaded_artifacts_json")
         val KEY_REMOTE_ARTIFACTS = stringPreferencesKey("remote_artifacts_json")
@@ -41,6 +44,8 @@ class PreferencesRepository(private val context: Context) {
     val lastRunId: Flow<Long> = context.dataStore.data.map { it[KEY_LAST_RUN_ID] ?: -1L }
     val themeMode: Flow<String> = context.dataStore.data.map { it[KEY_THEME] ?: "dark" }
     val dynamicColorEnabled: Flow<Boolean> = context.dataStore.data.map { it[KEY_DYNAMIC_COLOR_ENABLED] ?: true }
+    val customThemeColorArgb: Flow<Int?> = context.dataStore.data.map { it[KEY_CUSTOM_THEME_COLOR] }
+    val customAccentColorArgb: Flow<Int?> = context.dataStore.data.map { it[KEY_CUSTOM_ACCENT_COLOR] }
     val buildConfigJson: Flow<String?> = context.dataStore.data.map { it[KEY_BUILD_CONFIG] }
     val downloadedArtifactsJson: Flow<String?> = context.dataStore.data.map { it[KEY_DOWNLOADED_ARTIFACTS] }
     val remoteArtifactsJson: Flow<String?> = context.dataStore.data.map { it[KEY_REMOTE_ARTIFACTS] }
@@ -57,7 +62,22 @@ class PreferencesRepository(private val context: Context) {
     suspend fun setNotifyBuild(v: Boolean) = context.dataStore.edit { it[KEY_NOTIFY_BUILD] = v }
     suspend fun saveLastRunId(id: Long) = context.dataStore.edit { it[KEY_LAST_RUN_ID] = id }
     suspend fun setThemeMode(mode: String) = context.dataStore.edit { it[KEY_THEME] = mode }
-    suspend fun setDynamicColorEnabled(v: Boolean) = context.dataStore.edit { it[KEY_DYNAMIC_COLOR_ENABLED] = v }
+    suspend fun setDynamicColorEnabled(
+        v: Boolean,
+        snapshotThemeColorArgb: Int? = null,
+        snapshotAccentColorArgb: Int? = null
+    ) = context.dataStore.edit { preferences ->
+        preferences[KEY_DYNAMIC_COLOR_ENABLED] = v
+        if (!v && preferences[KEY_CUSTOM_COLORS_USER_SET] != true) {
+            snapshotThemeColorArgb?.let { color -> preferences[KEY_CUSTOM_THEME_COLOR] = color }
+            snapshotAccentColorArgb?.let { color -> preferences[KEY_CUSTOM_ACCENT_COLOR] = color }
+        }
+    }
+    suspend fun setCustomThemeColors(themeColorArgb: Int, accentColorArgb: Int) = context.dataStore.edit { preferences ->
+        preferences[KEY_CUSTOM_THEME_COLOR] = themeColorArgb
+        preferences[KEY_CUSTOM_ACCENT_COLOR] = accentColorArgb
+        preferences[KEY_CUSTOM_COLORS_USER_SET] = true
+    }
     suspend fun saveBuildConfigJson(json: String) = context.dataStore.edit { it[KEY_BUILD_CONFIG] = json }
     suspend fun saveDownloadedArtifactsJson(json: String) = context.dataStore.edit { it[KEY_DOWNLOADED_ARTIFACTS] = json }
     suspend fun saveRemoteArtifactsJson(json: String) = context.dataStore.edit { it[KEY_REMOTE_ARTIFACTS] = json }
