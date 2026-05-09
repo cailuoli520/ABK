@@ -12,7 +12,6 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -252,8 +251,7 @@ fun BuildScreen(vm: MainViewModel) {
                         },
                         placeholder = { Text("如: r11") },
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(22.dp)
+                        singleLine = true
                     )
                 }
             }
@@ -324,8 +322,7 @@ fun BuildScreen(vm: MainViewModel) {
                             label = { Text("自定义 ZRAM 算法") },
                             placeholder = { Text("如: lzo,lz4,deflate,zstd") },
                             modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            shape = RoundedCornerShape(22.dp)
+                            singleLine = true
                         )
                     }
                 }
@@ -340,8 +337,7 @@ fun BuildScreen(vm: MainViewModel) {
                         label = { Text("KPM 超级密码 (可选)") },
                         placeholder = { Text("留空使用默认密码") },
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(22.dp)
+                        singleLine = true
                     )
                 }
             }
@@ -359,8 +355,7 @@ fun BuildScreen(vm: MainViewModel) {
                             label = { Text("仓库链接") },
                             placeholder = { Text("https://github.com/user/module") },
                             modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            shape = RoundedCornerShape(22.dp)
+                            singleLine = true
                         )
                         DropdownField(
                             label = "注入阶段",
@@ -404,12 +399,12 @@ fun BuildScreen(vm: MainViewModel) {
                                                     customExternalModules = config.customExternalModules
                                                         .filterIndexed { i, _ -> i != index }
                                                 )
-                                            )
-                                        }
-                                    ) {
-                                        Icon(Icons.Default.Delete, null)
-                                    }
+                                    )
                                 }
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = "删除模块")
+                            }
+                        }
                             )
                         }
                     }
@@ -423,8 +418,7 @@ fun BuildScreen(vm: MainViewModel) {
                     onValueChange = { vm.updateBuildConfig(config.copy(version = it)) },
                     label = { Text("自定义版本名 (可选)") },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    shape = RoundedCornerShape(22.dp)
+                    singleLine = true
                 )
                 ConfigPreviewText(versionPreview)
                 OutlinedTextField(
@@ -433,8 +427,7 @@ fun BuildScreen(vm: MainViewModel) {
                     label = { Text("自定义构建时间 (可选)") },
                     placeholder = { Text("留空/N=当前 UTC 时间") },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    shape = RoundedCornerShape(22.dp)
+                    singleLine = true
                 )
                 ConfigPreviewText(buildTimePreview)
             }
@@ -445,7 +438,7 @@ fun BuildScreen(vm: MainViewModel) {
                 enabled = !state.isLoading && state.buildStatus !in listOf(
                     BuildStatus.QUEUED, BuildStatus.IN_PROGRESS
                 ),
-                modifier = Modifier.fillMaxWidth().height(64.dp)
+                modifier = Modifier.fillMaxWidth().height(52.dp)
             ) {
                 if (state.isLoading) {
                     LoadingIndicator(Modifier.size(24.dp))
@@ -466,7 +459,7 @@ fun BuildScreen(vm: MainViewModel) {
                         Spacer(Modifier.width(8.dp))
                         Text(err, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.weight(1f))
                         IconButton(onClick = { vm.clearError() }) {
-                            Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.error)
+                            Icon(Icons.Default.Close, contentDescription = "关闭错误提示", tint = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
@@ -754,7 +747,6 @@ fun DropdownField(
             modifier = Modifier
                 .fillMaxWidth()
                 .menuAnchor(),
-            shape = RoundedCornerShape(22.dp)
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { opt ->

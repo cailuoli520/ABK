@@ -100,7 +100,7 @@ private fun RootCheckScreen(isLoading: Boolean, onRequestRoot: () -> Unit) {
         Button(
             onClick = onRequestRoot,
             enabled = !isLoading,
-            modifier = Modifier.fillMaxWidth().height(58.dp)
+            modifier = Modifier.fillMaxWidth().height(52.dp)
         ) {
             if (isLoading) {
                 LoadingIndicator(Modifier.size(24.dp))
@@ -185,7 +185,7 @@ private fun LoginScreen(
             Button(
                 onClick = { showConsentDialog = true },
                 enabled = !isLoading,
-                modifier = Modifier.fillMaxWidth().height(58.dp)
+                modifier = Modifier.fillMaxWidth().height(52.dp)
             ) {
                 if (isLoading) {
                     LoadingIndicator(Modifier.size(24.dp))
@@ -234,13 +234,13 @@ private fun DeviceCodeCard(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
-            Modifier.padding(20.dp),
+            Modifier.padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
                 stringResource(R.string.auth_code_title),
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold
             )
             Text(
@@ -252,11 +252,11 @@ private fun DeviceCodeCard(
             OutlinedCard {
                 Text(
                     code,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
-                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
+                    style = MaterialTheme.typography.titleLarge,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 4.sp,
+                    letterSpacing = 2.sp,
                     color = MaterialTheme.colorScheme.primary
                 )
             }
@@ -365,7 +365,7 @@ private fun ForkCheckScreen(
             )
             Button(
                 onClick = onFork,
-                modifier = Modifier.fillMaxWidth().height(58.dp)
+                modifier = Modifier.fillMaxWidth().height(52.dp)
             ) {
                 Icon(Icons.Default.ForkRight, null)
                 Spacer(Modifier.width(8.dp))
@@ -408,7 +408,7 @@ private fun ErrorCard(error: String, onClearError: () -> Unit) {
                 modifier = Modifier.weight(1f)
             )
             IconButton(onClick = onClearError) {
-                Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.error)
+                Icon(Icons.Default.Close, contentDescription = "关闭错误提示", tint = MaterialTheme.colorScheme.error)
             }
         }
     }

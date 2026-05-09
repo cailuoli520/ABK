@@ -6,7 +6,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -222,14 +221,14 @@ private fun StatusMetricGrid(
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             StatusMetricCard(
                 label = "Root",
-                value = if (rootGranted) "Granted" else "Partial",
+                value = if (rootGranted) "已授权" else "部分激活",
                 icon = if (rootGranted) Icons.Default.Lock else Icons.Default.LockOpen,
                 color = if (rootGranted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
                 modifier = Modifier.weight(1f)
             )
             StatusMetricCard(
                 label = "Fork",
-                value = if (forkReady) "Synced" else "Check",
+                value = if (forkReady) "已同步" else "待检查",
                 icon = Icons.Default.ForkRight,
                 color = if (forkReady) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.tertiary,
                 modifier = Modifier.weight(1f)
@@ -238,7 +237,7 @@ private fun StatusMetricGrid(
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
             StatusMetricCard(
                 label = "KernelSU",
-                value = if (ksuVersion == "N/A") "Missing" else "Detected",
+                value = if (ksuVersion == "N/A") "未检测" else "已检测",
                 icon = Icons.Default.Shield,
                 color = if (ksuVersion == "N/A") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                 modifier = Modifier.weight(1f)
@@ -269,15 +268,14 @@ private fun StatusMetricCard(
     )
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Icon(icon, null, tint = animatedColor, modifier = Modifier.size(26.dp))
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(icon, null, tint = animatedColor, modifier = Modifier.size(22.dp))
             Column {
-                Text(label, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-                Text(value, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                Text(value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -331,12 +329,12 @@ private fun RunListItem(run: WorkflowRun) {
 }
 
 private fun buildStatusDisplay(status: BuildStatus): String = when (status) {
-    BuildStatus.IDLE -> "Idle"
-    BuildStatus.QUEUED -> "Queued"
-    BuildStatus.IN_PROGRESS -> "Running"
-    BuildStatus.SUCCESS -> "Success"
-    BuildStatus.FAILURE -> "Failed"
-    BuildStatus.CANCELLED -> "Stopped"
+    BuildStatus.IDLE -> "空闲"
+    BuildStatus.QUEUED -> "排队"
+    BuildStatus.IN_PROGRESS -> "进行中"
+    BuildStatus.SUCCESS -> "成功"
+    BuildStatus.FAILURE -> "失败"
+    BuildStatus.CANCELLED -> "已停止"
 }
 
 @Composable

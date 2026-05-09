@@ -9,7 +9,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -83,7 +82,7 @@ fun SettingsScreen(vm: MainViewModel) {
                 navigationIcon = if (showThemeSettings) {
                     {
                         IconButton(onClick = { showThemeSettings = false }) {
-                            Icon(Icons.Default.ArrowBack, null)
+                            Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                         }
                     }
                 } else {
@@ -127,7 +126,11 @@ fun SettingsScreen(vm: MainViewModel) {
                         },
                         trailingContent = {
                             IconButton(onClick = { showLogoutDialog = true }) {
-                                Icon(Icons.Default.Logout, null, tint = MaterialTheme.colorScheme.error)
+                                Icon(
+                                    Icons.Default.Logout,
+                                    contentDescription = "退出登录",
+                                    tint = MaterialTheme.colorScheme.error
+                                )
                             }
                         }
                     )
@@ -182,7 +185,7 @@ fun SettingsScreen(vm: MainViewModel) {
                     title = "颜色与外观",
                     subtitle = "${themeModeLabel(state.themeMode)} · ${dynamicColorLabel(state.dynamicColorEnabled)}",
                     leadingIcon = Icons.Default.Palette,
-                    trailingContent = { Icon(Icons.Default.ChevronRight, null) },
+                    trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = "进入颜色与外观") },
                     onClick = { showThemeSettings = true }
                 )
             }
@@ -198,7 +201,7 @@ fun SettingsScreen(vm: MainViewModel) {
                     title = "关于",
                     subtitle = "项目入口、源码仓库、上游项目与致谢",
                     leadingIcon = Icons.Default.AutoAwesome,
-                    trailingContent = { Icon(Icons.Default.ChevronRight, null) },
+                    trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = "进入关于") },
                     onClick = { showAboutDialog = true }
                 )
             }
@@ -490,7 +493,6 @@ private fun MirrorSettingsItem(
             singleLine = true,
             placeholder = { Text("https://hk.gh-proxy.org/") },
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp)
         )
     }
 }

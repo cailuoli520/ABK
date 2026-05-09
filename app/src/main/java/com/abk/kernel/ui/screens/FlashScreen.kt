@@ -818,9 +818,9 @@ private fun PrebuiltReleaseCard(
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
     ) {
-        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Icon(Icons.Default.CloudDownload, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Default.CloudDownload, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
                         release.name,
@@ -840,7 +840,7 @@ private fun PrebuiltReleaseCard(
             }
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 ExpressiveStatusChip(
                     label = if (release.assetCount > 0) "${release.assetCount} 个资产" else "点进后加载资产",
@@ -1026,7 +1026,7 @@ private fun PrebuiltGkiAssetCard(
     Card(
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ArtifactHeader(
                 icon = artifactIcon(type),
                 title = asset.name,
@@ -1042,9 +1042,9 @@ private fun PrebuiltGkiAssetCard(
                 downloadedFiles.isEmpty() -> {
                     Button(
                         onClick = onDownload,
-                        modifier = Modifier.fillMaxWidth().height(46.dp)
+                        modifier = Modifier.fillMaxWidth().height(42.dp)
                     ) {
-                        Icon(Icons.Default.Download, null, modifier = Modifier.size(17.dp))
+                        Icon(Icons.Default.Download, null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
                         Text("下载预编译 GKI")
                     }
@@ -1092,12 +1092,12 @@ private fun WorkflowRunCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(12.dp)
                 .animateContentSize(),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Icon(Icons.Default.FolderSpecial, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Default.FolderSpecial, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
                         text = if (group.runId == PREBUILT_GKI_RUN_ID) {
@@ -1105,7 +1105,7 @@ private fun WorkflowRunCard(
                         } else {
                             "工作流 ${if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}"}"
                         },
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
@@ -1122,7 +1122,7 @@ private fun WorkflowRunCard(
             }
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 ExpressiveStatusChip(label = "$sourceCount 个源产物", color = MaterialTheme.colorScheme.primary)
                 ExpressiveStatusChip(label = "$downloadedCount 个已下载", color = MaterialTheme.colorScheme.secondary)
@@ -1205,7 +1205,7 @@ private fun ArtifactSourceCard(
     Card(
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ArtifactHeader(
                 icon = artifactIcon(type),
                 title = artifact.name,
@@ -1221,9 +1221,9 @@ private fun ArtifactSourceCard(
                 downloadedFiles.isEmpty() -> {
                     Button(
                         onClick = onDownload,
-                        modifier = Modifier.fillMaxWidth().height(46.dp)
+                        modifier = Modifier.fillMaxWidth().height(42.dp)
                     ) {
-                        Icon(Icons.Default.Download, null, modifier = Modifier.size(17.dp))
+                        Icon(Icons.Default.Download, null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
                         Text("下载")
                     }
@@ -1258,7 +1258,7 @@ private fun LocalOnlyArtifactCard(
     Card(
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ArtifactHeader(
                 icon = artifactIcon(artifact.type),
                 title = artifact.name,
@@ -1284,17 +1284,17 @@ private fun ArtifactHeader(
     subtitle: String,
     chip: String
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Icon(
             icon,
             null,
             tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(24.dp)
+            modifier = Modifier.size(20.dp)
         )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 title,
-                style = MaterialTheme.typography.titleSmall,
+            style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
@@ -1320,13 +1320,13 @@ private fun DownloadedOutputRow(
     onDelete: () -> Unit,
     allowRootActions: Boolean
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(
                 Icons.Default.CheckCircle,
                 null,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(16.dp)
             )
             Column(Modifier.weight(1f)) {
                 Text(
@@ -1353,9 +1353,9 @@ private fun DownloadedOutputRow(
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
                 onClick = onCopyPath,
-                modifier = Modifier.weight(1f).height(42.dp)
+                modifier = Modifier.weight(1f).height(40.dp)
             ) {
-                Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(17.dp))
+                Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
                 Text("复制路径")
             }
@@ -1365,7 +1365,7 @@ private fun DownloadedOutputRow(
                     ArtifactType.ANYKERNEL3,
                     ArtifactType.SUSFS_MODULE -> Button(
                         onClick = onFlash,
-                        modifier = Modifier.weight(1f).height(42.dp),
+                        modifier = Modifier.weight(1f).height(40.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (artifact.type == ArtifactType.KERNEL_IMG) {
                                 MaterialTheme.colorScheme.error
@@ -1377,16 +1377,16 @@ private fun DownloadedOutputRow(
                         Icon(
                             if (artifact.type == ArtifactType.SUSFS_MODULE) Icons.Default.Extension else Icons.Default.FlashOn,
                             null,
-                            modifier = Modifier.size(17.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                         Spacer(Modifier.width(4.dp))
                         Text(flashButtonLabel(artifact.type))
                     }
                     ArtifactType.KSU_MANAGER -> Button(
                         onClick = onInstall,
-                        modifier = Modifier.weight(1f).height(42.dp)
+                        modifier = Modifier.weight(1f).height(40.dp)
                     ) {
-                        Icon(Icons.Default.InstallMobile, null, modifier = Modifier.size(17.dp))
+                        Icon(Icons.Default.InstallMobile, null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
                         Text("安装")
                     }
