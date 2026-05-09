@@ -115,6 +115,14 @@ fun SettingsScreen(vm: MainViewModel) {
                     checked = state.autoDownload,
                     onCheckedChange = { vm.setAutoDownload(it) }
                 )
+                HorizontalDivider()
+                SwitchSettingsItem(
+                    icon = Icons.Default.CloudDownload,
+                    title = "预编译 GKI 获取与下载",
+                    subtitle = "从本仓库 Release 获取预编译 GKI，下载需手动触发",
+                    checked = state.prebuiltGkiEnabled,
+                    onCheckedChange = { vm.setPrebuiltGkiEnabled(it) }
+                )
                 Spacer(Modifier.height(10.dp))
                 MirrorSettingsItem(
                     value = state.downloadMirrorBaseUrl,

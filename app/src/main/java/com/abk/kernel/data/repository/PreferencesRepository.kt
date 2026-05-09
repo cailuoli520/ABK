@@ -27,6 +27,7 @@ class PreferencesRepository(private val context: Context) {
         val KEY_REMOTE_ARTIFACTS = stringPreferencesKey("remote_artifacts_json")
         val KEY_PENDING_AUTO_DOWNLOAD_RUN_ID = longPreferencesKey("pending_auto_download_run_id")
         val KEY_DOWNLOAD_MIRROR_BASE_URL = stringPreferencesKey("download_mirror_base_url")
+        val KEY_PREBUILT_GKI_ENABLED = booleanPreferencesKey("prebuilt_gki_enabled")
         val KEY_TERMS_ACCEPTED_VERSION = intPreferencesKey("terms_accepted_version")
     }
 
@@ -43,6 +44,7 @@ class PreferencesRepository(private val context: Context) {
     val remoteArtifactsJson: Flow<String?> = context.dataStore.data.map { it[KEY_REMOTE_ARTIFACTS] }
     val pendingAutoDownloadRunId: Flow<Long> = context.dataStore.data.map { it[KEY_PENDING_AUTO_DOWNLOAD_RUN_ID] ?: -1L }
     val downloadMirrorBaseUrl: Flow<String> = context.dataStore.data.map { it[KEY_DOWNLOAD_MIRROR_BASE_URL] ?: "" }
+    val prebuiltGkiEnabled: Flow<Boolean> = context.dataStore.data.map { it[KEY_PREBUILT_GKI_ENABLED] ?: true }
     val termsAcceptedVersion: Flow<Int> = context.dataStore.data.map { it[KEY_TERMS_ACCEPTED_VERSION] ?: 0 }
 
     suspend fun saveToken(token: String) = context.dataStore.edit { it[KEY_ACCESS_TOKEN] = token }
@@ -58,6 +60,7 @@ class PreferencesRepository(private val context: Context) {
     suspend fun saveRemoteArtifactsJson(json: String) = context.dataStore.edit { it[KEY_REMOTE_ARTIFACTS] = json }
     suspend fun savePendingAutoDownloadRunId(id: Long) = context.dataStore.edit { it[KEY_PENDING_AUTO_DOWNLOAD_RUN_ID] = id }
     suspend fun setDownloadMirrorBaseUrl(url: String) = context.dataStore.edit { it[KEY_DOWNLOAD_MIRROR_BASE_URL] = url }
+    suspend fun setPrebuiltGkiEnabled(v: Boolean) = context.dataStore.edit { it[KEY_PREBUILT_GKI_ENABLED] = v }
     suspend fun acceptCurrentTerms() = context.dataStore.edit {
         it[KEY_TERMS_ACCEPTED_VERSION] = CURRENT_TERMS_VERSION
     }

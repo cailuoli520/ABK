@@ -170,14 +170,34 @@ data class ArtifactsResponse(
 )
 
 data class GitHubRelease(
+    val id: Long = 0L,
+    val name: String? = null,
     @SerializedName("tag_name") val tagName: String,
     @SerializedName("html_url") val htmlUrl: String,
+    @SerializedName("published_at") val publishedAt: String? = null,
+    val body: String? = null,
     val assets: List<ReleaseAsset> = emptyList()
 )
 
 data class ReleaseAsset(
+    val id: Long = 0L,
     val name: String,
+    val size: Long = 0L,
+    @SerializedName("content_type") val contentType: String? = null,
     @SerializedName("browser_download_url") val browserDownloadUrl: String
+)
+
+data class PrebuiltGkiAsset(
+    val id: Long,
+    val name: String,
+    val sizeBytes: Long,
+    val browserDownloadUrl: String,
+    val contentType: String? = null,
+    val releaseTag: String,
+    val releaseName: String,
+    val releaseHtmlUrl: String,
+    val publishedAt: String,
+    val releaseBody: String = ""
 )
 
 // GitHub Device Flow OAuth
@@ -268,6 +288,8 @@ data class DownloadedArtifact(
     val runNumber: Int = 0,
     val category: ArtifactCategory = type.toArtifactCategory()
 )
+
+const val PREBUILT_GKI_RUN_ID: Long = -2L
 
 enum class ArtifactType {
     KERNEL_PACKAGE,

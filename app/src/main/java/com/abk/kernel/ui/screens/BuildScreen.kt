@@ -73,6 +73,10 @@ fun BuildScreen(vm: MainViewModel) {
         if (config != rawConfig) vm.updateBuildConfig(config)
     }
 
+    LaunchedEffect(state.prebuiltGkiEnabled, state.isLoggedIn) {
+        if (state.prebuiltGkiEnabled && state.isLoggedIn) vm.loadPrebuiltGki()
+    }
+
     if (showConfirmDialog) {
         AlertDialog(
             onDismissRequest = { showConfirmDialog = false },
@@ -160,7 +164,12 @@ fun BuildScreen(vm: MainViewModel) {
                 .padding(horizontal = 18.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            BuildPlanHero(config, recommended, state.buildStatus)
+            BuildPlanHero(
+                config,
+                recommended,
+                state.buildStatus,
+                hasRecommendedPrebuiltGki = state.prebuiltGkiEnabled && state.recommendedPrebuiltGkiAssetIds.isNotEmpty()
+            )
 
             AnimatedVisibility(
                 visible = state.buildStatus != BuildStatus.IDLE,
@@ -534,7 +543,8 @@ private fun ConfigPreviewText(preview: String) {
 private fun BuildPlanHero(
     config: KernelBuildConfig,
     recommended: KernelBuildConfig?,
-    status: BuildStatus
+    status: BuildStatus,
+    hasRecommendedPrebuiltGki: Boolean
 ) {
     val isRecommended = recommended != null &&
         config.androidVersion == recommended.androidVersion &&
@@ -585,6 +595,13 @@ private fun BuildPlanHero(
                 icon = if (isRecommended) Icons.Default.AutoAwesome else Icons.Default.RunCircle,
                 color = if (isRecommended) MaterialTheme.colorScheme.tertiary else buildStatusColor(status)
             )
+            if (hasRecommendedPrebuiltGki) {
+                ExpressiveStatusChip(
+                    label = "有预编译 GKI",
+                    icon = Icons.Default.CloudDownload,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+            }
         }
     )
 }

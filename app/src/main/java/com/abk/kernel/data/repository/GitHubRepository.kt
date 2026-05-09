@@ -225,6 +225,18 @@ class GitHubRepository(
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
 
+    suspend fun listReleases(owner: String, repo: String, perPage: Int = 30): Result<List<GitHubRelease>> {
+        val api = apiService ?: return Result.Error("Not authenticated")
+        return runCatching<Result<List<GitHubRelease>>> {
+            val resp = api.listReleases(owner, repo, perPage = perPage)
+            if (resp.isSuccessful) {
+                Result.Success(resp.body().orEmpty())
+            } else {
+                Result.Error("List releases failed: ${resp.code()}", resp.code())
+            }
+        }.getOrElse { Result.Error(it.message ?: "Unknown error") }
+    }
+
     suspend fun getReleaseByTag(owner: String, repo: String, tag: String): Result<GitHubRelease?> {
         val api = apiService ?: return Result.Error("Not authenticated")
         return runCatching<Result<GitHubRelease?>> {

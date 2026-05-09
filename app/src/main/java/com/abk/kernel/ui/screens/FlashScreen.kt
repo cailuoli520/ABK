@@ -95,6 +95,8 @@ import com.abk.kernel.data.model.ArtifactType
 import com.abk.kernel.data.model.BuildArtifact
 import com.abk.kernel.data.model.BuildStatus
 import com.abk.kernel.data.model.DownloadedArtifact
+import com.abk.kernel.data.model.PREBUILT_GKI_RUN_ID
+import com.abk.kernel.data.model.PrebuiltGkiAsset
 import com.abk.kernel.ui.components.ExpressiveEmptyState
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveSectionCard
@@ -134,8 +136,15 @@ fun FlashScreen(vm: MainViewModel) {
             !it.expired && DownloadUtils.classifyCategory(DownloadUtils.classifyArtifact(it.name)) != null
         }
     }
-    val workflowGroups = remember(remoteArtifacts, state.downloadedArtifacts) {
-        buildWorkflowGroups(remoteArtifacts, state.downloadedArtifacts)
+    val workflowDownloadedArtifacts = remember(state.downloadedArtifacts, state.prebuiltGkiEnabled) {
+        if (state.prebuiltGkiEnabled) {
+            state.downloadedArtifacts.filterNot { it.runId == PREBUILT_GKI_RUN_ID }
+        } else {
+            state.downloadedArtifacts
+        }
+    }
+    val workflowGroups = remember(remoteArtifacts, workflowDownloadedArtifacts) {
+        buildWorkflowGroups(remoteArtifacts, workflowDownloadedArtifacts)
     }
     val selectedGroup = selectedRunId?.let { id -> workflowGroups.firstOrNull { it.runId == id } }
 
@@ -154,6 +163,10 @@ fun FlashScreen(vm: MainViewModel) {
 
     LaunchedEffect(state.forkRepo?.fullName) {
         if (state.forkRepo != null) vm.loadRecentRuns()
+    }
+
+    LaunchedEffect(state.prebuiltGkiEnabled, state.isLoggedIn) {
+        if (state.prebuiltGkiEnabled && state.isLoggedIn) vm.loadPrebuiltGki()
     }
 
     LaunchedEffect(workflowGroups, selectedRunId) {
@@ -299,25 +312,31 @@ fun FlashScreen(vm: MainViewModel) {
         AlertDialog(
             onDismissRequest = { deleteWorkflowTarget = null },
             icon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text("删除工作流记录") },
+            title = { Text(if (group.runId == PREBUILT_GKI_RUN_ID) "删除预编译 GKI 文件" else "删除工作流记录") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        "将删除此工作流在 ABK 中缓存的产物记录，并删除本地已下载文件。\n\n工作流 ${
-                            if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}"
-                        }"
+                        if (group.runId == PREBUILT_GKI_RUN_ID) {
+                            "将删除本地已下载的预编译 GKI 文件。"
+                        } else {
+                            "将删除此工作流在 ABK 中缓存的产物记录，并删除本地已下载文件。\n\n工作流 ${
+                                if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}"
+                            }"
+                        }
                     )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { deleteRemoteWorkflowRun = !deleteRemoteWorkflowRun },
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Checkbox(
-                            checked = deleteRemoteWorkflowRun,
-                            onCheckedChange = { deleteRemoteWorkflowRun = it }
-                        )
-                        Text("同时删除远程 GitHub Actions 工作流记录")
+                    if (group.runId > 0) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { deleteRemoteWorkflowRun = !deleteRemoteWorkflowRun },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = deleteRemoteWorkflowRun,
+                                onCheckedChange = { deleteRemoteWorkflowRun = it }
+                            )
+                            Text("同时删除远程 GitHub Actions 工作流记录")
+                        }
                     }
                 }
             },
@@ -390,6 +409,28 @@ fun FlashScreen(vm: MainViewModel) {
                         Icon(Icons.Default.Refresh, null, modifier = Modifier.size(17.dp))
                         Spacer(Modifier.width(6.dp))
                         Text("联网刷新构建产物")
+                    }
+                }
+
+                if (state.prebuiltGkiEnabled) {
+                    item {
+                        PrebuiltGkiSection(
+                            assets = state.prebuiltGkiAssets,
+                            isLoading = state.isLoadingPrebuiltGki,
+                            recommendedIds = state.recommendedPrebuiltGkiAssetIds,
+                            downloadedArtifacts = state.downloadedArtifacts,
+                            progress = state.downloadProgress,
+                            onRefresh = { vm.loadPrebuiltGki(force = true) },
+                            onDownload = { vm.downloadPrebuiltGki(it) },
+                            onCopyPath = ::copyDownloadedFilePath,
+                            onInstall = ::installManager,
+                            onFlash = {
+                                selectedItem = it
+                                showFlashConfirm = true
+                            },
+                            onDelete = { deleteFileTarget = it },
+                            allowRootActions = rootGranted
+                        )
                     }
                 }
 
@@ -536,6 +577,177 @@ private fun FlashHero(
 }
 
 @Composable
+private fun PrebuiltGkiSection(
+    assets: List<PrebuiltGkiAsset>,
+    isLoading: Boolean,
+    recommendedIds: Set<Long>,
+    downloadedArtifacts: List<DownloadedArtifact>,
+    progress: Map<Long, Int>,
+    onRefresh: () -> Unit,
+    onDownload: (PrebuiltGkiAsset) -> Unit,
+    onCopyPath: (DownloadedArtifact) -> Unit,
+    onInstall: (DownloadedArtifact) -> Unit,
+    onFlash: (DownloadedArtifact) -> Unit,
+    onDelete: (DownloadedArtifact) -> Unit,
+    allowRootActions: Boolean
+) {
+    val matchedLocalPaths = assets
+        .flatMap { asset -> downloadedArtifacts.filter { DownloadUtils.matchesDownloadedPrebuilt(it, asset) } }
+        .map { it.filePath }
+        .toSet()
+    val localOnly = downloadedArtifacts.filter {
+        it.runId == PREBUILT_GKI_RUN_ID && it.filePath !in matchedLocalPaths
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(Icons.Default.CloudDownload, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+            Column(Modifier.weight(1f)) {
+                Text("预编译 GKI", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "来自本仓库 Release，需手动下载",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            OutlinedButton(onClick = onRefresh, enabled = !isLoading, shape = RoundedCornerShape(16.dp)) {
+                Icon(Icons.Default.Refresh, null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("刷新")
+            }
+        }
+
+        when {
+            isLoading -> {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text("正在获取预编译 GKI")
+                }
+            }
+            assets.isEmpty() && localOnly.isEmpty() -> {
+                Text(
+                    "未找到可用的预编译 GKI Release 资产。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
+                )
+            }
+            else -> {
+                assets.forEach { asset ->
+                    PrebuiltGkiAssetCard(
+                        asset = asset,
+                        recommended = asset.id in recommendedIds,
+                        downloadedFiles = downloadedArtifacts.filter {
+                            DownloadUtils.matchesDownloadedPrebuilt(it, asset)
+                        },
+                        progress = progress[DownloadUtils.prebuiltProgressKey(asset.id)],
+                        onDownload = { onDownload(asset) },
+                        onCopyPath = onCopyPath,
+                        onInstall = onInstall,
+                        onFlash = onFlash,
+                        onDelete = onDelete,
+                        allowRootActions = allowRootActions
+                    )
+                }
+                localOnly.forEach { artifact ->
+                    LocalOnlyArtifactCard(
+                        artifact = artifact,
+                        onCopyPath = onCopyPath,
+                        onInstall = onInstall,
+                        onFlash = onFlash,
+                        onDelete = onDelete,
+                        allowRootActions = allowRootActions
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PrebuiltGkiAssetCard(
+    asset: PrebuiltGkiAsset,
+    recommended: Boolean,
+    downloadedFiles: List<DownloadedArtifact>,
+    progress: Int?,
+    onDownload: () -> Unit,
+    onCopyPath: (DownloadedArtifact) -> Unit,
+    onInstall: (DownloadedArtifact) -> Unit,
+    onFlash: (DownloadedArtifact) -> Unit,
+    onDelete: (DownloadedArtifact) -> Unit,
+    allowRootActions: Boolean
+) {
+    val type = prebuiltArtifactType(asset)
+    val animatedProgress by animateFloatAsState(
+        targetValue = ((progress ?: 0) / 100f).coerceIn(0f, 1f),
+        label = "prebuilt-gki-download"
+    )
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            ArtifactHeader(
+                icon = artifactIcon(type),
+                title = asset.name,
+                subtitle = "${asset.releaseTag} · ${DownloadUtils.formatSize(asset.sizeBytes)}",
+                chip = if (recommended) "设备推荐" else "Release"
+            )
+
+            when {
+                progress != null -> {
+                    LinearProgressIndicator(progress = { animatedProgress }, modifier = Modifier.fillMaxWidth())
+                    Text("下载中 $progress%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                downloadedFiles.isEmpty() -> {
+                    Button(
+                        onClick = onDownload,
+                        shape = RoundedCornerShape(18.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (recommended) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = if (recommended) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onPrimaryContainer
+                        ),
+                        modifier = Modifier.fillMaxWidth().height(46.dp)
+                    ) {
+                        Icon(Icons.Default.Download, null, modifier = Modifier.size(17.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("下载预编译 GKI")
+                    }
+                }
+                else -> {
+                    downloadedFiles.forEachIndexed { index, file ->
+                        if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        DownloadedOutputRow(
+                            artifact = file,
+                            onCopyPath = { onCopyPath(file) },
+                            onInstall = { onInstall(file) },
+                            onFlash = { onFlash(file) },
+                            onDelete = { onDelete(file) },
+                            allowRootActions = allowRootActions
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun prebuiltArtifactType(asset: PrebuiltGkiAsset): ArtifactType {
+    val type = DownloadUtils.classifyArtifact(asset.name)
+    return if (type == ArtifactType.OTHER) ArtifactType.KERNEL_PACKAGE else type
+}
+
+@Composable
 private fun WorkflowRunCard(
     group: WorkflowArtifactGroup,
     onClick: () -> Unit,
@@ -573,7 +785,11 @@ private fun WorkflowRunCard(
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
-                        text = "工作流 ${if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}"}",
+                        text = if (group.runId == PREBUILT_GKI_RUN_ID) {
+                            "预编译 GKI"
+                        } else {
+                            "工作流 ${if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}"}"
+                        },
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -610,7 +826,11 @@ private fun WorkflowDetailHeader(
     onDelete: () -> Unit
 ) {
     ExpressiveSectionCard(
-        title = "工作流 ${if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}"}",
+        title = if (group.runId == PREBUILT_GKI_RUN_ID) {
+            "预编译 GKI"
+        } else {
+            "工作流 ${if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}"}"
+        },
         subtitle = group.runTitle,
         icon = Icons.Default.FolderSpecial
     ) {

@@ -103,6 +103,14 @@ interface GitHubApiService {
     ): Response<ArtifactsResponse>
 
     // ── Releases ─────────────────────────────────────────────────────────
+    @GET("repos/{owner}/{repo}/releases")
+    suspend fun listReleases(
+        @Path("owner") owner: String,
+        @Path("repo") repo: String,
+        @Query("per_page") perPage: Int = 30,
+        @Query("page") page: Int = 1
+    ): Response<List<GitHubRelease>>
+
     @GET("repos/{owner}/{repo}/releases/tags/{tag}")
     suspend fun getReleaseByTag(
         @Path("owner") owner: String,
