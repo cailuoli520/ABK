@@ -2362,6 +2362,15 @@ jobs:
             *.img
           compression-level: 9
 
+      - name: 上传 NTsync 权限修复和 IPSet 启用模块
+        if: ${{ inputs.use_ntsync || inputs.use_networking }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: ntsync权限修复&ipset启用
+          path: modules/ntsync-ipset-helper/ntsync权限修复&ipset启用.zip
+          if-no-files-found: error
+          compression-level: 9
+
       - name: 上传补丁冲突文件
         if: always() && env.REJ_COUNT > 0
         uses: actions/upload-artifact@v6
