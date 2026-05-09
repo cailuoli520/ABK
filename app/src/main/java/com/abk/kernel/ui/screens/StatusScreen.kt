@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -13,9 +14,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.abk.kernel.BuildConfig
@@ -166,25 +170,30 @@ fun StatusScreen(vm: MainViewModel) {
                 subtitle = "用于生成默认构建参数和确认工作流来源。",
                 icon = Icons.Default.Memory
             ) {
-                StatusRow(Icons.Default.Memory, "内核: $kernelVersion", false)
-                StatusRow(Icons.Default.Shield, "KSU: $ksuVersion", ksuVersion == "N/A")
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DeviceInfoRow(
+                        icon = Icons.Default.Memory,
+                        label = "内核",
+                        value = kernelVersion,
+                        isError = false
+                    )
+                    DeviceInfoRow(
+                        icon = Icons.Default.Shield,
+                        label = "KSU",
+                        value = ksuVersion,
+                        isError = ksuVersion == "N/A"
+                    )
+                }
                 state.user?.let { user ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        AsyncImage(
-                            model = user.avatarUrl,
-                            contentDescription = null,
-                            modifier = Modifier.size(42.dp)
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(user.login, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text(
-                                state.forkRepo?.fullName ?: stringResource(R.string.status_no_fork),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 6.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+                    )
+                    AccountRepositoryRow(
+                        avatarUrl = user.avatarUrl,
+                        login = user.login,
+                        repository = state.forkRepo?.fullName ?: stringResource(R.string.status_no_fork)
+                    )
                 }
                 if (state.behindBy > 0) {
                     StatusRow(Icons.Default.Warning, "Fork 落后上游 ${state.behindBy} 个提交", true)
@@ -206,6 +215,86 @@ fun StatusScreen(vm: MainViewModel) {
                 }
             }
             Spacer(Modifier.height(80.dp))
+        }
+    }
+}
+
+@Composable
+private fun DeviceInfoRow(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    isError: Boolean
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .padding(top = 2.dp)
+                .size(18.dp)
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun AccountRepositoryRow(
+    avatarUrl: String,
+    login: String,
+    repository: String
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        AsyncImage(
+            model = avatarUrl,
+            contentDescription = null,
+            modifier = Modifier
+                .size(38.dp)
+                .clip(CircleShape)
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            Text(
+                text = login,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = repository,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
