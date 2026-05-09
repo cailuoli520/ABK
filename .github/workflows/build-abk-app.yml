@@ -38,12 +38,12 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: sdkmanager --channel=3 "platforms;android-37.0" "build-tools;37.0.0"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.9"
+          gradle-version: "9.3.1"
 
       - name: Build debug APK
         run: gradle assembleDebug
@@ -73,7 +73,7 @@ jobs:
             find app/build/outputs/apk/release -maxdepth 1 -type f -print
             exit 1
           fi
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$signed_apk"
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose "$signed_apk"
 
       - name: Upload APKs
         uses: actions/upload-artifact@v6

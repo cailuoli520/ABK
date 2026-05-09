@@ -27,7 +27,7 @@ val hasReleaseSigning = !releaseStoreFile.orNull.isNullOrBlank() &&
 
 android {
     namespace = "com.abk.kernel"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.abk.kernel"
