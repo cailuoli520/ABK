@@ -1990,25 +1990,76 @@ jobs:
             echo "没有配置 $CUSTOM_EXTERNAL_MODULE_STAGE 阶段的自定义外部模块。"
           fi
 
-      - name: 最终修复 SukiSU 源码兼容
-        if: inputs.ksu_variant == 'SukiSU'
+      - name: 最终修复 SukiSU/ReSukiSU 源码兼容
+        if: inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU'
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           set -euo pipefail
 
           python3 - <<'PY'
           from pathlib import Path
+          import re
+
+          OPEN_DIRECTIVE = re.compile(r"^\s*#\s*(if|ifdef|ifndef)\b")
+          ENDIF_DIRECTIVE = re.compile(r"^\s*#\s*endif\b")
+
+          def directive_delta(line):
+              if OPEN_DIRECTIVE.match(line):
+                  return 1
+              if ENDIF_DIRECTIVE.match(line):
+                  return -1
+              return 0
 
           def preprocessor_delta(text):
-              opens = 0
-              closes = 0
+              depth = 0
               for line in text.splitlines():
-                  stripped = line.strip()
-                  if stripped.startswith("#if"):
-                      opens += 1
-                  elif stripped.startswith("#endif"):
-                      closes += 1
-              return opens - closes
+                  depth += directive_delta(line)
+              return depth
+
+          def drop_unmatched_endifs(text):
+              depth = 0
+              output = []
+              removed = []
+              for number, line in enumerate(text.splitlines(keepends=True), 1):
+                  delta = directive_delta(line)
+                  if delta > 0:
+                      depth += 1
+                      output.append(line)
+                  elif delta < 0:
+                      if depth == 0:
+                          removed.append(number)
+                          continue
+                      depth -= 1
+                      output.append(line)
+                  else:
+                      output.append(line)
+              return "".join(output), removed, depth
+
+          def repair_sucompat(path):
+              text = path.read_text()
+              changed = False
+              marker = "\n// dead code\n"
+              guard = "#endif /* CONFIG_KSU_SUSFS */\n"
+
+              if marker in text and guard not in text:
+                  before_marker = text.split(marker, 1)[0]
+                  if preprocessor_delta(before_marker) > 0:
+                      text = text.replace(marker, "\n" + guard + marker, 1)
+                      changed = True
+                      print(f"  已补齐 {path} 的 CONFIG_KSU_SUSFS 结束符")
+
+              repaired, removed, remaining_depth = drop_unmatched_endifs(text)
+              if removed:
+                  changed = True
+                  print(f"  已移除 {path} 中无匹配 #if 的 #endif 行: {', '.join(map(str, removed))}")
+
+              if remaining_depth != 0:
+                  raise SystemExit(f"{path} 仍存在未闭合的 #if/#ifdef/#ifndef: depth={remaining_depth}")
+
+              if changed:
+                  path.write_text(repaired)
+
+              return changed
 
           candidates = []
           for base in (Path("common/drivers/kernelsu"), Path("drivers/kernelsu"), Path("KernelSU/kernel")):
@@ -2025,15 +2076,7 @@ jobs:
 
               sucompat_c = kernel_dir / "feature/sucompat.c"
               if sucompat_c.exists():
-                  text = sucompat_c.read_text()
-                  marker = "\n// dead code\n"
-                  guard = "#endif /* CONFIG_KSU_SUSFS */\n"
-                  if marker in text and guard not in text:
-                      before_marker = text.split(marker, 1)[0]
-                      if preprocessor_delta(before_marker) > 0:
-                          sucompat_c.write_text(text.replace(marker, "\n" + guard + marker, 1))
-                          changed = True
-                          print(f"  已补齐 {sucompat_c} 的 CONFIG_KSU_SUSFS 结束符")
+                  changed = repair_sucompat(sucompat_c) or changed
 
               sulog_event_c = kernel_dir / "sulog/event.c"
               if sulog_event_c.exists():
@@ -2073,22 +2116,19 @@ jobs:
             python3 - "$KSU_BUILD_DIR/feature/sucompat.c" <<'PY'
           import sys
           from pathlib import Path
+          import re
 
           path = Path(sys.argv[1])
-          text = path.read_text()
-          marker = "\n// dead code\n"
-          if marker in text:
-              before_marker = text.split(marker, 1)[0]
-              opens = 0
-              closes = 0
-              for line in before_marker.splitlines():
-                  stripped = line.strip()
-                  if stripped.startswith("#if"):
-                      opens += 1
-                  elif stripped.startswith("#endif"):
-                      closes += 1
-              if opens > closes:
-                  raise SystemExit(f"SukiSU sucompat.c 仍缺少 CONFIG_KSU_SUSFS 结束符: {path}")
+          depth = 0
+          for number, line in enumerate(path.read_text().splitlines(), 1):
+              if re.match(r"^\s*#\s*(if|ifdef|ifndef)\b", line):
+                  depth += 1
+              elif re.match(r"^\s*#\s*endif\b", line):
+                  if depth == 0:
+                      raise SystemExit(f"{path} 第 {number} 行存在无匹配 #if 的 #endif")
+                  depth -= 1
+          if depth != 0:
+              raise SystemExit(f"{path} 仍存在未闭合的 #if/#ifdef/#ifndef: depth={depth}")
           PY
           fi
 
