@@ -5,15 +5,8 @@ package com.abk.kernel.ui.screens
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -47,6 +40,7 @@ import com.abk.kernel.ui.components.ExpressiveSectionCard
 import com.abk.kernel.ui.components.ExpressiveStatusChip
 import com.abk.kernel.ui.components.ExpressiveSwitchItem
 import com.abk.kernel.ui.components.ExpressiveTopBar
+import com.abk.kernel.ui.components.PredictiveBackMotionHost
 import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.viewmodel.MainViewModel
 
@@ -58,10 +52,6 @@ fun SettingsScreen(vm: MainViewModel) {
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showThemeSettings by rememberSaveable { mutableStateOf(false) }
-
-    BackHandler(enabled = showThemeSettings) {
-        showThemeSettings = false
-    }
 
     if (showLogoutDialog) {
         AlertDialog(
@@ -88,91 +78,75 @@ fun SettingsScreen(vm: MainViewModel) {
         )
     }
 
-    Scaffold(
-        containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
-        topBar = {
-            ExpressiveTopBar(
-                title = if (showThemeSettings) {
-                    stringResource(R.string.settings_theme)
-                } else {
-                    stringResource(R.string.settings_title)
-                },
-                navigationIcon = if (showThemeSettings) {
-                    {
-                        IconButton(onClick = { showThemeSettings = false }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "返回")
-                        }
-                    }
-                } else {
-                    null
-                }
+    Box(Modifier.fillMaxSize()) {
+        Scaffold(
+            containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
+            topBar = { ExpressiveTopBar(title = stringResource(R.string.settings_title)) }
+        ) { padding ->
+            SettingsMainContent(
+                padding = padding,
+                login = state.user?.login,
+                userName = state.user?.name,
+                userHtmlUrl = state.user?.htmlUrl,
+                userAvatarUrl = state.user?.avatarUrl,
+                forkName = state.forkRepo?.fullName,
+                autoDownload = state.autoDownload,
+                prebuiltGkiEnabled = state.prebuiltGkiEnabled,
+                downloadMirrorBaseUrl = state.downloadMirrorBaseUrl,
+                notifyBuild = state.notifyBuild,
+                predictiveBackEnabled = state.predictiveBackEnabled,
+                themeMode = state.themeMode,
+                dynamicColorEnabled = state.dynamicColorEnabled,
+                onLogoutClick = { showLogoutDialog = true },
+                onAutoDownloadChange = { vm.setAutoDownload(it) },
+                onPrebuiltGkiEnabledChange = { vm.setPrebuiltGkiEnabled(it) },
+                onDownloadMirrorChange = { vm.setDownloadMirrorBaseUrl(it) },
+                onNotifyBuildChange = { vm.setNotifyBuild(it) },
+                onPredictiveBackChange = { vm.setPredictiveBackEnabled(it) },
+                onThemeClick = { showThemeSettings = true },
+                onAboutClick = { showAboutDialog = true }
             )
         }
-    ) { padding ->
-        val motionScheme = MaterialTheme.motionScheme
-        AnimatedContent(
-            targetState = showThemeSettings,
-            transitionSpec = {
-                val forward = targetState
-                (
-                    fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
-                        slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width ->
-                            if (forward) width / 3 else -width / 3
-                        }
-                    ) togetherWith (
-                    fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
-                        slideOutHorizontally(animationSpec = motionScheme.fastSpatialSpec()) { width ->
-                            if (forward) -width / 4 else width / 4
-                        }
+
+        if (showThemeSettings) {
+            PredictiveBackMotionHost(
+                enabled = state.predictiveBackEnabled,
+                onBack = { showThemeSettings = false }
+            ) { requestBack ->
+                Scaffold(
+                    containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
+                    topBar = {
+                        ExpressiveTopBar(
+                            title = stringResource(R.string.settings_theme),
+                            navigationIcon = {
+                                IconButton(onClick = requestBack) {
+                                    Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                                }
+                            }
+                        )
+                    }
+                ) { padding ->
+                    ThemeSettingsScreen(
+                        padding = padding,
+                        themeMode = state.themeMode,
+                        dynamicColorEnabled = state.dynamicColorEnabled,
+                        customThemeColorArgb = state.customThemeColorArgb,
+                        customAccentColorArgb = state.customAccentColorArgb,
+                        backgroundUri = state.customBackgroundUri,
+                        backgroundImageEnabled = state.backgroundImageEnabled,
+                        uiSurfaceAlpha = state.uiSurfaceAlpha,
+                        onThemeModeChange = { vm.setThemeMode(it) },
+                        onDynamicColorEnabledChange = { enabled, themeColor, accentColor ->
+                            vm.setDynamicColorEnabled(enabled, themeColor, accentColor)
+                        },
+                        onCustomThemeColorsChange = { themeColor, accentColor ->
+                            vm.setCustomThemeColors(themeColor, accentColor)
+                        },
+                        onBackgroundImageChange = { vm.setBackgroundImageUri(it) },
+                        onBackgroundImageEnabledChange = { vm.setBackgroundImageEnabled(it) },
+                        onUiSurfaceAlphaChange = { vm.setUiSurfaceAlpha(it) }
                     )
-            },
-            label = "settings-pane"
-        ) { showingThemeSettings ->
-            if (showingThemeSettings) {
-                ThemeSettingsScreen(
-                    padding = padding,
-                    themeMode = state.themeMode,
-                    dynamicColorEnabled = state.dynamicColorEnabled,
-                    customThemeColorArgb = state.customThemeColorArgb,
-                    customAccentColorArgb = state.customAccentColorArgb,
-                    backgroundUri = state.customBackgroundUri,
-                    backgroundImageEnabled = state.backgroundImageEnabled,
-                    uiSurfaceAlpha = state.uiSurfaceAlpha,
-                    onThemeModeChange = { vm.setThemeMode(it) },
-                    onDynamicColorEnabledChange = { enabled, themeColor, accentColor ->
-                        vm.setDynamicColorEnabled(enabled, themeColor, accentColor)
-                    },
-                    onCustomThemeColorsChange = { themeColor, accentColor ->
-                        vm.setCustomThemeColors(themeColor, accentColor)
-                    },
-                    onBackgroundImageChange = { vm.setBackgroundImageUri(it) },
-                    onBackgroundImageEnabledChange = { vm.setBackgroundImageEnabled(it) },
-                    onUiSurfaceAlphaChange = { vm.setUiSurfaceAlpha(it) }
-                )
-            } else {
-                SettingsMainContent(
-                    padding = padding,
-                    login = state.user?.login,
-                    userName = state.user?.name,
-                    userHtmlUrl = state.user?.htmlUrl,
-                    userAvatarUrl = state.user?.avatarUrl,
-                    forkName = state.forkRepo?.fullName,
-                    autoDownload = state.autoDownload,
-                    prebuiltGkiEnabled = state.prebuiltGkiEnabled,
-                    downloadMirrorBaseUrl = state.downloadMirrorBaseUrl,
-                    notifyBuild = state.notifyBuild,
-                    predictiveBackEnabled = state.predictiveBackEnabled,
-                    themeMode = state.themeMode,
-                    dynamicColorEnabled = state.dynamicColorEnabled,
-                    onLogoutClick = { showLogoutDialog = true },
-                    onAutoDownloadChange = { vm.setAutoDownload(it) },
-                    onPrebuiltGkiEnabledChange = { vm.setPrebuiltGkiEnabled(it) },
-                    onDownloadMirrorChange = { vm.setDownloadMirrorBaseUrl(it) },
-                    onNotifyBuildChange = { vm.setNotifyBuild(it) },
-                    onPredictiveBackChange = { vm.setPredictiveBackEnabled(it) },
-                    onThemeClick = { showThemeSettings = true },
-                    onAboutClick = { showAboutDialog = true }
-                )
+                }
             }
         }
     }
