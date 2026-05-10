@@ -20,12 +20,20 @@ import com.abk.kernel.utils.DownloadUtils
 import com.abk.kernel.utils.NotificationUtils
 import com.abk.kernel.utils.RootUtils
 import com.google.gson.Gson
+import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.nio.charset.StandardCharsets
+import java.util.Base64
+import java.util.UUID
+import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
 
 // ── UI State ─────────────────────────────────────────────────────────────────
 
@@ -57,6 +65,7 @@ data class MainUiState(
     val recentRuns: List<WorkflowRun> = emptyList(),
     val buildProgress: BuildProgress = BuildProgress(),
     val buildConfig: KernelBuildConfig = KernelBuildConfig(),
+    val buildPlans: List<BuildPlan> = emptyList(),
     val recommendedBuildConfig: KernelBuildConfig? = null,
     val workflowEnablementPrompt: WorkflowEnablementPrompt? = null,
     val buildParameterSummaries: Map<Long, BuildParameterSummary> = emptyMap(),
@@ -88,6 +97,19 @@ data class MainUiState(
     val downloadMirrorBaseUrl: String = "",
     val prebuiltGkiEnabled: Boolean = true,
     val predictiveBackEnabled: Boolean = true
+)
+
+private data class BuildPlanCodeEnvelope(
+    @SerializedName("v")
+    val formatVersion: Int = BUILD_PLAN_CODE_VERSION,
+    @SerializedName("n")
+    val name: String = "",
+    @SerializedName("c")
+    val config: KernelBuildConfig = KernelBuildConfig(),
+    @SerializedName("ca")
+    val createdAt: Long = 0L,
+    @SerializedName("ua")
+    val updatedAt: Long = 0L
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -265,6 +287,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             _uiState.update { it.copy(buildConfig = config) }
                         }
                 }
+            }
+        }
+        viewModelScope.launch {
+            prefs.buildPlansJson.collect { json ->
+                _uiState.update { it.copy(buildPlans = parseBuildPlans(json)) }
             }
         }
         viewModelScope.launch {
@@ -1437,6 +1464,105 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { prefs.saveBuildConfigJson(gson.toJson(normalized)) }
     }
 
+    fun suggestedBuildPlanName(config: KernelBuildConfig = _uiState.value.buildConfig): String =
+        defaultBuildPlanName(KernelSupport.normalize(config))
+
+    fun saveCurrentBuildPlan(name: String) {
+        val normalized = KernelSupport.normalize(_uiState.value.buildConfig)
+        val now = System.currentTimeMillis()
+        val plan = BuildPlan(
+            id = UUID.randomUUID().toString(),
+            name = sanitizeBuildPlanName(name, normalized),
+            config = normalized,
+            createdAt = now,
+            updatedAt = now
+        )
+        saveBuildPlans((_uiState.value.buildPlans + plan).sortedByDescending { it.updatedAt })
+    }
+
+    fun applyBuildPlan(plan: BuildPlan) {
+        updateBuildConfig(plan.config)
+    }
+
+    fun deleteBuildPlan(id: String) {
+        saveBuildPlans(_uiState.value.buildPlans.filterNot { it.id == id })
+    }
+
+    fun renameBuildPlan(id: String, name: String) {
+        val now = System.currentTimeMillis()
+        val renamed = _uiState.value.buildPlans.map { plan ->
+            if (plan.id == id) {
+                plan.copy(
+                    name = sanitizeBuildPlanName(name, plan.config),
+                    updatedAt = now
+                )
+            } else {
+                plan
+            }
+        }
+        saveBuildPlans(renamed.sortedByDescending { it.updatedAt })
+    }
+
+    fun shareBuildPlanCode(config: KernelBuildConfig, name: String): String {
+        val normalized = KernelSupport.normalize(config)
+        val now = System.currentTimeMillis()
+        val envelope = BuildPlanCodeEnvelope(
+            name = sanitizeBuildPlanName(name, normalized),
+            config = normalized,
+            createdAt = now,
+            updatedAt = now
+        )
+        val compressed = gzipText(gson.toJson(envelope))
+        val payload = Base64.getUrlEncoder().withoutPadding().encodeToString(compressed)
+        return "$BUILD_PLAN_CODE_PREFIX$payload"
+    }
+
+    fun parseBuildPlanCode(code: String): BuildPlan {
+        val compact = code.trim().replace(Regex("\\s+"), "")
+        require(compact.startsWith(BUILD_PLAN_CODE_PREFIX)) { "方案码格式不正确" }
+        val payload = compact.removePrefix(BUILD_PLAN_CODE_PREFIX)
+        require(payload.isNotBlank()) { "方案码为空" }
+        val json = gunzipText(Base64.getUrlDecoder().decode(padBase64Url(payload)))
+        val envelope = gson.fromJson(json, BuildPlanCodeEnvelope::class.java)
+            ?: throw IllegalArgumentException("方案码内容为空")
+        require(envelope.formatVersion == BUILD_PLAN_CODE_VERSION) { "不支持的方案码版本" }
+        val normalized = KernelSupport.normalize(envelope.config)
+        val now = System.currentTimeMillis()
+        return BuildPlan(
+            id = UUID.randomUUID().toString(),
+            name = sanitizeBuildPlanName(envelope.name, normalized),
+            config = normalized,
+            createdAt = envelope.createdAt.takeIf { it > 0L } ?: now,
+            updatedAt = now
+        )
+    }
+
+    fun importBuildPlanToLibrary(plan: BuildPlan) {
+        val now = System.currentTimeMillis()
+        val normalized = KernelSupport.normalize(plan.config)
+        val stored = plan.copy(
+            id = UUID.randomUUID().toString(),
+            name = sanitizeBuildPlanName(plan.name, normalized),
+            config = normalized,
+            createdAt = now,
+            updatedAt = now
+        )
+        saveBuildPlans((_uiState.value.buildPlans + stored).sortedByDescending { it.updatedAt })
+    }
+
+    fun importBuildPlanToCurrentConfig(plan: BuildPlan) {
+        updateBuildConfig(plan.config)
+    }
+
+    private fun saveBuildPlans(plans: List<BuildPlan>) {
+        val sanitized = plans
+            .mapNotNull(::sanitizeBuildPlan)
+            .distinctBy { it.id }
+            .sortedByDescending { it.updatedAt }
+        _uiState.update { it.copy(buildPlans = sanitized) }
+        viewModelScope.launch { prefs.saveBuildPlansJson(gson.toJson(sanitized)) }
+    }
+
     fun loadBuildParameterSummary(runId: Long, force: Boolean = false) {
         if (runId <= 0L) return
         val current = _uiState.value
@@ -1520,6 +1646,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }.getOrDefault(emptyList())
     }
 
+    private fun parseBuildPlans(json: String?): List<BuildPlan> {
+        if (json.isNullOrBlank()) return emptyList()
+        return runCatching<List<BuildPlan>> {
+            val type = object : TypeToken<List<BuildPlan>>() {}.type
+            gson.fromJson<List<BuildPlan>>(json, type).orEmpty()
+                .mapNotNull(::sanitizeBuildPlan)
+                .distinctBy { it.id }
+                .sortedByDescending { it.updatedAt }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun sanitizeBuildPlan(plan: BuildPlan): BuildPlan? = runCatching {
+        val normalized = KernelSupport.normalize(plan.config)
+        val now = System.currentTimeMillis()
+        val createdAt = plan.createdAt.takeIf { it > 0L } ?: now
+        plan.copy(
+            id = plan.id.ifBlank { UUID.randomUUID().toString() },
+            name = sanitizeBuildPlanName(plan.name, normalized),
+            config = normalized,
+            createdAt = createdAt,
+            updatedAt = plan.updatedAt.takeIf { it > 0L } ?: createdAt
+        )
+    }.getOrNull()
+
     private fun parseBuildArtifacts(json: String?): List<BuildArtifact> {
         if (json.isNullOrBlank()) return emptyList()
         return runCatching<List<BuildArtifact>> {
@@ -1582,6 +1732,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         super.onCleared()
     }
 }
+
+private fun sanitizeBuildPlanName(name: String, config: KernelBuildConfig): String =
+    name.trim().ifBlank { defaultBuildPlanName(config) }.take(BUILD_PLAN_NAME_LIMIT)
+
+private fun defaultBuildPlanName(config: KernelBuildConfig): String {
+    val android = config.androidVersion.removePrefix("android").ifBlank { config.androidVersion }
+    return listOf("${config.kernelVersion}.${config.subLevel}", "Android $android", config.kernelsuVariant)
+        .filter { it.isNotBlank() }
+        .joinToString(" · ")
+}
+
+private fun gzipText(text: String): ByteArray {
+    val output = ByteArrayOutputStream()
+    GZIPOutputStream(output).use { gzip ->
+        gzip.write(text.toByteArray(StandardCharsets.UTF_8))
+    }
+    return output.toByteArray()
+}
+
+private fun gunzipText(bytes: ByteArray): String =
+    GZIPInputStream(ByteArrayInputStream(bytes)).use { gzip ->
+        String(gzip.readBytes(), StandardCharsets.UTF_8)
+    }
+
+private fun padBase64Url(value: String): String =
+    value + "=".repeat((4 - value.length % 4) % 4)
+
+private const val BUILD_PLAN_CODE_PREFIX = "ABKP1:"
+private const val BUILD_PLAN_CODE_VERSION = 1
+private const val BUILD_PLAN_NAME_LIMIT = 80
 
 private const val BUILD_SUMMARY_STEP_NAME = "构建信息摘要"
 

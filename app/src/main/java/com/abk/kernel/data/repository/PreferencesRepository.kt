@@ -30,6 +30,7 @@ class PreferencesRepository(private val context: Context) {
         val KEY_BACKGROUND_IMAGE_ENABLED = booleanPreferencesKey("background_image_enabled")
         val KEY_UI_SURFACE_ALPHA = floatPreferencesKey("ui_surface_alpha")
         val KEY_BUILD_CONFIG = stringPreferencesKey("build_config_json")
+        val KEY_BUILD_PLANS = stringPreferencesKey("build_plans_json")
         val KEY_DOWNLOADED_ARTIFACTS = stringPreferencesKey("downloaded_artifacts_json")
         val KEY_REMOTE_ARTIFACTS = stringPreferencesKey("remote_artifacts_json")
         val KEY_BUILD_PARAMETER_SUMMARIES = stringPreferencesKey("build_parameter_summaries_json")
@@ -55,6 +56,7 @@ class PreferencesRepository(private val context: Context) {
     val backgroundImageEnabled: Flow<Boolean> = context.dataStore.data.map { it[KEY_BACKGROUND_IMAGE_ENABLED] ?: false }
     val uiSurfaceAlpha: Flow<Float> = context.dataStore.data.map { it[KEY_UI_SURFACE_ALPHA] ?: 1f }
     val buildConfigJson: Flow<String?> = context.dataStore.data.map { it[KEY_BUILD_CONFIG] }
+    val buildPlansJson: Flow<String?> = context.dataStore.data.map { it[KEY_BUILD_PLANS] }
     val downloadedArtifactsJson: Flow<String?> = context.dataStore.data.map { it[KEY_DOWNLOADED_ARTIFACTS] }
     val remoteArtifactsJson: Flow<String?> = context.dataStore.data.map { it[KEY_REMOTE_ARTIFACTS] }
     val buildParameterSummariesJson: Flow<String?> = context.dataStore.data.map { it[KEY_BUILD_PARAMETER_SUMMARIES] }
@@ -104,6 +106,7 @@ class PreferencesRepository(private val context: Context) {
         it[KEY_UI_SURFACE_ALPHA] = alpha.coerceIn(0f, 1f)
     }
     suspend fun saveBuildConfigJson(json: String) = context.dataStore.edit { it[KEY_BUILD_CONFIG] = json }
+    suspend fun saveBuildPlansJson(json: String) = context.dataStore.edit { it[KEY_BUILD_PLANS] = json }
     suspend fun saveDownloadedArtifactsJson(json: String) = context.dataStore.edit { it[KEY_DOWNLOADED_ARTIFACTS] = json }
     suspend fun saveRemoteArtifactsJson(json: String) = context.dataStore.edit { it[KEY_REMOTE_ARTIFACTS] = json }
     suspend fun saveBuildParameterSummariesJson(json: String) = context.dataStore.edit {

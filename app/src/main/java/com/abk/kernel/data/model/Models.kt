@@ -330,6 +330,14 @@ data class KernelBuildConfig(
     val customExternalModules: List<CustomExternalModule> = emptyList()
 )
 
+data class BuildPlan(
+    val id: String = "",
+    val name: String = "",
+    val config: KernelBuildConfig = KernelBuildConfig(),
+    val createdAt: Long = 0L,
+    val updatedAt: Long = 0L
+)
+
 data class DownloadedArtifact(
     val id: Long,
     val name: String,
