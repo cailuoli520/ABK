@@ -1,7 +1,4 @@
-@file:OptIn(
-    androidx.activity.compose.ExperimentalPredictiveBackApi::class,
-    androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class
-)
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
 
 package com.abk.kernel.ui.screens
 
@@ -13,14 +10,12 @@ import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.using
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -156,7 +151,7 @@ fun SettingsScreen(vm: MainViewModel) {
                     slideOutHorizontally(animationSpec = motionScheme.fastSpatialSpec()) { width ->
                         if (enteringTheme) -width / 5 else width / 4
                     }
-                ) using SizeTransform(clip = false)
+                )
         },
         label = "settings-page",
         modifier = Modifier.fillMaxSize()
