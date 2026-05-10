@@ -1010,6 +1010,99 @@ jobs:
               fi
             }
 
+            fix_proc_base_missing_vma_decl() {
+              local file="./fs/proc/base.c"
+              [ -f "$file" ] || return 0
+              grep -qF 'vma = find_vma(mm, addr);' "$file" || return 0
+
+              local assign_line start_line relative_mm_line mm_line
+              assign_line="$(awk '/vma = find_vma\(mm, addr\);/ { print NR; exit }' "$file")"
+              [ -n "$assign_line" ] || return 0
+              start_line=$(( assign_line > 80 ? assign_line - 80 : 1 ))
+
+              if sed -n "${start_line},$((assign_line - 1))p" "$file" | grep -qF 'struct vm_area_struct *vma;'; then
+                return 0
+              fi
+
+              relative_mm_line="$(sed -n "${start_line},$((assign_line - 1))p" "$file" | awk '/struct mm_struct \*mm([[:space:]=;]|$)/ { line = NR } END { if (line) print line }')"
+              [ -n "$relative_mm_line" ] || return 0
+              mm_line=$(( start_line + relative_mm_line - 1 ))
+
+              awk -v target="$mm_line" '
+                NR == target {
+                  print
+                  match($0, /^[ \t]*/)
+                  print substr($0, RSTART, RLENGTH) "struct vm_area_struct *vma;"
+                  next
+                }
+                { print }
+              ' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+              echo "已修复 proc/base.c 缺少 vma 声明"
+            }
+
+            fix_task_mmu_unused_vma_decl() {
+              local file="./fs/proc/task_mmu.c"
+              [ -f "$file" ] || return 0
+              grep -qF 'struct vm_area_struct *vma;' "$file" || return 0
+
+              python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path("./fs/proc/task_mmu.c")
+          lines = path.read_text().splitlines(keepends=True)
+          changed = False
+
+          for index, line in enumerate(lines):
+              if "struct vm_area_struct *vma;" not in line:
+                  continue
+
+              start = index
+              while start > 0:
+                  if "{" in lines[start]:
+                      break
+                  start -= 1
+
+              depth = 0
+              end = len(lines)
+              for cursor in range(start, len(lines)):
+                  depth += lines[cursor].count("{")
+                  depth -= lines[cursor].count("}")
+                  if cursor > start and depth <= 0:
+                      end = cursor + 1
+                      break
+
+              body = "".join(lines[start:end])
+              body_without_decl = body.replace(line, "", 1)
+              if not re.search(r"\bvma\b", body_without_decl):
+                  lines[index] = ""
+                  changed = True
+
+          if changed:
+              path.write_text("".join(lines))
+          PY
+
+              if ! grep -qF 'struct vm_area_struct *vma;' "$file"; then
+                echo "已移除 task_mmu.c 中无使用的 vma 声明"
+              fi
+            }
+
+            fix_memory_missing_susfs_def() {
+              local file="./mm/memory.c"
+              [ -f "$file" ] || return 0
+              grep -qF 'SUSFS_IS_INODE_SUS_MAP' "$file" || return 0
+              grep -qF '#include <linux/susfs_def.h>' "$file" && return 0
+
+              if grep -qF '#include <linux/mm_inline.h>' "$file"; then
+                sed -i '/#include <linux\/mm_inline.h>/a #ifdef CONFIG_KSU_SUSFS\n#include <linux\/susfs_def.h>\n#endif' "$file"
+              elif grep -qF '#include <linux/mm.h>' "$file"; then
+                sed -i '/#include <linux\/mm.h>/a #ifdef CONFIG_KSU_SUSFS\n#include <linux\/susfs_def.h>\n#endif' "$file"
+              else
+                sed -i '1i #ifdef CONFIG_KSU_SUSFS\n#include <linux/susfs_def.h>\n#endif' "$file"
+              fi
+              echo "已修复 memory.c 缺少 susfs_def.h 问题"
+            }
+
             # Android 12 - 5.10 修复
             if [[ "${{ inputs.android_version }}" == "android12" && "${{ inputs.kernel_version }}" == "5.10" ]]; then
               # 修复 2024-11 分支: mmap.c 调用了 vm_flags_clear()，但同分支 mm.h 未提供 helper
@@ -1026,6 +1119,9 @@ jobs:
               if [[ "$CURRENT_SUB" -le 43 ]]; then
                 cp $KERNEL_PATCHES/wild/susfs_fix_patches/v${SUSFS_VERSION}/a12-5.10/base.c.patch ./
                 patch -p1 < base.c.patch || true
+                if [[ "${{ inputs.ksu_variant }}" == "ReSukiSU" && "$CURRENT_SUB" -eq 43 ]]; then
+                  fix_proc_base_missing_vma_decl
+                fi
               fi
             fi
 
@@ -1119,6 +1215,10 @@ jobs:
               if [[ "$CURRENT_SUB" -le 58 ]]; then
                 cp $KERNEL_PATCHES/wild/susfs_fix_patches/v${SUSFS_VERSION}/a15-6.6/task_mmu.c.patch ./
                 patch -p1 < task_mmu.c.patch || true
+                if [[ "${{ inputs.ksu_variant }}" == "ReSukiSU" ]]; then
+                  fix_task_mmu_unused_vma_decl
+                  fix_memory_missing_susfs_def
+                fi
               fi
             fi
 
