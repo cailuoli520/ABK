@@ -122,7 +122,31 @@ jobs:
 
     steps:
       - name: 构建信息摘要
+        shell: bash
         run: |
+          set -euo pipefail
+
+          effective_use_zram="${{ inputs.use_zram }}"
+          effective_zram_full_algo="${{ inputs.zram_full_algo }}"
+          effective_zram_extra_algos="${{ inputs.zram_extra_algos || '' }}"
+
+          if [ "${{ inputs.kernel_version }}" = "6.12" ]; then
+            if [ "$effective_use_zram" = "true" ] || [ "$effective_zram_full_algo" = "true" ] || [ -n "$effective_zram_extra_algos" ]; then
+              echo "::warning::Android16/6.12 暂不支持当前 ZRAM LZ4K 补丁栈，已强制关闭 ZRAM 增强和算法配置。"
+            fi
+            effective_use_zram="false"
+            effective_zram_full_algo="false"
+            effective_zram_extra_algos=""
+          fi
+
+          {
+            echo "EFFECTIVE_USE_ZRAM=$effective_use_zram"
+            echo "EFFECTIVE_ZRAM_FULL_ALGO=$effective_zram_full_algo"
+            echo "EFFECTIVE_ZRAM_EXTRA_ALGOS=$effective_zram_extra_algos"
+          } >> "$GITHUB_ENV"
+
+          zram_extra_label="${effective_zram_extra_algos:-无}"
+
           echo "========================================"
           echo "       内核构建配置摘要"
           echo "========================================"
@@ -134,9 +158,9 @@ jobs:
           echo "KSU 分支      : ${{ inputs.ksu_branch }}"
           echo "构建时间      : ${{ inputs.build_time }}"
           echo "SUSFS 状态    : ${{ inputs.enable_susfs }}"
-          echo "ZRAM 增强     : ${{ inputs.use_zram }}"
-          echo "ZRAM 完整算法 : ${{ inputs.zram_full_algo }}"
-          echo "ZRAM 额外算法 : ${{ inputs.zram_extra_algos || '无' }}"
+          echo "ZRAM 增强     : $effective_use_zram"
+          echo "ZRAM 完整算法 : $effective_zram_full_algo"
+          echo "ZRAM 额外算法 : $zram_extra_label"
           echo "BBG 补丁      : ${{ inputs.use_bbg }}"
           echo "DDK LSM       : ${{ inputs.use_ddk }}"
           echo "NTsync 补丁   : ${{ inputs.use_ntsync }}"
@@ -1431,7 +1455,7 @@ jobs:
           fi
 
       - name: 配置 ZRAM LZ4 补丁栈
-        if: inputs.use_zram
+        if: ${{ inputs.use_zram && inputs.kernel_version != '6.12' }}
         working-directory: ${{ env.KERNEL_ROOT }}/common
         run: |
           echo "升级 LZ4..."
@@ -1510,7 +1534,7 @@ jobs:
           ensure_line_once "$XIAOMI_SYMBOL_LIST" "device_find_any_child"
 
       - name: 配置 ZRAM 选项
-        if: inputs.use_zram
+        if: ${{ inputs.use_zram && inputs.kernel_version != '6.12' }}
         run: |
           CONFIG_FILE="$DEFCONFIG"
 
@@ -1547,7 +1571,7 @@ jobs:
           fi
 
           # ---- ZRAM 完整算法支持 ----
-          if [ "${{ inputs.zram_full_algo }}" = "true" ]; then
+          if [ "${EFFECTIVE_ZRAM_FULL_ALGO:-false}" = "true" ]; then
             echo "启用 ZRAM 完整算法支持..."
             cat >> "$CONFIG_FILE" <<'EOF'
           CONFIG_CRYPTO_LZO=y
@@ -1557,10 +1581,10 @@ jobs:
           CONFIG_ZRAM_DEF_COMP_LZORLE=y
           CONFIG_ZRAM_DEF_COMP="lzo-rle"
           EOF
-          elif [ -n "${{ inputs.zram_extra_algos }}" ]; then
+          elif [ -n "${EFFECTIVE_ZRAM_EXTRA_ALGOS:-}" ]; then
             # ---- 自定义单独算法 ----
-            echo "添加自定义 ZRAM 算法: ${{ inputs.zram_extra_algos }}"
-            IFS=',' read -ra ALGOS <<< "${{ inputs.zram_extra_algos }}"
+            echo "添加自定义 ZRAM 算法: $EFFECTIVE_ZRAM_EXTRA_ALGOS"
+            IFS=',' read -ra ALGOS <<< "$EFFECTIVE_ZRAM_EXTRA_ALGOS"
             for raw_algo in "${ALGOS[@]}"; do
               algo=$(echo "$raw_algo" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
               case "$algo" in

@@ -208,8 +208,8 @@ jobs:
       supp_op: ${{ inputs.supp_op || false }}
       enable_susfs: ${{ !inputs.cancel_susfs }}
       virtualization_support: ${{ inputs.virtualization_support || 'off' }}
-      zram_full_algo: ${{ inputs.zram_full_algo || false }}
-      zram_extra_algos: ${{ inputs.zram_extra_algos || '' }}
+      zram_full_algo: false
+      zram_extra_algos: ""
       kpm_password: ${{ inputs.kpm_password || '' }}
 
   # 仅在直接触发时运行，从 main.yml 调用时跳过
