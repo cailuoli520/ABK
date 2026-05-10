@@ -5,8 +5,15 @@ package com.abk.kernel.ui.screens
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -40,7 +47,6 @@ import com.abk.kernel.ui.components.ExpressiveSectionCard
 import com.abk.kernel.ui.components.ExpressiveStatusChip
 import com.abk.kernel.ui.components.ExpressiveSwitchItem
 import com.abk.kernel.ui.components.ExpressiveTopBar
-import com.abk.kernel.ui.components.PredictiveBackPanel
 import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.viewmodel.MainViewModel
 
@@ -52,6 +58,10 @@ fun SettingsScreen(vm: MainViewModel) {
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showThemeSettings by rememberSaveable { mutableStateOf(false) }
+
+    BackHandler(enabled = showThemeSettings) {
+        showThemeSettings = false
+    }
 
     if (showLogoutDialog) {
         AlertDialog(
@@ -71,74 +81,99 @@ fun SettingsScreen(vm: MainViewModel) {
         )
     }
 
-    Box(Modifier.fillMaxSize()) {
-        Scaffold(
-            containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
-            topBar = {
-                ExpressiveTopBar(title = stringResource(R.string.settings_title))
+    if (showAboutDialog) {
+        AboutDialog(
+            onDismiss = { showAboutDialog = false },
+            onOpenUrl = { openUrl(context, it) }
+        )
+    }
+
+    Scaffold(
+        containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
+        topBar = {
+            ExpressiveTopBar(
+                title = if (showThemeSettings) {
+                    stringResource(R.string.settings_theme)
+                } else {
+                    stringResource(R.string.settings_title)
+                },
+                navigationIcon = if (showThemeSettings) {
+                    {
+                        IconButton(onClick = { showThemeSettings = false }) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                        }
+                    }
+                } else {
+                    null
+                }
+            )
+        }
+    ) { padding ->
+        val motionScheme = MaterialTheme.motionScheme
+        AnimatedContent(
+            targetState = showThemeSettings,
+            transitionSpec = {
+                val forward = targetState
+                (
+                    fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
+                        slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width ->
+                            if (forward) width / 3 else -width / 3
+                        }
+                    ) togetherWith (
+                    fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
+                        slideOutHorizontally(animationSpec = motionScheme.fastSpatialSpec()) { width ->
+                            if (forward) -width / 4 else width / 4
+                        }
+                    )
+            },
+            label = "settings-pane"
+        ) { showingThemeSettings ->
+            if (showingThemeSettings) {
+                ThemeSettingsScreen(
+                    padding = padding,
+                    themeMode = state.themeMode,
+                    dynamicColorEnabled = state.dynamicColorEnabled,
+                    customThemeColorArgb = state.customThemeColorArgb,
+                    customAccentColorArgb = state.customAccentColorArgb,
+                    backgroundUri = state.customBackgroundUri,
+                    backgroundImageEnabled = state.backgroundImageEnabled,
+                    uiSurfaceAlpha = state.uiSurfaceAlpha,
+                    onThemeModeChange = { vm.setThemeMode(it) },
+                    onDynamicColorEnabledChange = { enabled, themeColor, accentColor ->
+                        vm.setDynamicColorEnabled(enabled, themeColor, accentColor)
+                    },
+                    onCustomThemeColorsChange = { themeColor, accentColor ->
+                        vm.setCustomThemeColors(themeColor, accentColor)
+                    },
+                    onBackgroundImageChange = { vm.setBackgroundImageUri(it) },
+                    onBackgroundImageEnabledChange = { vm.setBackgroundImageEnabled(it) },
+                    onUiSurfaceAlphaChange = { vm.setUiSurfaceAlpha(it) }
+                )
+            } else {
+                SettingsMainContent(
+                    padding = padding,
+                    login = state.user?.login,
+                    userName = state.user?.name,
+                    userHtmlUrl = state.user?.htmlUrl,
+                    userAvatarUrl = state.user?.avatarUrl,
+                    forkName = state.forkRepo?.fullName,
+                    autoDownload = state.autoDownload,
+                    prebuiltGkiEnabled = state.prebuiltGkiEnabled,
+                    downloadMirrorBaseUrl = state.downloadMirrorBaseUrl,
+                    notifyBuild = state.notifyBuild,
+                    predictiveBackEnabled = state.predictiveBackEnabled,
+                    themeMode = state.themeMode,
+                    dynamicColorEnabled = state.dynamicColorEnabled,
+                    onLogoutClick = { showLogoutDialog = true },
+                    onAutoDownloadChange = { vm.setAutoDownload(it) },
+                    onPrebuiltGkiEnabledChange = { vm.setPrebuiltGkiEnabled(it) },
+                    onDownloadMirrorChange = { vm.setDownloadMirrorBaseUrl(it) },
+                    onNotifyBuildChange = { vm.setNotifyBuild(it) },
+                    onPredictiveBackChange = { vm.setPredictiveBackEnabled(it) },
+                    onThemeClick = { showThemeSettings = true },
+                    onAboutClick = { showAboutDialog = true }
+                )
             }
-        ) { padding ->
-            SettingsMainContent(
-                padding = padding,
-                login = state.user?.login,
-                userName = state.user?.name,
-                userHtmlUrl = state.user?.htmlUrl,
-                userAvatarUrl = state.user?.avatarUrl,
-                forkName = state.forkRepo?.fullName,
-                autoDownload = state.autoDownload,
-                prebuiltGkiEnabled = state.prebuiltGkiEnabled,
-                downloadMirrorBaseUrl = state.downloadMirrorBaseUrl,
-                notifyBuild = state.notifyBuild,
-                predictiveBackEnabled = state.predictiveBackEnabled,
-                themeMode = state.themeMode,
-                dynamicColorEnabled = state.dynamicColorEnabled,
-                onLogoutClick = { showLogoutDialog = true },
-                onAutoDownloadChange = { vm.setAutoDownload(it) },
-                onPrebuiltGkiEnabledChange = { vm.setPrebuiltGkiEnabled(it) },
-                onDownloadMirrorChange = { vm.setDownloadMirrorBaseUrl(it) },
-                onNotifyBuildChange = { vm.setNotifyBuild(it) },
-                onPredictiveBackChange = { vm.setPredictiveBackEnabled(it) },
-                onThemeClick = { showThemeSettings = true },
-                onAboutClick = { showAboutDialog = true }
-            )
-        }
-
-        PredictiveBackPanel(
-            visible = showThemeSettings,
-            title = "更多设置",
-            subtitle = "颜色与外观",
-            predictiveBackEnabled = state.predictiveBackEnabled,
-            onDismiss = { showThemeSettings = false }
-        ) {
-            ThemeSettingsScreen(
-                padding = PaddingValues(0.dp),
-                themeMode = state.themeMode,
-                dynamicColorEnabled = state.dynamicColorEnabled,
-                customThemeColorArgb = state.customThemeColorArgb,
-                customAccentColorArgb = state.customAccentColorArgb,
-                backgroundUri = state.customBackgroundUri,
-                backgroundImageEnabled = state.backgroundImageEnabled,
-                uiSurfaceAlpha = state.uiSurfaceAlpha,
-                onThemeModeChange = { vm.setThemeMode(it) },
-                onDynamicColorEnabledChange = { enabled, themeColor, accentColor ->
-                    vm.setDynamicColorEnabled(enabled, themeColor, accentColor)
-                },
-                onCustomThemeColorsChange = { themeColor, accentColor ->
-                    vm.setCustomThemeColors(themeColor, accentColor)
-                },
-                onBackgroundImageChange = { vm.setBackgroundImageUri(it) },
-                onBackgroundImageEnabledChange = { vm.setBackgroundImageEnabled(it) },
-                onUiSurfaceAlphaChange = { vm.setUiSurfaceAlpha(it) }
-            )
-        }
-
-        PredictiveBackPanel(
-            visible = showAboutDialog,
-            title = "关于 AnyBase Kernel",
-            predictiveBackEnabled = state.predictiveBackEnabled,
-            onDismiss = { showAboutDialog = false }
-        ) {
-            AboutPanelContent(onOpenUrl = { openUrl(context, it) })
         }
     }
 }
@@ -247,7 +282,7 @@ private fun SettingsMainContent(
             SwitchSettingsItem(
                 icon = Icons.Default.ArrowBack,
                 title = "预测性返回手势",
-                subtitle = "使用应用内预测性返回面板动画，不依赖系统支持",
+                subtitle = "使用 Material 3 Expressive 的进入与返回动画，关闭后保留轻量过渡",
                 checked = predictiveBackEnabled,
                 onCheckedChange = onPredictiveBackChange
             )
@@ -602,34 +637,46 @@ private fun isDynamicColorAvailable(): Boolean =
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
 @Composable
-private fun AboutPanelContent(
+private fun AboutDialog(
+    onDismiss: () -> Unit,
     onOpenUrl: (String) -> Unit
 ) {
     val links = remember { aboutLinks() }
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 18.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Text(
-            "AnyBase Kernel 用于构建、分发和管理 GKI KernelSU / SUSFS 内核。",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        AboutLinkRow(AboutLink("源仓库", sourceRepoUrl()), onOpenUrl)
-        AboutSectionTitle("致谢")
-        Text(
-            "ABK 基于以下项目、仓库和社区工作继续开发。",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        links.forEach {
-            AboutLinkRow(it, onOpenUrl)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Info, null) },
+        title = { Text("关于 AnyBase Kernel") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 460.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    "AnyBase Kernel 用于构建、分发和管理 GKI KernelSU / SUSFS 内核。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                AboutLinkRow(AboutLink("源仓库", sourceRepoUrl()), onOpenUrl)
+                AboutSectionTitle("致谢")
+                Text(
+                    "ABK 基于以下项目、仓库和社区工作继续开发。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                links.forEach {
+                    AboutLinkRow(it, onOpenUrl)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.close))
+            }
         }
-        Spacer(Modifier.height(24.dp))
-    }
+    )
 }
 
 @Composable
