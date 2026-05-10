@@ -160,6 +160,7 @@ private val FLASH_DETAIL_BACK_MAX_CORNER = 32.dp
 @Composable
 fun FlashScreen(
     vm: MainViewModel,
+    outerPadding: PaddingValues = PaddingValues(0.dp),
     onDetailPageVisibleChange: (Boolean) -> Unit = {}
 ) {
     val state by vm.uiState.collectAsState()
@@ -684,6 +685,7 @@ fun FlashScreen(
                 }
                 FlashDetailBackSurface(
                     predictiveBackEnabled = state.predictiveBackEnabled,
+                    outerPadding = outerPadding,
                     backgroundUri = state.customBackgroundUri,
                     backgroundImageEnabled = state.backgroundImageEnabled,
                     onBack = ::returnToWorkflowList,
@@ -812,6 +814,7 @@ fun FlashScreen(
                 }
                 FlashDetailBackSurface(
                     predictiveBackEnabled = state.predictiveBackEnabled,
+                    outerPadding = outerPadding,
                     backgroundUri = state.customBackgroundUri,
                     backgroundImageEnabled = state.backgroundImageEnabled,
                     onBack = ::returnToPrebuiltReleaseList,
@@ -905,6 +908,7 @@ fun FlashScreen(
 @Composable
 private fun FlashDetailBackSurface(
     predictiveBackEnabled: Boolean,
+    outerPadding: PaddingValues,
     backgroundUri: String?,
     backgroundImageEnabled: Boolean,
     onBack: () -> Unit,
@@ -947,8 +951,8 @@ private fun FlashDetailBackSurface(
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val childPageTopInset = with(density) { WindowInsets.statusBars.getTop(this).toDp() }
-        val childPageBottomInset = with(density) { WindowInsets.navigationBars.getBottom(this).toDp() }
+        val childPageTopInset = outerPadding.calculateTopPadding()
+        val childPageBottomInset = outerPadding.calculateBottomPadding()
         val childPageModifier = Modifier
             .fillMaxWidth()
             .height(maxHeight + childPageTopInset + childPageBottomInset)

@@ -72,6 +72,7 @@ private val THEME_BACK_MAX_CORNER = 32.dp
 @Composable
 fun SettingsScreen(
     vm: MainViewModel,
+    outerPadding: PaddingValues = PaddingValues(0.dp),
     onThemePageVisibleChange: (Boolean) -> Unit = {}
 ) {
     val state by vm.uiState.collectAsState()
@@ -158,8 +159,8 @@ fun SettingsScreen(
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val childPageTopInset = with(density) { WindowInsets.statusBars.getTop(this).toDp() }
-        val childPageBottomInset = with(density) { WindowInsets.navigationBars.getBottom(this).toDp() }
+        val childPageTopInset = outerPadding.calculateTopPadding()
+        val childPageBottomInset = outerPadding.calculateBottomPadding()
         val childPageModifier = Modifier
             .fillMaxWidth()
             .height(maxHeight + childPageTopInset + childPageBottomInset)

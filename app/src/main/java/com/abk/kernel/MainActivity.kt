@@ -24,6 +24,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
@@ -376,7 +377,8 @@ private fun AbkMainScaffold(vm: MainViewModel) {
             }
         }
     ) { padding ->
-        androidx.compose.foundation.layout.Box(modifier = Modifier.padding(padding).fillMaxSize()) {
+        val contentPadding = if (hideBottomBar) PaddingValues(0.dp) else padding
+        androidx.compose.foundation.layout.Box(modifier = Modifier.padding(contentPadding).fillMaxSize()) {
             AnimatedContent(
                 targetState = activeTab,
                 transitionSpec = {
@@ -399,14 +401,17 @@ private fun AbkMainScaffold(vm: MainViewModel) {
                     AbkTab.Status -> StatusScreen(vm)
                     AbkTab.Build -> BuildScreen(
                         vm = vm,
+                        outerPadding = contentPadding,
                         onPlanPageVisibleChange = { buildPlanPageVisible = it }
                     )
                     AbkTab.Flash -> FlashScreen(
                         vm = vm,
+                        outerPadding = contentPadding,
                         onDetailPageVisibleChange = { flashDetailPageVisible = it }
                     )
                     AbkTab.Settings -> SettingsScreen(
                         vm = vm,
+                        outerPadding = contentPadding,
                         onThemePageVisibleChange = { settingsThemePageVisible = it }
                     )
                 }

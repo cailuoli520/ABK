@@ -81,6 +81,7 @@ private val BUILD_PLAN_BACK_MAX_CORNER = 32.dp
 @Composable
 fun BuildScreen(
     vm: MainViewModel,
+    outerPadding: PaddingValues = PaddingValues(0.dp),
     onPlanPageVisibleChange: (Boolean) -> Unit = {}
 ) {
     val state by vm.uiState.collectAsState()
@@ -339,8 +340,8 @@ fun BuildScreen(
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val childPageTopInset = with(density) { WindowInsets.statusBars.getTop(this).toDp() }
-        val childPageBottomInset = with(density) { WindowInsets.navigationBars.getBottom(this).toDp() }
+        val childPageTopInset = outerPadding.calculateTopPadding()
+        val childPageBottomInset = outerPadding.calculateBottomPadding()
         val childPageModifier = Modifier
             .fillMaxWidth()
             .height(maxHeight + childPageTopInset + childPageBottomInset)
