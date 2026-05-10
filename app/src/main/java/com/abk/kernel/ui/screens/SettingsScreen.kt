@@ -60,6 +60,7 @@ import kotlinx.coroutines.flow.collect
 private const val THEME_BACK_VISUAL_EXPONENT = 1.8f
 private const val THEME_BACK_SCALE_DELTA = 0.04f
 private const val THEME_BACK_SCRIM_ALPHA = 0.18f
+private const val THEME_PAGE_BACKDROP_ALPHA = 0.94f
 private val THEME_BACK_MAX_OFFSET = 42.dp
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -172,7 +173,7 @@ fun SettingsScreen(vm: MainViewModel) {
                 slideOutHorizontally(animationSpec = motionScheme.fastSpatialSpec()) { width -> width / 4 },
             modifier = Modifier.fillMaxSize()
         ) {
-            Scaffold(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
@@ -180,39 +181,43 @@ fun SettingsScreen(vm: MainViewModel) {
                         scaleX = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
                         scaleY = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
                         alpha = 1f - 0.06f * visualThemeBackProgress
-                    },
-                containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
-                topBar = {
-                    ExpressiveTopBar(
-                        title = stringResource(R.string.settings_theme),
-                        navigationIcon = {
-                            IconButton(onClick = ::closeThemeSettings) {
-                                Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                    }
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = THEME_PAGE_BACKDROP_ALPHA))
+            ) {
+                Scaffold(
+                    containerColor = Color.Transparent,
+                    topBar = {
+                        ExpressiveTopBar(
+                            title = stringResource(R.string.settings_theme),
+                            navigationIcon = {
+                                IconButton(onClick = ::closeThemeSettings) {
+                                    Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                                }
                             }
-                        }
+                        )
+                    }
+                ) {
+                    ThemeSettingsScreen(
+                        padding = it,
+                        themeMode = state.themeMode,
+                        dynamicColorEnabled = state.dynamicColorEnabled,
+                        customThemeColorArgb = state.customThemeColorArgb,
+                        customAccentColorArgb = state.customAccentColorArgb,
+                        backgroundUri = state.customBackgroundUri,
+                        backgroundImageEnabled = state.backgroundImageEnabled,
+                        uiSurfaceAlpha = state.uiSurfaceAlpha,
+                        onThemeModeChange = { value -> vm.setThemeMode(value) },
+                        onDynamicColorEnabledChange = { enabled, themeColor, accentColor ->
+                            vm.setDynamicColorEnabled(enabled, themeColor, accentColor)
+                        },
+                        onCustomThemeColorsChange = { themeColor, accentColor ->
+                            vm.setCustomThemeColors(themeColor, accentColor)
+                        },
+                        onBackgroundImageChange = { uri -> vm.setBackgroundImageUri(uri) },
+                        onBackgroundImageEnabledChange = { enabled -> vm.setBackgroundImageEnabled(enabled) },
+                        onUiSurfaceAlphaChange = { alpha -> vm.setUiSurfaceAlpha(alpha) }
                     )
                 }
-            ) {
-                ThemeSettingsScreen(
-                    padding = it,
-                    themeMode = state.themeMode,
-                    dynamicColorEnabled = state.dynamicColorEnabled,
-                    customThemeColorArgb = state.customThemeColorArgb,
-                    customAccentColorArgb = state.customAccentColorArgb,
-                    backgroundUri = state.customBackgroundUri,
-                    backgroundImageEnabled = state.backgroundImageEnabled,
-                    uiSurfaceAlpha = state.uiSurfaceAlpha,
-                    onThemeModeChange = { value -> vm.setThemeMode(value) },
-                    onDynamicColorEnabledChange = { enabled, themeColor, accentColor ->
-                        vm.setDynamicColorEnabled(enabled, themeColor, accentColor)
-                    },
-                    onCustomThemeColorsChange = { themeColor, accentColor ->
-                        vm.setCustomThemeColors(themeColor, accentColor)
-                    },
-                    onBackgroundImageChange = { uri -> vm.setBackgroundImageUri(uri) },
-                    onBackgroundImageEnabledChange = { enabled -> vm.setBackgroundImageEnabled(enabled) },
-                    onUiSurfaceAlphaChange = { alpha -> vm.setUiSurfaceAlpha(alpha) }
-                )
             }
         }
     }
