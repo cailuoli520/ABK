@@ -24,6 +24,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
@@ -331,6 +332,7 @@ private fun AbkMainScaffold(vm: MainViewModel) {
 
     Scaffold(
         containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
+        contentWindowInsets = WindowInsets(0.dp),
         bottomBar = {
             AnimatedVisibility(
                 visible = !hideBottomBar,
