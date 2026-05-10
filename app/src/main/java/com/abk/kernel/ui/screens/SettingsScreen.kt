@@ -5,6 +5,7 @@ package com.abk.kernel.ui.screens
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -40,7 +41,6 @@ import com.abk.kernel.ui.components.ExpressiveSectionCard
 import com.abk.kernel.ui.components.ExpressiveStatusChip
 import com.abk.kernel.ui.components.ExpressiveSwitchItem
 import com.abk.kernel.ui.components.ExpressiveTopBar
-import com.abk.kernel.ui.components.PredictiveBackPreviewHost
 import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.viewmodel.MainViewModel
 
@@ -52,6 +52,10 @@ fun SettingsScreen(vm: MainViewModel) {
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showThemeSettings by rememberSaveable { mutableStateOf(false) }
+
+    BackHandler(enabled = showThemeSettings) {
+        showThemeSettings = false
+    }
 
     if (showLogoutDialog) {
         AlertDialog(
@@ -78,216 +82,167 @@ fun SettingsScreen(vm: MainViewModel) {
         )
     }
 
-    Box(Modifier.fillMaxSize()) {
-        Scaffold(
-            containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
-            topBar = { ExpressiveTopBar(title = stringResource(R.string.settings_title)) }
-        ) { padding ->
-            SettingsMainContent(
-                padding = padding,
-                login = state.user?.login,
-                userName = state.user?.name,
-                userHtmlUrl = state.user?.htmlUrl,
-                userAvatarUrl = state.user?.avatarUrl,
-                forkName = state.forkRepo?.fullName,
-                autoDownload = state.autoDownload,
-                prebuiltGkiEnabled = state.prebuiltGkiEnabled,
-                downloadMirrorBaseUrl = state.downloadMirrorBaseUrl,
-                notifyBuild = state.notifyBuild,
-                predictiveBackEnabled = state.predictiveBackEnabled,
-                themeMode = state.themeMode,
-                dynamicColorEnabled = state.dynamicColorEnabled,
-                onLogoutClick = { showLogoutDialog = true },
-                onAutoDownloadChange = { vm.setAutoDownload(it) },
-                onPrebuiltGkiEnabledChange = { vm.setPrebuiltGkiEnabled(it) },
-                onDownloadMirrorChange = { vm.setDownloadMirrorBaseUrl(it) },
-                onNotifyBuildChange = { vm.setNotifyBuild(it) },
-                onPredictiveBackChange = { vm.setPredictiveBackEnabled(it) },
-                onThemeClick = { showThemeSettings = true },
-                onAboutClick = { showAboutDialog = true }
-            )
-        }
-
-        if (showThemeSettings) {
-            PredictiveBackPreviewHost(
-                enabled = state.predictiveBackEnabled,
-                onBack = { showThemeSettings = false }
-            ) { requestBack ->
-                Scaffold(
-                    containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
-                    topBar = {
-                        ExpressiveTopBar(
-                            title = stringResource(R.string.settings_theme),
-                            navigationIcon = {
-                                IconButton(onClick = requestBack) {
-                                    Icon(Icons.Default.ArrowBack, contentDescription = "返回")
-                                }
-                            }
-                        )
-                    }
-                ) { padding ->
-                    ThemeSettingsScreen(
-                        padding = padding,
-                        themeMode = state.themeMode,
-                        dynamicColorEnabled = state.dynamicColorEnabled,
-                        customThemeColorArgb = state.customThemeColorArgb,
-                        customAccentColorArgb = state.customAccentColorArgb,
-                        backgroundUri = state.customBackgroundUri,
-                        backgroundImageEnabled = state.backgroundImageEnabled,
-                        uiSurfaceAlpha = state.uiSurfaceAlpha,
-                        onThemeModeChange = { vm.setThemeMode(it) },
-                        onDynamicColorEnabledChange = { enabled, themeColor, accentColor ->
-                            vm.setDynamicColorEnabled(enabled, themeColor, accentColor)
-                        },
-                        onCustomThemeColorsChange = { themeColor, accentColor ->
-                            vm.setCustomThemeColors(themeColor, accentColor)
-                        },
-                        onBackgroundImageChange = { vm.setBackgroundImageUri(it) },
-                        onBackgroundImageEnabledChange = { vm.setBackgroundImageEnabled(it) },
-                        onUiSurfaceAlphaChange = { vm.setUiSurfaceAlpha(it) }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SettingsMainContent(
-    padding: PaddingValues,
-    login: String?,
-    userName: String?,
-    userHtmlUrl: String?,
-    userAvatarUrl: String?,
-    forkName: String?,
-    autoDownload: Boolean,
-    prebuiltGkiEnabled: Boolean,
-    downloadMirrorBaseUrl: String,
-    notifyBuild: Boolean,
-    predictiveBackEnabled: Boolean,
-    themeMode: String,
-    dynamicColorEnabled: Boolean,
-    onLogoutClick: () -> Unit,
-    onAutoDownloadChange: (Boolean) -> Unit,
-    onPrebuiltGkiEnabledChange: (Boolean) -> Unit,
-    onDownloadMirrorChange: (String) -> Unit,
-    onNotifyBuildChange: (Boolean) -> Unit,
-    onPredictiveBackChange: (Boolean) -> Unit,
-    onThemeClick: () -> Unit,
-    onAboutClick: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .padding(padding)
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        SettingsGroup(title = stringResource(R.string.settings_account)) {
-            if (login != null) {
-                ExpressiveListItem(
-                    title = login,
-                    subtitle = userName ?: userHtmlUrl.orEmpty(),
-                    leadingContent = {
-                        AsyncImage(
-                            model = userAvatarUrl,
-                            contentDescription = null,
-                            modifier = Modifier.size(42.dp)
-                                .clip(CircleShape)
-                        )
-                    },
-                    trailingContent = {
-                        IconButton(onClick = onLogoutClick) {
-                            Icon(
-                                Icons.Default.Logout,
-                                contentDescription = "退出登录",
-                                tint = MaterialTheme.colorScheme.error
-                            )
+    Scaffold(
+        containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
+        topBar = {
+            ExpressiveTopBar(
+                title = if (showThemeSettings) {
+                    stringResource(R.string.settings_theme)
+                } else {
+                    stringResource(R.string.settings_title)
+                },
+                navigationIcon = if (showThemeSettings) {
+                    {
+                        IconButton(onClick = { showThemeSettings = false }) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                         }
                     }
-                )
-                ExpressiveListItem(
-                    title = "Fork 仓库",
-                    subtitle = forkName ?: "未 Fork",
-                    leadingIcon = Icons.Default.ForkRight
-                )
-            } else {
-                ExpressiveListItem(
+                } else {
+                    null
+                }
+            )
+        }
+    ) { padding ->
+        if (showThemeSettings) {
+            ThemeSettingsScreen(
+                padding = padding,
+                themeMode = state.themeMode,
+                dynamicColorEnabled = state.dynamicColorEnabled,
+                customThemeColorArgb = state.customThemeColorArgb,
+                customAccentColorArgb = state.customAccentColorArgb,
+                backgroundUri = state.customBackgroundUri,
+                backgroundImageEnabled = state.backgroundImageEnabled,
+                uiSurfaceAlpha = state.uiSurfaceAlpha,
+                onThemeModeChange = { vm.setThemeMode(it) },
+                onDynamicColorEnabledChange = { enabled, themeColor, accentColor ->
+                    vm.setDynamicColorEnabled(enabled, themeColor, accentColor)
+                },
+                onCustomThemeColorsChange = { themeColor, accentColor ->
+                    vm.setCustomThemeColors(themeColor, accentColor)
+                },
+                onBackgroundImageChange = { vm.setBackgroundImageUri(it) },
+                onBackgroundImageEnabledChange = { vm.setBackgroundImageEnabled(it) },
+                onUiSurfaceAlphaChange = { vm.setUiSurfaceAlpha(it) }
+            )
+            return@Scaffold
+        }
+
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // ── 账户 ──────────────────────────────────────────────────────
+            SettingsGroup(title = stringResource(R.string.settings_account)) {
+                state.user?.let { user ->
+                    ExpressiveListItem(
+                        title = user.login,
+                        subtitle = user.name ?: user.htmlUrl,
+                        leadingContent = {
+                            AsyncImage(
+                                model = user.avatarUrl,
+                                contentDescription = null,
+                                modifier = Modifier.size(42.dp)
+                                    .clip(CircleShape)
+                            )
+                        },
+                        trailingContent = {
+                            IconButton(onClick = { showLogoutDialog = true }) {
+                                Icon(
+                                    Icons.Default.Logout,
+                                    contentDescription = "退出登录",
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    )
+                    ExpressiveListItem(
+                        title = "Fork 仓库",
+                        subtitle = state.forkRepo?.fullName ?: "未 Fork",
+                        leadingIcon = Icons.Default.ForkRight
+                    )
+                } ?: ExpressiveListItem(
                     title = "未登录",
                     leadingIcon = Icons.Default.AccountCircle
                 )
             }
-        }
 
-        SettingsGroup(title = stringResource(R.string.settings_build)) {
-            SwitchSettingsItem(
-                icon = Icons.Default.Download,
-                title = stringResource(R.string.settings_auto_download),
-                subtitle = "仅对下一次新提交的构建生效，关闭后不会自动下载",
-                checked = autoDownload,
-                onCheckedChange = onAutoDownloadChange
-            )
-            SwitchSettingsItem(
-                icon = Icons.Default.CloudDownload,
-                title = "预编译 GKI 获取与下载",
-                subtitle = "从本仓库 Release 获取预编译 GKI，下载需手动触发",
-                checked = prebuiltGkiEnabled,
-                onCheckedChange = onPrebuiltGkiEnabledChange
-            )
-            Spacer(Modifier.height(10.dp))
-            MirrorSettingsItem(
-                value = downloadMirrorBaseUrl,
-                onValueChange = onDownloadMirrorChange
-            )
-        }
+            // ── 构建 ──────────────────────────────────────────────────────
+            SettingsGroup(title = stringResource(R.string.settings_build)) {
+                SwitchSettingsItem(
+                    icon = Icons.Default.Download,
+                    title = stringResource(R.string.settings_auto_download),
+                    subtitle = "仅对下一次新提交的构建生效，关闭后不会自动下载",
+                    checked = state.autoDownload,
+                    onCheckedChange = { vm.setAutoDownload(it) }
+                )
+                SwitchSettingsItem(
+                    icon = Icons.Default.CloudDownload,
+                    title = "预编译 GKI 获取与下载",
+                    subtitle = "从本仓库 Release 获取预编译 GKI，下载需手动触发",
+                    checked = state.prebuiltGkiEnabled,
+                    onCheckedChange = { vm.setPrebuiltGkiEnabled(it) }
+                )
+                Spacer(Modifier.height(10.dp))
+                MirrorSettingsItem(
+                    value = state.downloadMirrorBaseUrl,
+                    onValueChange = { vm.setDownloadMirrorBaseUrl(it) }
+                )
+            }
 
-        SettingsGroup(title = stringResource(R.string.settings_notification)) {
-            SwitchSettingsItem(
-                icon = Icons.Default.Notifications,
-                title = stringResource(R.string.settings_notify_build),
-                subtitle = "在通知栏显示构建状态",
-                checked = notifyBuild,
-                onCheckedChange = onNotifyBuildChange
-            )
-        }
+            // ── 通知 ──────────────────────────────────────────────────────
+            SettingsGroup(title = stringResource(R.string.settings_notification)) {
+                SwitchSettingsItem(
+                    icon = Icons.Default.Notifications,
+                    title = stringResource(R.string.settings_notify_build),
+                    subtitle = "在通知栏显示构建状态",
+                    checked = state.notifyBuild,
+                    onCheckedChange = { vm.setNotifyBuild(it) }
+                )
+            }
 
-        SettingsGroup(title = "导航") {
-            SwitchSettingsItem(
-                icon = Icons.Default.ArrowBack,
-                title = "预测性返回手势",
-                subtitle = "使用 Material 3 Expressive 的进入与返回动画，关闭后保留轻量过渡",
-                checked = predictiveBackEnabled,
-                onCheckedChange = onPredictiveBackChange
-            )
-        }
+            SettingsGroup(title = "导航") {
+                SwitchSettingsItem(
+                    icon = Icons.Default.ArrowBack,
+                    title = "应用内 M3E 返回动效",
+                    subtitle = "使用 Material 3 Expressive 的页面返回动画，不依赖系统预测性返回",
+                    checked = state.predictiveBackEnabled,
+                    onCheckedChange = { vm.setPredictiveBackEnabled(it) }
+                )
+            }
 
-        SettingsGroup(title = stringResource(R.string.settings_theme)) {
-            ExpressiveListItem(
-                title = "颜色与外观",
-                subtitle = "${themeModeLabel(themeMode)} · ${dynamicColorLabel(dynamicColorEnabled)}",
-                leadingIcon = Icons.Default.Palette,
-                trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = "进入颜色与外观") },
-                onClick = onThemeClick
-            )
-        }
+            // ── 主题 ──────────────────────────────────────────────────────
+            SettingsGroup(title = stringResource(R.string.settings_theme)) {
+                ExpressiveListItem(
+                    title = "颜色与外观",
+                    subtitle = "${themeModeLabel(state.themeMode)} · ${dynamicColorLabel(state.dynamicColorEnabled)}",
+                    leadingIcon = Icons.Default.Palette,
+                    trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = "进入颜色与外观") },
+                    onClick = { showThemeSettings = true }
+                )
+            }
 
-        SettingsGroup(title = stringResource(R.string.settings_about)) {
-            ExpressiveListItem(
-                title = stringResource(R.string.app_full_name),
-                subtitle = "AnyBase Kernel v${BuildConfig.VERSION_NAME}",
-                leadingIcon = Icons.Default.Info
-            )
-            ExpressiveListItem(
-                title = "关于",
-                subtitle = "项目入口、源码仓库、上游项目与致谢",
-                leadingIcon = Icons.Default.AutoAwesome,
-                trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = "进入关于") },
-                onClick = onAboutClick
-            )
-        }
+            // ── 关于 ──────────────────────────────────────────────────────
+            SettingsGroup(title = stringResource(R.string.settings_about)) {
+                ExpressiveListItem(
+                    title = stringResource(R.string.app_full_name),
+                    subtitle = "AnyBase Kernel v${BuildConfig.VERSION_NAME}",
+                    leadingIcon = Icons.Default.Info
+                )
+                ExpressiveListItem(
+                    title = "关于",
+                    subtitle = "项目入口、源码仓库、上游项目与致谢",
+                    leadingIcon = Icons.Default.AutoAwesome,
+                    trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = "进入关于") },
+                    onClick = { showAboutDialog = true }
+                )
+            }
 
-        Spacer(Modifier.height(80.dp))
+            Spacer(Modifier.height(80.dp))
+        }
     }
 }
 
