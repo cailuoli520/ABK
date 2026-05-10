@@ -34,7 +34,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -60,7 +62,6 @@ import kotlinx.coroutines.flow.collect
 private const val THEME_BACK_VISUAL_EXPONENT = 1.8f
 private const val THEME_BACK_SCALE_DELTA = 0.04f
 private const val THEME_BACK_SCRIM_ALPHA = 0.18f
-private const val THEME_PAGE_BACKDROP_ALPHA = 0.94f
 private val THEME_BACK_MAX_OFFSET = 42.dp
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -182,8 +183,11 @@ fun SettingsScreen(vm: MainViewModel) {
                         scaleY = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
                         alpha = 1f - 0.06f * visualThemeBackProgress
                     }
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = THEME_PAGE_BACKDROP_ALPHA))
             ) {
+                SettingsPageBackground(
+                    backgroundUri = state.customBackgroundUri,
+                    backgroundImageEnabled = state.backgroundImageEnabled
+                )
                 Scaffold(
                     containerColor = Color.Transparent,
                     topBar = {
@@ -219,6 +223,39 @@ fun SettingsScreen(vm: MainViewModel) {
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SettingsPageBackground(
+    backgroundUri: String?,
+    backgroundImageEnabled: Boolean
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    val hasBackground = backgroundImageEnabled && !backgroundUri.isNullOrBlank()
+    val scrimColor = if (colorScheme.surface.luminance() > 0.5f) {
+        colorScheme.surface.copy(alpha = 0.28f)
+    } else {
+        Color.Black.copy(alpha = 0.38f)
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colorScheme.surface)
+    ) {
+        if (hasBackground) {
+            AsyncImage(
+                model = backgroundUri,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(scrimColor)
+            )
         }
     }
 }
