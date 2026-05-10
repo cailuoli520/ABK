@@ -582,7 +582,10 @@ private fun BuildStatusBanner(status: BuildStatus, progress: BuildProgress) {
         else -> return
     }
     Card(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surfaceContainer)
+        )
     ) {
         Row(
             Modifier.padding(12.dp),
@@ -617,7 +620,10 @@ private fun BuildProgressCard(progress: BuildProgress) {
         label = "build-progress"
     )
     Card(
-        modifier = Modifier.fillMaxWidth().animateContentSize()
+        modifier = Modifier.fillMaxWidth().animateContentSize(),
+        colors = CardDefaults.cardColors(
+            containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surfaceContainer)
+        )
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
