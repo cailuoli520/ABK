@@ -212,6 +212,19 @@ class GitHubRepository(
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
 
+    suspend fun downloadJobLogs(owner: String, repo: String, jobId: Long): Result<String> {
+        val api = apiService ?: return Result.Error("Not authenticated")
+        return runCatching<Result<String>> {
+            val resp = api.downloadJobLogs(owner, repo, jobId)
+            if (resp.isSuccessful) {
+                val logs = resp.body()?.use { it.string() }.orEmpty()
+                Result.Success(logs)
+            } else {
+                Result.Error("Download job logs failed: ${resp.code()}", resp.code())
+            }
+        }.getOrElse { Result.Error(it.message ?: "Unknown error") }
+    }
+
     suspend fun listArtifacts(owner: String, repo: String, runId: Long): Result<List<Artifact>> {
         val api = apiService ?: return Result.Error("Not authenticated")
         return runCatching<Result<List<Artifact>>> {

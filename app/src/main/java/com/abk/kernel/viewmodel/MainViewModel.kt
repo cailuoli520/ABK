@@ -59,6 +59,9 @@ data class MainUiState(
     val buildConfig: KernelBuildConfig = KernelBuildConfig(),
     val recommendedBuildConfig: KernelBuildConfig? = null,
     val workflowEnablementPrompt: WorkflowEnablementPrompt? = null,
+    val buildParameterSummaries: Map<Long, BuildParameterSummary> = emptyMap(),
+    val loadingBuildParameterRunIds: Set<Long> = emptySet(),
+    val buildParameterErrors: Map<Long, String> = emptyMap(),
     // Download
     val downloadedArtifacts: List<DownloadedArtifact> = emptyList(),
     val artifacts: List<BuildArtifact> = emptyList(),
@@ -83,7 +86,8 @@ data class MainUiState(
     val backgroundImageEnabled: Boolean = false,
     val uiSurfaceAlpha: Float = 1f,
     val downloadMirrorBaseUrl: String = "",
-    val prebuiltGkiEnabled: Boolean = true
+    val prebuiltGkiEnabled: Boolean = true,
+    val predictiveBackEnabled: Boolean = true
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -247,6 +251,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
+            prefs.predictiveBackEnabled.collect { enabled ->
+                _uiState.update { it.copy(predictiveBackEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
             prefs.buildConfigJson.collect { json ->
                 if (!json.isNullOrBlank()) {
                     runCatching { gson.fromJson(json, KernelBuildConfig::class.java) }
@@ -276,6 +285,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         .sortedForDisplay()
                     _uiState.update { it.copy(artifacts = mergeRemoteArtifacts(it.artifacts, restored)) }
                 }
+            }
+        }
+        viewModelScope.launch {
+            prefs.buildParameterSummariesJson.collect { json ->
+                val restored = parseBuildParameterSummaries(json).associateBy { it.runId }
+                _uiState.update { it.copy(buildParameterSummaries = restored) }
             }
         }
         viewModelScope.launch {
@@ -454,7 +469,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     backgroundImageEnabled = it.backgroundImageEnabled,
                     uiSurfaceAlpha = it.uiSurfaceAlpha,
                     downloadMirrorBaseUrl = it.downloadMirrorBaseUrl,
-                    prebuiltGkiEnabled = it.prebuiltGkiEnabled
+                    prebuiltGkiEnabled = it.prebuiltGkiEnabled,
+                    predictiveBackEnabled = it.predictiveBackEnabled
                 )
             }
         }
@@ -975,11 +991,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val updatedRemote = _uiState.value.artifacts
                     .filterNot { it.runId == runId }
                     .sortedForDisplay()
+                val updatedParameterSummaries = _uiState.value.buildParameterSummaries - runId
 
                 _uiState.update { state ->
                     state.copy(
                         downloadedArtifacts = updatedDownloads,
                         artifacts = updatedRemote,
+                        buildParameterSummaries = updatedParameterSummaries,
+                        loadingBuildParameterRunIds = state.loadingBuildParameterRunIds - runId,
+                        buildParameterErrors = state.buildParameterErrors - runId,
                         downloadProgress = state.downloadProgress.filterKeys { it !in removedRemoteIds },
                         recentRuns = state.recentRuns.filterNot { it.id == runId },
                         currentRun = state.currentRun?.takeUnless { it.id == runId },
@@ -991,6 +1011,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 prefs.saveDownloadedArtifactsJson(gson.toJson(updatedDownloads))
                 prefs.saveRemoteArtifactsJson(gson.toJson(updatedRemote))
+                prefs.saveBuildParameterSummariesJson(gson.toJson(updatedParameterSummaries.values.sortedByDescending { it.runNumber }))
             } finally {
                 _uiState.update {
                     if (it.deletingWorkflowRunId == runId) it.copy(deletingWorkflowRunId = null) else it
@@ -1389,6 +1410,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setDownloadMirrorBaseUrl(url: String) = viewModelScope.launch {
         prefs.setDownloadMirrorBaseUrl(url.trim())
     }
+    fun setPredictiveBackEnabled(v: Boolean) = viewModelScope.launch { prefs.setPredictiveBackEnabled(v) }
     fun setPrebuiltGkiEnabled(v: Boolean) = viewModelScope.launch {
         if (!v) {
             artifactDownloadJobs.keys.filter { it < 0L }.forEach { key ->
@@ -1415,6 +1437,61 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { prefs.saveBuildConfigJson(gson.toJson(normalized)) }
     }
 
+    fun loadBuildParameterSummary(runId: Long, force: Boolean = false) {
+        if (runId <= 0L) return
+        val current = _uiState.value
+        if (!force && current.buildParameterSummaries.containsKey(runId)) return
+        if (runId in current.loadingBuildParameterRunIds) return
+        val username = current.user?.login ?: return
+        val repoName = current.forkRepo?.name ?: return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    loadingBuildParameterRunIds = it.loadingBuildParameterRunIds + runId,
+                    buildParameterErrors = it.buildParameterErrors - runId
+                )
+            }
+            val run = findRunForParameterSummary(username, repoName, runId)
+            val jobs = when (val jobsResult = github.listRunJobs(username, repoName, runId)) {
+                is Result.Success -> jobsResult.data
+                is Result.Error -> {
+                    setBuildParameterLoadError(runId, jobsResult.message)
+                    return@launch
+                }
+                Result.Loading -> emptyList()
+            }
+            val summaryJob = jobs.firstOrNull { job ->
+                job.steps.orEmpty().any { step -> step.name == BUILD_SUMMARY_STEP_NAME }
+            }
+            if (summaryJob == null) {
+                setBuildParameterLoadError(runId, "未找到“$BUILD_SUMMARY_STEP_NAME”步骤")
+                return@launch
+            }
+            val logs = when (val logsResult = github.downloadJobLogs(username, repoName, summaryJob.id)) {
+                is Result.Success -> logsResult.data
+                is Result.Error -> {
+                    setBuildParameterLoadError(runId, logsResult.message)
+                    return@launch
+                }
+                Result.Loading -> ""
+            }
+            val summary = parseBuildParameterSummary(logs, runId, run)
+            if (summary == null) {
+                setBuildParameterLoadError(runId, "日志中没有可解析的构建信息摘要")
+                return@launch
+            }
+            val updated = _uiState.value.buildParameterSummaries + (runId to summary)
+            _uiState.update {
+                it.copy(
+                    buildParameterSummaries = updated,
+                    loadingBuildParameterRunIds = it.loadingBuildParameterRunIds - runId,
+                    buildParameterErrors = it.buildParameterErrors - runId
+                )
+            }
+            prefs.saveBuildParameterSummariesJson(gson.toJson(updated.values.sortedByDescending { it.runNumber }))
+        }
+    }
+
     private fun parseDownloadedArtifacts(json: String?): List<DownloadedArtifact> {
         if (json.isNullOrBlank()) return emptyList()
         return runCatching<List<DownloadedArtifact>> {
@@ -1431,11 +1508,162 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }.getOrDefault(emptyList())
     }
 
+    private fun parseBuildParameterSummaries(json: String?): List<BuildParameterSummary> {
+        if (json.isNullOrBlank()) return emptyList()
+        return runCatching<List<BuildParameterSummary>> {
+            val type = object : TypeToken<List<BuildParameterSummary>>() {}.type
+            gson.fromJson<List<BuildParameterSummary>>(json, type).orEmpty()
+        }.getOrDefault(emptyList())
+    }
+
+    private suspend fun findRunForParameterSummary(
+        owner: String,
+        repoName: String,
+        runId: Long
+    ): WorkflowRun? {
+        val state = _uiState.value
+        return state.recentRuns.firstOrNull { it.id == runId }
+            ?: state.currentRun?.takeIf { it.id == runId }
+            ?: state.artifacts.firstOrNull { it.runId == runId }?.toWorkflowRun()
+            ?: state.downloadedArtifacts.firstOrNull { it.runId == runId }?.let { artifact ->
+                WorkflowRun(
+                    id = artifact.runId,
+                    name = artifact.runTitle,
+                    status = "completed",
+                    conclusion = null,
+                    htmlUrl = "",
+                    createdAt = "",
+                    updatedAt = "",
+                    runNumber = artifact.runNumber,
+                    workflowId = 0L,
+                    headBranch = null,
+                    displayTitle = artifact.runTitle
+                )
+            }
+            ?: when (val runResult = github.getWorkflowRun(owner, repoName, runId)) {
+                is Result.Success -> runResult.data
+                else -> null
+            }
+    }
+
+    private suspend fun setBuildParameterLoadError(runId: Long, message: String) {
+        _uiState.update {
+            it.copy(
+                loadingBuildParameterRunIds = it.loadingBuildParameterRunIds - runId,
+                buildParameterErrors = it.buildParameterErrors + (runId to message)
+            )
+        }
+    }
+
     fun clearError() = _uiState.update { it.copy(error = null) }
 
     override fun onCleared() {
         runCatching { getApplication<Application>().unregisterReceiver(statusReceiver) }
         super.onCleared()
+    }
+}
+
+private const val BUILD_SUMMARY_STEP_NAME = "构建信息摘要"
+
+private fun parseBuildParameterSummary(
+    logs: String,
+    runId: Long,
+    run: WorkflowRun?
+): BuildParameterSummary? {
+    val values = mutableMapOf<String, String>()
+    var summarySeen = false
+    logs.lineSequence()
+        .map(::cleanBuildSummaryLogLine)
+        .forEach { line ->
+            if (line.contains("内核构建配置摘要")) {
+                summarySeen = true
+                return@forEach
+            }
+            if (!summarySeen && !line.contains("Android 版本")) return@forEach
+            if (summarySeen && values.isNotEmpty() && line.all { it == '=' || it.isWhitespace() }) return@forEach
+
+            val separator = listOf(line.indexOf(':'), line.indexOf('：'))
+                .filter { it >= 0 }
+                .minOrNull() ?: return@forEach
+            val label = line.substring(0, separator).trim()
+            val value = line.substring(separator + 1).trim()
+            val key = normalizeBuildSummaryLabel(label) ?: return@forEach
+            values[key] = sanitizeBuildSummaryValue(key, value)
+        }
+    if (values.isEmpty()) return null
+
+    return BuildParameterSummary(
+        runId = runId,
+        runNumber = run?.runNumber ?: 0,
+        runTitle = run?.displayTitle ?: run?.name.orEmpty(),
+        runCreatedAt = run?.createdAt.orEmpty(),
+        runHtmlUrl = run?.htmlUrl.orEmpty(),
+        androidVersion = values["androidVersion"].orEmpty(),
+        kernelVersion = values["kernelVersion"].orEmpty(),
+        subLevel = values["subLevel"].orEmpty(),
+        osPatchLevel = values["osPatchLevel"].orEmpty(),
+        ksuVariant = values["ksuVariant"].orEmpty(),
+        ksuBranch = values["ksuBranch"].orEmpty(),
+        buildTime = values["buildTime"].orEmpty(),
+        susfsEnabled = values["susfsEnabled"].orEmpty(),
+        zramEnabled = values["zramEnabled"].orEmpty(),
+        zramFullAlgo = values["zramFullAlgo"].orEmpty(),
+        zramExtraAlgos = values["zramExtraAlgos"].orEmpty(),
+        bbgEnabled = values["bbgEnabled"].orEmpty(),
+        ddkLsm = values["ddkLsm"].orEmpty(),
+        ntsyncEnabled = values["ntsyncEnabled"].orEmpty(),
+        networkingEnabled = values["networkingEnabled"].orEmpty(),
+        kpmEnabled = values["kpmEnabled"].orEmpty(),
+        kpmPassword = values["kpmPassword"].orEmpty(),
+        reKernelEnabled = values["reKernelEnabled"].orEmpty(),
+        virtualizationSupport = values["virtualizationSupport"].orEmpty(),
+        customInjection = values["customInjection"].orEmpty(),
+        stockConfig = values["stockConfig"].orEmpty()
+    )
+}
+
+private fun cleanBuildSummaryLogLine(line: String): String {
+    val withoutAnsi = line.replace(Regex("\u001B\\[[;\\d]*[ -/]*[@-~]"), "")
+    return withoutAnsi
+        .replace(Regex("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z\\s+"), "")
+        .trim()
+}
+
+private fun normalizeBuildSummaryLabel(label: String): String? {
+    val compact = label.replace(Regex("\\s+"), "").lowercase()
+    return when {
+        compact.contains("android版本") -> "androidVersion"
+        compact.contains("内核版本") -> "kernelVersion"
+        compact.contains("子版本号") -> "subLevel"
+        compact.contains("补丁级别") -> "osPatchLevel"
+        compact.contains("ksu变体") -> "ksuVariant"
+        compact.contains("ksu分支") -> "ksuBranch"
+        compact.contains("构建时间") -> "buildTime"
+        compact.contains("susfs状态") -> "susfsEnabled"
+        compact.contains("zram增强") -> "zramEnabled"
+        compact.contains("zram完整算法") -> "zramFullAlgo"
+        compact.contains("zram额外算法") -> "zramExtraAlgos"
+        compact.contains("bbg补丁") -> "bbgEnabled"
+        compact.contains("ddklsm") -> "ddkLsm"
+        compact.contains("ntsync补丁") -> "ntsyncEnabled"
+        compact.contains("networking增强") || compact.contains("networing增强") -> "networkingEnabled"
+        compact.contains("kpm功能") -> "kpmEnabled"
+        compact.contains("kpm密码") -> "kpmPassword"
+        compact.contains("re-kernel") || compact.contains("rekernel") -> "reKernelEnabled"
+        compact.contains("虚拟化支持") -> "virtualizationSupport"
+        compact.contains("自定义注入") -> "customInjection"
+        compact.contains("stockconfig") -> "stockConfig"
+        else -> null
+    }
+}
+
+private fun sanitizeBuildSummaryValue(key: String, value: String): String {
+    if (key != "kpmPassword") return value.ifBlank { "无" }
+    val normalized = value.trim().lowercase()
+    return when {
+        normalized.isBlank() -> "默认"
+        normalized in setOf("默认", "default", "无", "none", "not set") -> "默认"
+        else -> "已设置"
     }
 }
 

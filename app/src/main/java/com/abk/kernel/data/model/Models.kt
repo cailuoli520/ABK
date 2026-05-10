@@ -104,6 +104,36 @@ data class BuildProgress(
     val steps: List<BuildStepProgress> = emptyList()
 )
 
+data class BuildParameterSummary(
+    val runId: Long,
+    val runNumber: Int = 0,
+    val runTitle: String = "",
+    val runCreatedAt: String = "",
+    val runHtmlUrl: String = "",
+    val androidVersion: String = "",
+    val kernelVersion: String = "",
+    val subLevel: String = "",
+    val osPatchLevel: String = "",
+    val ksuVariant: String = "",
+    val ksuBranch: String = "",
+    val buildTime: String = "",
+    val susfsEnabled: String = "",
+    val zramEnabled: String = "",
+    val zramFullAlgo: String = "",
+    val zramExtraAlgos: String = "",
+    val bbgEnabled: String = "",
+    val ddkLsm: String = "",
+    val ntsyncEnabled: String = "",
+    val networkingEnabled: String = "",
+    val kpmEnabled: String = "",
+    val kpmPassword: String = "",
+    val reKernelEnabled: String = "",
+    val virtualizationSupport: String = "",
+    val customInjection: String = "",
+    val stockConfig: String = "",
+    val source: String = "workflow_log"
+)
+
 data class Artifact(
     val id: Long,
     val name: String,

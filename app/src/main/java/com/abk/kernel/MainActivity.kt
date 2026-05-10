@@ -297,11 +297,13 @@ private fun AbkMainScaffold(vm: MainViewModel) {
     }
 
     BackHandler(onBack = ::handleTopLevelBack)
-    PredictiveBackHandler { progress ->
-        try {
-            progress.collect { }
-            handleTopLevelBack()
-        } catch (_: CancellationException) {
+    if (state.predictiveBackEnabled) {
+        PredictiveBackHandler { progress ->
+            try {
+                progress.collect { }
+                handleTopLevelBack()
+            } catch (_: CancellationException) {
+            }
         }
     }
 

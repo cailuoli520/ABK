@@ -204,6 +204,16 @@ fun SettingsScreen(vm: MainViewModel) {
                 )
             }
 
+            SettingsGroup(title = "导航") {
+                SwitchSettingsItem(
+                    icon = Icons.Default.ArrowBack,
+                    title = "预测性返回手势",
+                    subtitle = "开启后使用 Android 预测性返回动画，关闭后保留普通返回",
+                    checked = state.predictiveBackEnabled,
+                    onCheckedChange = { vm.setPredictiveBackEnabled(it) }
+                )
+            }
+
             // ── 主题 ──────────────────────────────────────────────────────
             SettingsGroup(title = stringResource(R.string.settings_theme)) {
                 ExpressiveListItem(
@@ -703,6 +713,7 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
             stringResource(R.string.settings_account) -> "GitHub 账户、fork 仓库和退出登录。"
             stringResource(R.string.settings_build) -> "控制构建成功后的自动化行为。"
             stringResource(R.string.settings_notification) -> "同步工作流状态到系统通知。"
+            "导航" -> "控制返回手势和页面切换体验。"
             stringResource(R.string.settings_theme) -> "Material 3 Expressive 主题显示模式。"
             "外观模式" -> "控制应用明暗显示方式。"
             "颜色来源" -> "选择系统动态颜色或自定义色板。"
@@ -714,6 +725,7 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
             stringResource(R.string.settings_account) -> Icons.Default.AccountCircle
             stringResource(R.string.settings_build) -> Icons.Default.Build
             stringResource(R.string.settings_notification) -> Icons.Default.Notifications
+            "导航" -> Icons.Default.ArrowBack
             stringResource(R.string.settings_theme) -> Icons.Default.Palette
             "外观模式" -> Icons.Default.BrightnessMedium
             "颜色来源" -> Icons.Default.AutoAwesome
