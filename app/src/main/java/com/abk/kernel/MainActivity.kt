@@ -278,16 +278,26 @@ private fun AbkMainScaffold(vm: MainViewModel) {
     val state by vm.uiState.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
     var selectedTab by rememberSaveable { mutableStateOf(AbkTab.Status) }
+    var flashDetailPageVisible by rememberSaveable { mutableStateOf(false) }
     var settingsThemePageVisible by rememberSaveable { mutableStateOf(false) }
     var lastBackAt by remember { mutableStateOf(0L) }
     val visibleTabs = AbkTab.entries
     val activeTab = selectedTab
     val motionScheme = MaterialTheme.motionScheme
-    val hideBottomBar = activeTab == AbkTab.Settings && settingsThemePageVisible
+    val hideBottomBar = when (activeTab) {
+        AbkTab.Flash -> flashDetailPageVisible
+        AbkTab.Settings -> settingsThemePageVisible
+        else -> false
+    }
 
     LaunchedEffect(activeTab) {
-        if (activeTab != AbkTab.Settings) {
-            settingsThemePageVisible = false
+        when (activeTab) {
+            AbkTab.Flash -> settingsThemePageVisible = false
+            AbkTab.Settings -> flashDetailPageVisible = false
+            else -> {
+                flashDetailPageVisible = false
+                settingsThemePageVisible = false
+            }
         }
     }
 
@@ -365,7 +375,10 @@ private fun AbkMainScaffold(vm: MainViewModel) {
                 when (tab) {
                     AbkTab.Status -> StatusScreen(vm)
                     AbkTab.Build -> BuildScreen(vm)
-                    AbkTab.Flash -> FlashScreen(vm)
+                    AbkTab.Flash -> FlashScreen(
+                        vm = vm,
+                        onDetailPageVisibleChange = { flashDetailPageVisible = it }
+                    )
                     AbkTab.Settings -> SettingsScreen(
                         vm = vm,
                         onThemePageVisibleChange = { settingsThemePageVisible = it }
