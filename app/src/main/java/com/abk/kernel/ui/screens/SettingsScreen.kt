@@ -23,6 +23,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -57,16 +58,22 @@ import com.abk.kernel.viewmodel.MainUiState
 import com.abk.kernel.viewmodel.MainViewModel
 import kotlin.math.pow
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 
 private const val THEME_BACK_VISUAL_EXPONENT = 1.8f
-private const val THEME_BACK_SCALE_DELTA = 0.04f
-private const val THEME_BACK_SCRIM_ALPHA = 0.18f
-private val THEME_BACK_MAX_OFFSET = 42.dp
+private const val THEME_BACK_SCALE_DELTA = 0.09f
+private const val THEME_BACK_SCRIM_ALPHA = 0.32f
+private const val THEME_PAGE_EXIT_DELAY_MS = 280L
+private val THEME_BACK_MAX_OFFSET = 56.dp
+private val THEME_BACK_MAX_CORNER = 32.dp
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun SettingsScreen(vm: MainViewModel) {
+fun SettingsScreen(
+    vm: MainViewModel,
+    onThemePageVisibleChange: (Boolean) -> Unit = {}
+) {
     val state by vm.uiState.collectAsState()
     val context = LocalContext.current
     var showLogoutDialog by remember { mutableStateOf(false) }
@@ -82,7 +89,23 @@ fun SettingsScreen(vm: MainViewModel) {
     val visualThemeBackProgress = animatedThemeBackProgress
         .coerceIn(0f, 1f)
         .pow(THEME_BACK_VISUAL_EXPONENT)
-    val themeBackOffsetPx = with(LocalDensity.current) { THEME_BACK_MAX_OFFSET.toPx() }
+    val density = LocalDensity.current
+    val themeBackOffsetPx = with(density) { THEME_BACK_MAX_OFFSET.toPx() }
+    val themeBackCorner = with(density) { (THEME_BACK_MAX_CORNER.toPx() * visualThemeBackProgress).toDp() }
+
+    LaunchedEffect(showThemeSettings) {
+        if (showThemeSettings) {
+            onThemePageVisibleChange(true)
+        } else {
+            delay(THEME_PAGE_EXIT_DELAY_MS)
+            themeBackProgress = 0f
+            onThemePageVisibleChange(false)
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { onThemePageVisibleChange(false) }
+    }
 
     fun openThemeSettings() {
         themeBackProgress = 0f
@@ -90,7 +113,6 @@ fun SettingsScreen(vm: MainViewModel) {
     }
 
     fun closeThemeSettings() {
-        themeBackProgress = 0f
         showThemeSettings = false
     }
 
@@ -162,7 +184,7 @@ fun SettingsScreen(vm: MainViewModel) {
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = THEME_BACK_SCRIM_ALPHA * (1f - visualThemeBackProgress)))
+                    .background(Color.Black.copy(alpha = THEME_BACK_SCRIM_ALPHA * visualThemeBackProgress))
             )
         }
 
@@ -171,7 +193,7 @@ fun SettingsScreen(vm: MainViewModel) {
             enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
                 slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
             exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
-                slideOutHorizontally(animationSpec = motionScheme.fastSpatialSpec()) { width -> width / 4 },
+                slideOutHorizontally(animationSpec = motionScheme.fastSpatialSpec()) { width -> width },
             modifier = Modifier.fillMaxSize()
         ) {
             Box(
@@ -182,6 +204,8 @@ fun SettingsScreen(vm: MainViewModel) {
                         scaleX = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
                         scaleY = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
                         alpha = 1f - 0.06f * visualThemeBackProgress
+                        shape = RoundedCornerShape(themeBackCorner)
+                        clip = visualThemeBackProgress > 0.01f
                     }
             ) {
                 SettingsPageBackground(

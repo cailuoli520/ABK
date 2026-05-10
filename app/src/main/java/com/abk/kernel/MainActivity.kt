@@ -278,10 +278,18 @@ private fun AbkMainScaffold(vm: MainViewModel) {
     val state by vm.uiState.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
     var selectedTab by rememberSaveable { mutableStateOf(AbkTab.Status) }
+    var settingsThemePageVisible by rememberSaveable { mutableStateOf(false) }
     var lastBackAt by remember { mutableStateOf(0L) }
     val visibleTabs = AbkTab.entries
     val activeTab = selectedTab
     val motionScheme = MaterialTheme.motionScheme
+    val hideBottomBar = activeTab == AbkTab.Settings && settingsThemePageVisible
+
+    LaunchedEffect(activeTab) {
+        if (activeTab != AbkTab.Settings) {
+            settingsThemePageVisible = false
+        }
+    }
 
     fun handleTopLevelBack() {
         val now = System.currentTimeMillis()
@@ -298,37 +306,39 @@ private fun AbkMainScaffold(vm: MainViewModel) {
     Scaffold(
         containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
         bottomBar = {
-            NavigationBar(
-                containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surfaceContainer),
-                tonalElevation = 0.dp
-            ) {
-                visibleTabs.forEach { tab ->
-                    NavigationBarItem(
-                        selected = activeTab == tab,
-                        onClick = { selectedTab = tab },
-                        alwaysShowLabel = false,
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
-                        icon = {
-                            Icon(
-                                imageVector = when (tab) {
-                                    AbkTab.Status -> Icons.Default.Home
-                                    AbkTab.Build -> Icons.Default.RocketLaunch
-                                    AbkTab.Flash -> if (state.rootGranted) Icons.Default.FlashOn else Icons.Default.FolderOpen
-                                    AbkTab.Settings -> Icons.Default.Settings
-                                },
-                                contentDescription = tab.displayLabel(state.rootGranted)
-                            )
-                        },
-                        label = {
-                            Text(text = tab.displayLabel(state.rootGranted))
-                        }
-                    )
+            if (!hideBottomBar) {
+                NavigationBar(
+                    containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surfaceContainer),
+                    tonalElevation = 0.dp
+                ) {
+                    visibleTabs.forEach { tab ->
+                        NavigationBarItem(
+                            selected = activeTab == tab,
+                            onClick = { selectedTab = tab },
+                            alwaysShowLabel = false,
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            icon = {
+                                Icon(
+                                    imageVector = when (tab) {
+                                        AbkTab.Status -> Icons.Default.Home
+                                        AbkTab.Build -> Icons.Default.RocketLaunch
+                                        AbkTab.Flash -> if (state.rootGranted) Icons.Default.FlashOn else Icons.Default.FolderOpen
+                                        AbkTab.Settings -> Icons.Default.Settings
+                                    },
+                                    contentDescription = tab.displayLabel(state.rootGranted)
+                                )
+                            },
+                            label = {
+                                Text(text = tab.displayLabel(state.rootGranted))
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -356,7 +366,10 @@ private fun AbkMainScaffold(vm: MainViewModel) {
                     AbkTab.Status -> StatusScreen(vm)
                     AbkTab.Build -> BuildScreen(vm)
                     AbkTab.Flash -> FlashScreen(vm)
-                    AbkTab.Settings -> SettingsScreen(vm)
+                    AbkTab.Settings -> SettingsScreen(
+                        vm = vm,
+                        onThemePageVisibleChange = { settingsThemePageVisible = it }
+                    )
                 }
             }
         }
