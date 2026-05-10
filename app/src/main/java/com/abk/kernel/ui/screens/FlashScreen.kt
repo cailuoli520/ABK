@@ -886,7 +886,6 @@ fun FlashScreen(vm: MainViewModel) {
             }
         }
     }
-}
 
 @Composable
 private fun FlashHero(
