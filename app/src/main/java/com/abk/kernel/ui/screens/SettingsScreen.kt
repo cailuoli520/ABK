@@ -9,13 +9,12 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -58,13 +57,9 @@ import kotlin.math.pow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collect
 
-private enum class SettingsPage {
-    Main,
-    Theme
-}
-
 private const val THEME_BACK_VISUAL_EXPONENT = 1.8f
 private const val THEME_BACK_SCALE_DELTA = 0.04f
+private const val THEME_BACK_SCRIM_ALPHA = 0.18f
 private val THEME_BACK_MAX_OFFSET = 42.dp
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -137,60 +132,67 @@ fun SettingsScreen(vm: MainViewModel) {
         )
     }
 
-    AnimatedContent(
-        targetState = if (showThemeSettings) SettingsPage.Theme else SettingsPage.Main,
-        transitionSpec = {
-            val enteringTheme = targetState == SettingsPage.Theme
-            (
-                fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
-                    slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width ->
-                        if (enteringTheme) width / 4 else -width / 5
-                    }
-                ) togetherWith (
-                fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
-                    slideOutHorizontally(animationSpec = motionScheme.fastSpatialSpec()) { width ->
-                        if (enteringTheme) -width / 5 else width / 4
-                    }
-                )
-        },
-        label = "settings-page",
-        modifier = Modifier.fillMaxSize()
-    ) { page ->
-        val isThemePage = page == SettingsPage.Theme
-        val pageModifier = if (isThemePage && visualThemeBackProgress > 0f) {
-            Modifier.graphicsLayer {
-                translationX = themeBackOffsetPx * visualThemeBackProgress
-                scaleX = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
-                scaleY = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
-                alpha = 1f - 0.06f * visualThemeBackProgress
-            }
-        } else {
-            Modifier
-        }
-
+    Box(Modifier.fillMaxSize()) {
         Scaffold(
-            modifier = pageModifier,
             containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
             topBar = {
                 ExpressiveTopBar(
-                    title = if (isThemePage) {
-                        stringResource(R.string.settings_theme)
-                    } else {
-                        stringResource(R.string.settings_title)
+                    title = stringResource(R.string.settings_title)
+                )
+            }
+        ) {
+            SettingsMainContent(
+                padding = it,
+                state = state,
+                vm = vm,
+                onLogout = { showLogoutDialog = true },
+                onOpenThemeSettings = ::openThemeSettings,
+                onAbout = { showAboutDialog = true }
+            )
+        }
+
+        AnimatedVisibility(
+            visible = showThemeSettings,
+            enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()),
+            exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = THEME_BACK_SCRIM_ALPHA * (1f - visualThemeBackProgress)))
+            )
+        }
+
+        AnimatedVisibility(
+            visible = showThemeSettings,
+            enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
+                slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
+            exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
+                slideOutHorizontally(animationSpec = motionScheme.fastSpatialSpec()) { width -> width / 4 },
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Scaffold(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        translationX = themeBackOffsetPx * visualThemeBackProgress
+                        scaleX = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
+                        scaleY = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
+                        alpha = 1f - 0.06f * visualThemeBackProgress
                     },
-                    navigationIcon = if (isThemePage) {
-                        {
+                containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
+                topBar = {
+                    ExpressiveTopBar(
+                        title = stringResource(R.string.settings_theme),
+                        navigationIcon = {
                             IconButton(onClick = ::closeThemeSettings) {
                                 Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                             }
                         }
-                    } else {
-                        null
-                    }
-                )
-            }
-        ) {
-            if (isThemePage) {
+                    )
+                }
+            ) {
                 ThemeSettingsScreen(
                     padding = it,
                     themeMode = state.themeMode,
@@ -210,15 +212,6 @@ fun SettingsScreen(vm: MainViewModel) {
                     onBackgroundImageChange = { uri -> vm.setBackgroundImageUri(uri) },
                     onBackgroundImageEnabledChange = { enabled -> vm.setBackgroundImageEnabled(enabled) },
                     onUiSurfaceAlphaChange = { alpha -> vm.setUiSurfaceAlpha(alpha) }
-                )
-            } else {
-                SettingsMainContent(
-                    padding = it,
-                    state = state,
-                    vm = vm,
-                    onLogout = { showLogoutDialog = true },
-                    onOpenThemeSettings = ::openThemeSettings,
-                    onAbout = { showAboutDialog = true }
                 )
             }
         }
