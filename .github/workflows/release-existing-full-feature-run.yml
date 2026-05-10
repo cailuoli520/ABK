@@ -31,6 +31,11 @@ on:
         required: false
         type: string
         default: "{}"
+      release_metadata_base64:
+        description: "Release 配置元数据 JSON 的 base64 编码（由全量矩阵工作流自动传入，优先于 release_metadata_json）"
+        required: false
+        type: string
+        default: ""
 
 jobs:
   release-existing-run:
@@ -43,6 +48,7 @@ jobs:
       SOURCE_ATTEMPT: ${{ inputs.source_attempt || '1' }}
       INPUT_RELEASE_TITLE: ${{ inputs.release_title || '' }}
       RELEASE_METADATA_JSON: ${{ inputs.release_metadata_json || '{}' }}
+      RELEASE_METADATA_BASE64: ${{ inputs.release_metadata_base64 || '' }}
     steps:
       - name: 检出代码仓库
         uses: actions/checkout@v6
@@ -102,9 +108,19 @@ jobs:
         run: |
           set -euo pipefail
 
-          metadata="${RELEASE_METADATA_JSON:-{}}"
-          if ! jq -e . >/dev/null 2>&1 <<< "$metadata"; then
-            echo "::warning::release_metadata_json 不是合法 JSON，使用默认元数据。"
+          if [ -n "${RELEASE_METADATA_BASE64:-}" ]; then
+            if metadata="$(printf '%s' "$RELEASE_METADATA_BASE64" | base64 -d 2>/dev/null)"; then
+              :
+            else
+              echo "::warning::release_metadata_base64 无法解码，回退到 release_metadata_json。"
+              metadata="${RELEASE_METADATA_JSON:-{}}"
+            fi
+          else
+            metadata="${RELEASE_METADATA_JSON:-{}}"
+          fi
+
+          if ! jq -e 'type == "object"' >/dev/null 2>&1 <<< "$metadata"; then
+            echo "::warning::release metadata 不是合法 JSON object，使用默认元数据。"
             metadata="{}"
           fi
 
@@ -122,6 +138,8 @@ jobs:
 
           ksu_variant="$(metadata_value ksu_variant "${{ inputs.kernelsu_variant }}")"
           ksu_branch="$(metadata_value ksu_branch "Stable(标准)")"
+          version="$(metadata_value version "无")"
+          revision="$(metadata_value revision "无")"
           build_time="$(metadata_value build_time "Sun Dec 01 08:10:00 UTC 2024")"
           susfs_enabled="$(metadata_value susfs_enabled "true")"
           use_zram="$(metadata_value use_zram "true")"
@@ -132,8 +150,11 @@ jobs:
           use_kpm="$(metadata_value use_kpm "true")"
           kpm_password="$(metadata_value kpm_password "默认")"
           use_rekernel="$(metadata_value use_rekernel "true")"
+          supp_op="$(metadata_value supp_op "true")"
           use_custom_external_modules="$(metadata_value use_custom_external_modules "false")"
           custom_external_modules="$(metadata_value custom_external_modules "无")"
+          use_ntsync="$(metadata_value use_ntsync "true")"
+          use_networking="$(metadata_value use_networking "true")"
           virtualization_support="$(metadata_value virtualization_support "off")"
 
           release_tag="full-feature-${SOURCE_RUN_ID}-a${SOURCE_ATTEMPT}"
@@ -163,11 +184,12 @@ jobs:
           |:---|:---|
           | 源 run | https://github.com/$REPO/actions/runs/$SOURCE_RUN_ID |
           | 源 commit | $SOURCE_HEAD_SHA |
-          | KernelSU 变体 | $ksu_variant |
           | Artifact 数 | $ARTIFACT_COUNT |
           | Release asset 数 | $asset_count |
           | KSU 变体 | $ksu_variant |
           | KSU 分支 | $ksu_branch |
+          | 自定义版本名 | $version |
+          | 5.10 修订版本 | $revision |
           | 构建时间 | $build_time |
           | SUSFS 状态 | $susfs_enabled |
           | ZRAM 增强 | $use_zram |
@@ -175,12 +197,17 @@ jobs:
           | ZRAM 额外算法 | $zram_extra_algos |
           | BBG 补丁 | $use_bbg |
           | DDK LSM | $use_ddk |
+          | NTsync 补丁 | $use_ntsync |
+          | 网络增强 (IPSet + BBR) | $use_networking |
           | KPM 功能 | $use_kpm |
           | KPM 密码 | $kpm_password |
           | Re-Kernel | $use_rekernel |
           | 虚拟化支持 | $virtualization_support |
+          | 一加 8E 支持 | $supp_op |
           | 自定义注入 | $use_custom_external_modules |
           | 自定义注入参数列表 | $custom_external_modules |
+
+          > Android 16 / 6.12 构建会自动关闭 ZRAM 增强与 ZRAM 完整算法；虚拟化支持在 6.12 上使用开关模式。
 
           ### 下载说明
 
