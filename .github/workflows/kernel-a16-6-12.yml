@@ -211,6 +211,7 @@ jobs:
       zram_full_algo: false
       zram_extra_algos: ""
       kpm_password: ${{ inputs.kpm_password || '' }}
+      upload_aux_artifacts: false
 
   # 仅在直接触发时运行，从 main.yml 调用时跳过
   get-ksu-manager:

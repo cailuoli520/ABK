@@ -108,6 +108,10 @@ on:
         required: false
         type: string
         default: ""
+      upload_aux_artifacts:
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   build-kernel:
@@ -2902,7 +2906,7 @@ jobs:
           compression-level: 9
 
       - name: 上传 NTsync 权限修复和 IPSet 启用模块
-        if: ${{ inputs.use_ntsync || inputs.use_networking }}
+        if: ${{ inputs.upload_aux_artifacts && (inputs.use_ntsync || inputs.use_networking) }}
         uses: actions/upload-artifact@v6
         with:
           name: ntsync权限修复&ipset启用

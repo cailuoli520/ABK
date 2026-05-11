@@ -297,6 +297,7 @@ jobs:
       kpm_password: ${{ inputs.kpm_password || '' }}
       use_custom_external_modules: ${{ inputs.use_custom_external_modules }}
       custom_external_modules: ${{ inputs.custom_external_modules || '' }}
+      upload_aux_artifacts: false
 
   trigger-full-feature-release:
     name: 触发全属性矩阵 Release 补发
