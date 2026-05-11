@@ -2117,6 +2117,192 @@ jobs:
             echo "没有配置 $CUSTOM_EXTERNAL_MODULE_STAGE 阶段的自定义外部模块。"
           fi
 
+      - name: 修复 android14-6.1.118 Official SUSFS 源码兼容
+        if: inputs.android_version == 'android14' && inputs.kernel_version == '6.1' && inputs.sub_level == '118' && inputs.ksu_variant == 'Official' && inputs.enable_susfs
+        working-directory: ${{ env.KERNEL_ROOT }}
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          INIT_BODY = """int __init kernelsu_init(void)
+          {
+          #ifdef CONFIG_KSU_DEBUG
+              pr_alert("*************************************************************");
+              pr_alert("**     NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE    **");
+              pr_alert("**                                                         **");
+              pr_alert("**         You are running KernelSU in DEBUG mode          **");
+              pr_alert("**                                                         **");
+              pr_alert("**     NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE    **");
+              pr_alert("*************************************************************");
+          #endif
+
+              if (allow_shell) {
+                  pr_alert("shell is allowed at init!");
+              }
+
+              ksu_cred = prepare_creds();
+              if (!ksu_cred) {
+                  pr_err("prepare cred failed!\\n");
+              }
+
+          #ifdef CONFIG_KSU_SUSFS
+              susfs_init();
+          #endif // #ifdef CONFIG_KSU_SUSFS
+
+              ksu_feature_init();
+
+              ksu_supercalls_init();
+
+              ksu_sucompat_init();
+
+              ksu_setuid_hook_init();
+
+              ksu_sulog_init();
+
+              ksu_adb_root_init();
+              ksu_selinux_hide_init();
+
+              ksu_allowlist_init();
+
+              ksu_throne_tracker_init();
+
+              ksu_ksud_init();
+
+              ksu_file_wrapper_init();
+
+              return 0;
+          }
+          """
+
+          EXIT_BODY = """void __exit kernelsu_exit(void)
+          {
+              ksu_supercalls_exit();
+
+              // Wait for any in-flight RCU readers (e.g. handler traversing allow_list)
+              synchronize_rcu();
+
+              // Now safe to release data structures
+              ksu_observer_exit();
+
+              ksu_throne_tracker_exit();
+
+              ksu_allowlist_exit();
+
+              ksu_selinux_hide_exit();
+              ksu_adb_root_exit();
+
+              ksu_sulog_exit();
+
+              ksu_feature_exit();
+
+              if (ksu_cred) {
+                  put_cred(ksu_cred);
+              }
+          }
+          """
+
+          def unique_kernel_dirs():
+              seen = set()
+              for base in (Path("common/drivers/kernelsu"), Path("drivers/kernelsu"), Path("KernelSU/kernel")):
+                  if not base.exists():
+                      continue
+                  resolved = base.resolve()
+                  if resolved in seen:
+                      continue
+                  seen.add(resolved)
+                  yield base
+
+          def replace_function(text, signature, replacement):
+              start = text.find(signature)
+              if start == -1:
+                  raise SystemExit(f"function not found: {signature}")
+
+              brace = text.find("{", start)
+              if brace == -1:
+                  raise SystemExit(f"function body not found: {signature}")
+
+              depth = 0
+              end = None
+              for index in range(brace, len(text)):
+                  char = text[index]
+                  if char == "{":
+                      depth += 1
+                  elif char == "}":
+                      depth -= 1
+                      if depth == 0:
+                          end = index + 1
+                          break
+
+              if end is None:
+                  raise SystemExit(f"function body is not balanced: {signature}")
+
+              return text[:start] + replacement + text[end:]
+
+          def ensure_line_after(text, anchor, line):
+              if line in text:
+                  return text
+              if anchor not in text:
+                  raise SystemExit(f"include anchor not found: {anchor.strip()}")
+              return text.replace(anchor, anchor + line, 1)
+
+          candidates = list(unique_kernel_dirs())
+          if not candidates:
+              raise SystemExit("未找到 KernelSU 源码目录，无法修复 android14-6.1.118 Official SUSFS")
+
+          changed = False
+          for ksu_dir in candidates:
+              init_c = ksu_dir / "core/init.c"
+              if not init_c.exists():
+                  continue
+
+              text = init_c.read_text()
+              original = text
+
+              text = ensure_line_after(text, "#include <linux/moduleparam.h>\n", "#include <linux/susfs.h>\n")
+              text = text.replace('#include "hook/syscall_hook_manager.h"\n', "")
+              text = text.replace('#include "hook/syscall_hook.h"\n', "")
+              text = ensure_line_after(text, '#include "feature/adb_root.h"\n', '#include "hook/setuid_hook.h"\n')
+              text = ensure_line_after(text, '#include "hook/setuid_hook.h"\n', '#include "feature/sucompat.h"\n')
+              text = text.replace("bool ksu_late_loaded;\n", "")
+              text = re.sub(
+                  r'\n#if defined\(__x86_64__\)\n#include <asm/cpufeature\.h>\n#include <linux/version\.h>\n#ifndef X86_FEATURE_INDIRECT_SAFE\n#error "FATAL: Your kernel is missing the indirect syscall bypass patches!"\n#endif\n#endif\n',
+                  "\n",
+                  text,
+                  count=1,
+              )
+
+              text = replace_function(text, "int __init kernelsu_init(void)", INIT_BODY)
+              text = replace_function(text, "void __exit kernelsu_exit(void)", EXIT_BODY)
+
+              if "ksu_late_loaded" in text or "ksu_syscall_hook_manager_" in text:
+                  raise SystemExit(f"{init_c} 仍残留 Official SUSFS 不兼容符号")
+              for required in ("susfs_init();", "ksu_sucompat_init();", "ksu_setuid_hook_init();"):
+                  if required not in text:
+                      raise SystemExit(f"{init_c} 缺少必要初始化: {required}")
+
+              if text != original:
+                  init_c.write_text(text)
+                  changed = True
+                  print(f"已修复 {init_c}")
+              else:
+                  print(f"{init_c} 已满足 android14-6.1.118 Official SUSFS 兼容要求")
+
+              include_ksu = ksu_dir / "include/ksu.h"
+              if include_ksu.exists():
+                  header = include_ksu.read_text()
+                  updated = header.replace("extern bool ksu_late_loaded;\n", "")
+                  if updated != header:
+                      include_ksu.write_text(updated)
+                      changed = True
+                      print(f"已移除 {include_ksu} 中的 ksu_late_loaded 声明")
+
+          if not changed:
+              print("android14-6.1.118 Official SUSFS 源码兼容修复无需修改。")
+          PY
+
       - name: 最终修复 SukiSU/ReSukiSU 源码兼容
         if: inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU'
         working-directory: ${{ env.KERNEL_ROOT }}
@@ -2363,6 +2549,171 @@ jobs:
             echo "当前 SUSFS 最新提交日期: ${SUSFS_LATEST_COMMIT_DATE}"
             set -ex
             cd "$KERNEL_ROOT"
+
+            if [ "${{ inputs.android_version }}" = "android14" ] \
+              && [ "${{ inputs.kernel_version }}" = "6.1" ] \
+              && [ "${{ inputs.sub_level }}" = "118" ] \
+              && [ "${{ inputs.ksu_variant }}" = "Official" ] \
+              && [ "${{ inputs.enable_susfs }}" = "true" ]; then
+              echo "编译前兜底修复 android14-6.1.118 Official SUSFS KernelSU init.c"
+              python3 - <<'PY'
+            from pathlib import Path
+            import re
+
+            INIT_BODY = """int __init kernelsu_init(void)
+            {
+            #ifdef CONFIG_KSU_DEBUG
+                pr_alert("*************************************************************");
+                pr_alert("**     NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE    **");
+                pr_alert("**                                                         **");
+                pr_alert("**         You are running KernelSU in DEBUG mode          **");
+                pr_alert("**                                                         **");
+                pr_alert("**     NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE    **");
+                pr_alert("*************************************************************");
+            #endif
+
+                if (allow_shell) {
+                    pr_alert("shell is allowed at init!");
+                }
+
+                ksu_cred = prepare_creds();
+                if (!ksu_cred) {
+                    pr_err("prepare cred failed!\\n");
+                }
+
+            #ifdef CONFIG_KSU_SUSFS
+                susfs_init();
+            #endif // #ifdef CONFIG_KSU_SUSFS
+
+                ksu_feature_init();
+                ksu_supercalls_init();
+                ksu_sucompat_init();
+                ksu_setuid_hook_init();
+                ksu_sulog_init();
+                ksu_adb_root_init();
+                ksu_selinux_hide_init();
+                ksu_allowlist_init();
+                ksu_throne_tracker_init();
+                ksu_ksud_init();
+                ksu_file_wrapper_init();
+
+                return 0;
+            }
+            """
+
+            EXIT_BODY = """void __exit kernelsu_exit(void)
+            {
+                ksu_supercalls_exit();
+
+                synchronize_rcu();
+
+                ksu_observer_exit();
+                ksu_throne_tracker_exit();
+                ksu_allowlist_exit();
+                ksu_selinux_hide_exit();
+                ksu_adb_root_exit();
+                ksu_sulog_exit();
+                ksu_feature_exit();
+
+                if (ksu_cred) {
+                    put_cred(ksu_cred);
+                }
+            }
+            """
+
+            def replace_function(text, signature, replacement):
+                start = text.find(signature)
+                if start == -1:
+                    raise SystemExit(f"function not found: {signature}")
+                brace = text.find("{", start)
+                if brace == -1:
+                    raise SystemExit(f"function body not found: {signature}")
+                depth = 0
+                for index in range(brace, len(text)):
+                    if text[index] == "{":
+                        depth += 1
+                    elif text[index] == "}":
+                        depth -= 1
+                        if depth == 0:
+                            return text[:start] + replacement + text[index + 1:]
+                raise SystemExit(f"function body is not balanced: {signature}")
+
+            def ensure_line_after(text, anchor, line):
+                if line in text:
+                    return text
+                if anchor not in text:
+                    raise SystemExit(f"anchor not found: {anchor.strip()}")
+                return text.replace(anchor, anchor + line, 1)
+
+            seen = set()
+            candidates = []
+            for base in (Path("common/drivers/kernelsu"), Path("drivers/kernelsu"), Path("KernelSU/kernel")):
+                if not base.exists():
+                    continue
+                resolved = base.resolve()
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                candidates.append(base)
+
+            if not candidates:
+                raise SystemExit("no KernelSU source directory found before build")
+
+            fixed = False
+            for ksu_dir in candidates:
+                init_c = ksu_dir / "core/init.c"
+                if not init_c.exists():
+                    continue
+                text = init_c.read_text()
+                original = text
+                text = ensure_line_after(text, "#include <linux/moduleparam.h>\n", "#include <linux/susfs.h>\n")
+                text = text.replace('#include "hook/syscall_hook_manager.h"\n', "")
+                text = text.replace('#include "hook/syscall_hook.h"\n', "")
+                text = ensure_line_after(text, '#include "feature/adb_root.h"\n', '#include "hook/setuid_hook.h"\n')
+                text = ensure_line_after(text, '#include "hook/setuid_hook.h"\n', '#include "feature/sucompat.h"\n')
+                text = text.replace("bool ksu_late_loaded;\n", "")
+                text = re.sub(
+                    r'\n#if defined\(__x86_64__\)\n#include <asm/cpufeature\.h>\n#include <linux/version\.h>\n#ifndef X86_FEATURE_INDIRECT_SAFE\n#error "FATAL: Your kernel is missing the indirect syscall bypass patches!"\n#endif\n#endif\n',
+                    "\n",
+                    text,
+                    count=1,
+                )
+                text = replace_function(text, "int __init kernelsu_init(void)", INIT_BODY)
+                text = replace_function(text, "void __exit kernelsu_exit(void)", EXIT_BODY)
+                if "ksu_late_loaded" in text or "ksu_syscall_hook_manager_" in text:
+                    raise SystemExit(f"{init_c} still contains incompatible Official SUSFS symbols")
+                if text != original:
+                    init_c.write_text(text)
+                    fixed = True
+                    print(f"fixed {init_c}")
+
+                include_ksu = ksu_dir / "include/ksu.h"
+                if include_ksu.exists():
+                    header = include_ksu.read_text()
+                    updated = header.replace("extern bool ksu_late_loaded;\n", "")
+                    if updated != header:
+                        include_ksu.write_text(updated)
+                        fixed = True
+                        print(f"fixed {include_ksu}")
+
+            if not fixed:
+                print("Official SUSFS KernelSU init.c already fixed")
+            PY
+
+              for ksu_check_file in \
+                common/drivers/kernelsu/core/init.c \
+                common/drivers/kernelsu/include/ksu.h \
+                drivers/kernelsu/core/init.c \
+                drivers/kernelsu/include/ksu.h \
+                KernelSU/kernel/core/init.c \
+                KernelSU/kernel/include/ksu.h; do
+                if [ -f "$ksu_check_file" ] \
+                  && grep --line-number -E 'ksu_late_loaded|ksu_syscall_hook_manager_' "$ksu_check_file"; then
+                  echo "::error::android14-6.1.118 Official SUSFS 仍残留不兼容符号: $ksu_check_file"
+                  exit 1
+                fi
+              done
+            fi
 
             sed -i 's/BUILD_SYSTEM_DLKM=1/BUILD_SYSTEM_DLKM=0/' ./common/build.config.gki.aarch64
             sed -i '/MODULES_ORDER=android\/gki_aarch64_modules/d' ./common/build.config.gki.aarch64
