@@ -990,7 +990,7 @@ jobs:
             fi
           fi
 
-          if [ "${{ inputs.ksu_variant }}" != "None" ] && { [ "${{ inputs.ksu_variant }}" == "Official" ] || [ "${{ inputs.ksu_variant }}" == "Next" ] || [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ]; }; then
+          if [ "${{ inputs.ksu_variant }}" == "Official" ] || [ "${{ inputs.ksu_variant }}" == "Next" ] || [ "${{ inputs.ksu_variant }}" == "SukiSU" ] || [ "${{ inputs.ksu_variant }}" == "ReSukiSU" ]; then
             CURRENT_SUB="${{ inputs.sub_level }}"
             if [[ ! "$CURRENT_SUB" =~ ^[0-9]+$ ]]; then
               CURRENT_SUB=99999
@@ -1106,10 +1106,6 @@ jobs:
 
             # Android 12 - 5.10 修复
             if [[ "${{ inputs.android_version }}" == "android12" && "${{ inputs.kernel_version }}" == "5.10" ]]; then
-              # 修复 2024-11 分支: mmap.c 调用了 vm_flags_clear()，但同分支 mm.h 未提供 helper
-              if [[ "${{ inputs.os_patch_level }}" == "2024-11" ]] && grep -qF 'vm_flags_clear(new_vma, VM_PAD_MASK);' ./mm/mmap.c; then
-                sed -i 's/vm_flags_clear(new_vma, VM_PAD_MASK);/new_vma->vm_flags \&= ~VM_PAD_MASK;/' ./mm/mmap.c
-              fi
               if [[ "$CURRENT_SUB" -le 209 ]]; then
                 fix_task_mmu_show_pad
               fi
@@ -1128,10 +1124,6 @@ jobs:
 
             # Android 13 - 5.15 修复
             if [[ "${{ inputs.android_version }}" == "android13" && "${{ inputs.kernel_version }}" == "5.15" ]]; then
-              # 修复 2024-11 分支: mmap.c 调用了 vm_flags_clear()，但同分支 mm.h 未提供 helper
-              if [[ "${{ inputs.os_patch_level }}" == "2024-11" ]] && grep -qF 'vm_flags_clear(new_vma, VM_PAD_MASK);' ./mm/mmap.c; then
-                sed -i 's/vm_flags_clear(new_vma, VM_PAD_MASK);/new_vma->vm_flags \&= ~VM_PAD_MASK;/' ./mm/mmap.c
-              fi
               if [[ "$CURRENT_SUB" -le 41 ]]; then
                 cp $KERNEL_PATCHES/wild/susfs_fix_patches/v${SUSFS_VERSION}/a13-5.15/namespace.c.patch ./
                 patch -p1 < namespace.c.patch || true
@@ -1242,6 +1234,14 @@ jobs:
                 echo "已修复 exec.c 缺少 susfs_def.h 问题"
               fi
             fi
+          fi
+
+      - name: 应用 Kernel 特定补丁
+        working-directory: ${{ env.KERNEL_ROOT }}/common
+        run: |
+          # 修复 2024-11 分支: mmap.c 调用了 vm_flags_clear()，但同分支 mm.h 未提供 helper
+          if [[ "${{ inputs.os_patch_level }}" == "2024-11" ]] && grep -qF 'vm_flags_clear(new_vma, VM_PAD_MASK);' ./mm/mmap.c; then
+            sed -i 's/vm_flags_clear(new_vma, VM_PAD_MASK);/new_vma->vm_flags \&= ~VM_PAD_MASK;/' ./mm/mmap.c
           fi
 
       - name: 备份基准 defconfig
@@ -2527,15 +2527,6 @@ jobs:
           path: |
             *AnyKernel3.zip
             *.img
-          compression-level: 9
-
-      - name: 上传 NTsync 权限修复和 IPSet 启用模块
-        if: ${{ inputs.use_ntsync || inputs.use_networking }}
-        uses: actions/upload-artifact@v6
-        with:
-          name: ntsync权限修复&ipset启用
-          path: modules/ntsync-ipset-helper/ntsync权限修复&ipset启用.zip
-          if-no-files-found: error
           compression-level: 9
 
       - name: 上传补丁冲突文件
