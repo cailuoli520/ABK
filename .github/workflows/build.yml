@@ -2114,8 +2114,8 @@ jobs:
             echo "没有配置 $CUSTOM_EXTERNAL_MODULE_STAGE 阶段的自定义外部模块。"
           fi
 
-      - name: 修复 android14-6.1.118 Official SUSFS 源码兼容
-        if: inputs.android_version == 'android14' && inputs.kernel_version == '6.1' && inputs.sub_level == '118' && inputs.ksu_variant == 'Official' && inputs.enable_susfs
+      - name: 修复 Official SUSFS 源码兼容
+        if: inputs.ksu_variant == 'Official' && inputs.enable_susfs
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           set -euo pipefail
@@ -2259,7 +2259,7 @@ jobs:
 
           ksu_dir = Path("common/drivers/kernelsu")
           if not ksu_dir.exists():
-              raise SystemExit("未找到 common/drivers/kernelsu，无法修复 android14-6.1.118 Official SUSFS")
+              raise SystemExit("未找到 common/drivers/kernelsu，无法修复 Official SUSFS")
 
           changed = False
           init_c = ksu_dir / "core/init.c"
@@ -2296,7 +2296,7 @@ jobs:
               changed = True
               print(f"已修复 {init_c}")
           else:
-              print(f"{init_c} 已满足 android14-6.1.118 Official SUSFS 兼容要求")
+              print(f"{init_c} 已满足 Official SUSFS 兼容要求")
 
           include_ksu = ksu_dir / "include/ksu.h"
           if include_ksu.exists():
@@ -2310,7 +2310,7 @@ jobs:
           changed = ensure_official_susfs_objects(ksu_dir) or changed
 
           if not changed:
-              print("android14-6.1.118 Official SUSFS 源码兼容修复无需修改。")
+              print("Official SUSFS 源码兼容修复无需修改。")
           PY
 
       - name: 最终修复 SukiSU/ReSukiSU 源码兼容
@@ -2560,12 +2560,9 @@ jobs:
             set -ex
             cd "$KERNEL_ROOT"
 
-            if [ "${{ inputs.android_version }}" = "android14" ] \
-              && [ "${{ inputs.kernel_version }}" = "6.1" ] \
-              && [ "${{ inputs.sub_level }}" = "118" ] \
-              && [ "${{ inputs.ksu_variant }}" = "Official" ] \
+            if [ "${{ inputs.ksu_variant }}" = "Official" ] \
               && [ "${{ inputs.enable_susfs }}" = "true" ]; then
-              echo "编译前兜底修复 android14-6.1.118 Official SUSFS KernelSU init.c"
+              echo "编译前兜底修复 Official SUSFS KernelSU init.c"
               python3 - <<'PY'
             from pathlib import Path
             import re
@@ -2727,14 +2724,14 @@ jobs:
                 common/drivers/kernelsu/include/ksu.h; do
                 if [ -f "$ksu_check_file" ] \
                   && grep --line-number -E 'ksu_late_loaded|ksu_syscall_hook_manager_' "$ksu_check_file"; then
-                  echo "::error::android14-6.1.118 Official SUSFS 仍残留不兼容符号: $ksu_check_file"
+                  echo "::error::Official SUSFS 仍残留不兼容符号: $ksu_check_file"
                   exit 1
                 fi
               done
               if [ -f common/drivers/kernelsu/Kbuild ] \
                 && { ! grep -qF 'hook/lsm_hook.o' common/drivers/kernelsu/Kbuild \
                   || ! grep -qF 'hook/arm64/patch_memory.o' common/drivers/kernelsu/Kbuild; }; then
-                echo "::error::android14-6.1.118 Official SUSFS 缺少 common/drivers/kernelsu Kbuild hook helper 对象"
+                echo "::error::Official SUSFS 缺少 common/drivers/kernelsu Kbuild hook helper 对象"
                 exit 1
               fi
             fi
