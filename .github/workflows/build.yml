@@ -2245,6 +2245,27 @@ jobs:
                   raise SystemExit(f"include anchor not found: {anchor.strip()}")
               return text.replace(anchor, anchor + line, 1)
 
+          def ensure_patch_memory_object(ksu_dir):
+              kbuild = ksu_dir / "Kbuild"
+              if not kbuild.exists():
+                  return False
+
+              text = kbuild.read_text()
+              if "hook/arm64/patch_memory.o" in text:
+                  return False
+
+              block = "\n".join([
+                  "",
+                  "# ABK: selinux_hide.c still needs ksu_patch_text on arm64.",
+                  "ifeq ($(CONFIG_ARM64),y)",
+                  "kernelsu-objs += hook/arm64/patch_memory.o",
+                  "endif",
+                  "",
+              ])
+              kbuild.write_text(text.rstrip() + "\n" + block)
+              print(f"已补回 {kbuild} 的 arm64 patch_memory 对象")
+              return True
+
           candidates = list(unique_kernel_dirs())
           if not candidates:
               raise SystemExit("未找到 KernelSU 源码目录，无法修复 android14-6.1.118 Official SUSFS")
@@ -2295,6 +2316,8 @@ jobs:
                       include_ksu.write_text(updated)
                       changed = True
                       print(f"已移除 {include_ksu} 中的 ksu_late_loaded 声明")
+
+              changed = ensure_patch_memory_object(ksu_dir) or changed
 
           if not changed:
               print("android14-6.1.118 Official SUSFS 源码兼容修复无需修改。")
@@ -2642,6 +2665,25 @@ jobs:
                     raise SystemExit(f"anchor not found: {anchor.strip()}")
                 return text.replace(anchor, anchor + line, 1)
 
+            def ensure_patch_memory_object(ksu_dir):
+                kbuild = ksu_dir / "Kbuild"
+                if not kbuild.exists():
+                    return False
+                text = kbuild.read_text()
+                if "hook/arm64/patch_memory.o" in text:
+                    return False
+                block = "\n".join([
+                    "",
+                    "# ABK: selinux_hide.c still needs ksu_patch_text on arm64.",
+                    "ifeq ($(CONFIG_ARM64),y)",
+                    "kernelsu-objs += hook/arm64/patch_memory.o",
+                    "endif",
+                    "",
+                ])
+                kbuild.write_text(text.rstrip() + "\n" + block)
+                print(f"fixed {kbuild}: restored arm64 patch_memory object")
+                return True
+
             seen = set()
             candidates = []
             for base in (Path("common/drivers/kernelsu"), Path("drivers/kernelsu"), Path("KernelSU/kernel")):
@@ -2693,6 +2735,8 @@ jobs:
                         fixed = True
                         print(f"fixed {include_ksu}")
 
+                fixed = ensure_patch_memory_object(ksu_dir) or fixed
+
             if not fixed:
                 print("Official SUSFS KernelSU init.c already fixed")
             PY
@@ -2710,6 +2754,11 @@ jobs:
                   exit 1
                 fi
               done
+              if [ -f common/drivers/kernelsu/Kbuild ] \
+                && ! grep -qF 'hook/arm64/patch_memory.o' common/drivers/kernelsu/Kbuild; then
+                echo "::error::android14-6.1.118 Official SUSFS 缺少 hook/arm64/patch_memory.o，ksu_patch_text 会链接失败"
+                exit 1
+              fi
             fi
 
             sed -i 's/BUILD_SYSTEM_DLKM=1/BUILD_SYSTEM_DLKM=0/' ./common/build.config.gki.aarch64
