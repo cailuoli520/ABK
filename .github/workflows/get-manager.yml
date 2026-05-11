@@ -113,98 +113,63 @@ jobs:
         id: add_KSU
         continue-on-error: true
         run: |
-          if [ "${{ inputs.kernelsu_variant }}" == "Next" ]; then
-            echo "KernelSU Next..."
-            REPO="KernelSU-Next/KernelSU-Next"
-            KSUM="manager"
-            BRANCH="dev"
-          elif [ "${{ inputs.kernelsu_variant }}" == "SukiSU" ]; then
-            echo "SukiSU..."
-            REPO="SukiSU-Ultra/SukiSU-Ultra"
-            KSUM="manager"
-          elif [ "${{ inputs.kernelsu_variant }}" == "ReSukiSU" ]; then
-            echo "ReSukiSU..."
-            REPO="ReSukiSU/ReSukiSU"
-            KSUM="manager"
-          elif [ "${{ inputs.kernelsu_variant }}" == "Official" ]; then
-            echo "KSU..."
-            REPO="tiann/KernelSU"
-            KSUM="manager"
-          fi
+          set -euo pipefail
 
-          FILENAME=$([[ "${{ inputs.kernelsu_variant }}" == "Next" ]] && echo "build-manager-ci.yml" || echo "build-manager.yml")
-          
-          
-          # 初始化
-          NUMBER=0
-          DOWNLOAD_LIST=""
+          download_latest_release_apk() {
+            local repo="$1"
+            local variant="$2"
+            local release_json apk_name apk_url
 
-          echo "开始查找包含 'manager' 产物的构建..."
-          while true; do
-            echo "--------------------------------------------------"
-            echo "正在检查第 ${NUMBER} 个历史构建 (0代表最新)..."
+            echo "从 $repo releases/latest 获取 $variant Manager APK..."
+            release_json="$(curl -fsSL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${repo}/releases/latest")"
 
-            if [ "$NUMBER" -ge 9 ]; then
-              echo "查找九次仍然失败，跳出循环。"
-              break
+            apk_name="$(echo "$release_json" | jq -r '
+              (.assets | map(select(((.name | ascii_downcase) | endswith(".apk")) and ((.name | ascii_downcase) | contains("release")))) | .[0].name // empty) as $release_apk |
+              if $release_apk != "" then $release_apk
+              else (.assets | map(select((.name | ascii_downcase) | endswith(".apk"))) | .[0].name // empty)
+              end
+            ')"
+            apk_url="$(echo "$release_json" | jq -r --arg name "$apk_name" '.assets[] | select(.name == $name) | .browser_download_url')"
+
+            if [ -z "$apk_name" ] || [ -z "$apk_url" ]; then
+              echo "::error::${repo} latest release 中未找到 APK 资源"
+              echo "$release_json" | jq -r '.assets[]?.name'
+              exit 1
             fi
 
-            # 1. 获取指定顺序的成功构建的ID
+            mkdir -p "manager-artifacts/${variant}"
+            echo "下载 $apk_name"
+            curl -fL -o "manager-artifacts/${variant}/${apk_name}" "$apk_url"
+          }
 
-            # 对于 Next 变体，添加 branch 参数过滤
-            if [ "${{ inputs.kernelsu_variant }}" == "Next" ]; then
-              BUILD_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                "https://api.github.com/repos/$REPO/actions/workflows/$FILENAME/runs?branch=$BRANCH&status=success&per_page=1" |
-                jq -r '.workflow_runs[0].id')
-            else
-              BUILD_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                "https://api.github.com/repos/$REPO/actions/workflows/$FILENAME/runs?status=success" |
-                jq -r '.workflow_runs['"$NUMBER"'].id')
-            fi
+          case "${{ inputs.kernelsu_variant }}" in
+            "Official")
+              download_latest_release_apk "tiann/KernelSU" "Official"
+              ;;
+            "SukiSU")
+              download_latest_release_apk "SukiSU-Ultra/SukiSU-Ultra" "SukiSU"
+              ;;
+            "ReSukiSU")
+              echo "直接下载 ReSukiSU Manager-release.zip，不做匹配..."
+              mkdir -p "manager-artifacts/ReSukiSU"
+              curl -fL -o "ReSukiSU-Manager-release.zip" \
+                "https://nightly.link/ReSukiSU/ReSukiSU/workflows/build-manager/main/Manager-release.zip"
+              unzip -o "ReSukiSU-Manager-release.zip" -d "manager-artifacts/ReSukiSU"
+              rm -f "ReSukiSU-Manager-release.zip"
+              ;;
+            *)
+              echo "::error::未知 KernelSU 变体: ${{ inputs.kernelsu_variant }}"
+              exit 1
+              ;;
+          esac
 
-            echo "找到构建 ID: $BUILD_ID"
-
-            ARTIFACTS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              "https://api.github.com/repos/$REPO/actions/runs/$BUILD_ID/artifacts")
-
-            # 对于 Next 变体使用精确匹配，其他变体使用模糊匹配
-            if [ "${{ inputs.kernelsu_variant }}" == "Next" ]; then
-              result=$(echo "$ARTIFACTS" | jq -r ".artifacts[] | select(.name == \"$KSUM\") | .name")
-            else
-              result=$(echo "$ARTIFACTS" | jq -r --arg needle "$KSUM" '.artifacts[] | select((.name | ascii_downcase) | contains($needle)) | .name')
-            fi
-
-            if [ -z "$result" ]; then
-              echo "没有找到包含 '$KSUM' 的项"
-              NUMBER=$((NUMBER + 1))
-            else
-              echo "$result"
-              # 对于 Next 变体使用精确匹配，其他变体使用模糊匹配
-              if [ "${{ inputs.kernelsu_variant }}" == "Next" ]; then
-                DOWNLOAD_LIST=$(echo "$ARTIFACTS" | jq -r ".artifacts[] | select(.name == \"$KSUM\") | \"\(.name)\t\(.archive_download_url)\"")
-              else
-                DOWNLOAD_LIST=$(echo "$ARTIFACTS" | jq -r --arg needle "$KSUM" '.artifacts[] | select((.name | ascii_downcase) | contains($needle)) | "\(.name)\t\(.archive_download_url)"')
-              fi
-              break
-            fi
-
-          done
-         
-          if [ -z "$DOWNLOAD_LIST" ]; then
-            echo "未获取到可用的 Manager artifact 下载地址列表。"
+          if ! find manager-artifacts -type f -name '*.apk' -print -quit | grep -q .; then
+            echo "::error::未下载到任何 Manager APK"
+            find manager-artifacts -maxdepth 3 -type f -print || true
             exit 1
           fi
-          
-          # 下载并解压所有 Manager 产物
-          echo "$DOWNLOAD_LIST" | while IFS=$'\t' read -r NAME URL; do
-            SAFE_NAME=$(echo "$NAME" | tr '/ ' '__')
-            ZIP_NAME="${{ inputs.kernelsu_variant }}-${SAFE_NAME}(${{ env.KSU_VERSION }}).zip"
-            echo "下载 $NAME -> $ZIP_NAME"
-            curl -L -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -o "$ZIP_NAME" "$URL"
-            mkdir -p "manager-artifacts/$SAFE_NAME"
-            unzip -o "$ZIP_NAME" -d "manager-artifacts/$SAFE_NAME"
-            rm -rf "$ZIP_NAME"
-          done
 
       - name: 添加 SUSFS 模块
         id: add_SUSFS
