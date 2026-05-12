@@ -775,8 +775,8 @@ jobs:
             echo "KSU_LATEST_COMMIT_DATE=未知" >> $GITHUB_ENV
           fi
 
-      - name: 修复 SukiSU/ReSukiSU SUSFS 源码兼容
-        if: (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU') && inputs.enable_susfs && inputs.ksu_variant != 'None'
+      - name: 修复 ReSukiSU SUSFS 源码兼容
+        if: inputs.ksu_variant == 'ReSukiSU' && inputs.enable_susfs && inputs.ksu_variant != 'None'
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           set -euo pipefail
