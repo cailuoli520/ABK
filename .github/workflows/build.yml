@@ -1205,7 +1205,9 @@ jobs:
 
             # Android 15 - 6.6 修复
             if [[ "${{ inputs.android_version }}" == "android15" && "${{ inputs.kernel_version }}" == "6.6" ]]; then
-              fix_selinux_hooks_extern_static
+              if [[ "${{ inputs.ksu_variant }}" == "Official" ]]; then
+                fix_selinux_hooks_extern_static
+              fi
               if [[ "$CURRENT_SUB" -ge 98 ]]; then
                 cp $KERNEL_PATCHES/wild/susfs_fix_patches/v${SUSFS_VERSION}/a15-6.6/base.c.patch ./
                 patch -p1 < base.c.patch || true
