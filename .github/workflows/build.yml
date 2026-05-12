@@ -709,7 +709,7 @@ jobs:
           elif [ "$variant_input" = "SukiSU" ]; then
             BRANCH="-s $SUKISU_COMMIT"
           elif [ "$variant_input" = "ReSukiSU" ]; then
-            BRANCH="-s $RESUKISU_COMMIT"
+            BRANCH="$RESUKISU_COMMIT"
           else
             case "$branch_input" in
               "Stable(标准)")
@@ -797,17 +797,27 @@ jobs:
 
           variant = "${{ inputs.ksu_variant }}"
           candidates = []
+          seen = set()
           roots = [Path("KernelSU/kernel")]
           if variant == "ReSukiSU":
               roots.extend([Path("common/drivers/kernelsu"), Path("drivers/kernelsu")])
 
           for base in roots:
-              if (base / "ksu.c").exists() and base not in candidates:
+              resolved = base.resolve()
+              if resolved in seen:
+                  continue
+              if variant == "ReSukiSU":
+                  markers = ["Kbuild", "core/init.c", "feature/sucompat.c", "sulog/event.c"]
+                  if any((base / marker).exists() for marker in markers):
+                      candidates.append(base)
+                      seen.add(resolved)
+              elif (base / "ksu.c").exists():
                   candidates.append(base)
+                  seen.add(resolved)
 
           if not candidates:
               if variant == "ReSukiSU":
-                  raise SystemExit("未找到实际 ReSukiSU ksu.c，无法应用 SUSFS 兼容修复")
+                  raise SystemExit("未找到实际 ReSukiSU 源码目录，无法应用 SUSFS 兼容修复")
               raise SystemExit("未找到 KernelSU/kernel/ksu.c，无法应用 SukiSU/ReSukiSU SUSFS 兼容修复")
 
           for kernel_dir in candidates:
@@ -840,14 +850,18 @@ jobs:
               if not missing_true and not missing_false:
                   print("SukiSU/ReSukiSU SUSFS static key definitions already exist.")
               else:
-                  text = ksu_c.read_text()
+                  if not ksu_c.exists():
+                      print(f"  {kernel_dir} 未提供 ksu.c，跳过 static key 注入")
+                      text = ""
+                  else:
+                      text = ksu_c.read_text()
                   anchor = '#include "infra/kernel_compat.h"\n'
-                  if anchor not in text:
+                  if ksu_c.exists() and anchor not in text:
                       if variant == "ReSukiSU":
                           print(f"  {ksu_c} 未找到 kernel_compat.h include anchor，跳过 static key 注入")
                           continue
                       raise SystemExit("kernel_compat.h include anchor not found in KernelSU/kernel/ksu.c")
-                  else:
+                  elif ksu_c.exists():
                       block = [
                           "",
                           "/* ABK: SukiSU/ReSukiSU builtin SUSFS expects these inline hook static keys. */",
