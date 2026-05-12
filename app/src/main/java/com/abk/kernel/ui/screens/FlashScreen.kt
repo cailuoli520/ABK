@@ -269,6 +269,12 @@ fun FlashScreen(
         Toast.makeText(context, "已复制文件路径", Toast.LENGTH_SHORT).show()
     }
 
+    fun appendTerminalOutput(line: String) {
+        scope.launch(Dispatchers.Main.immediate) {
+            terminalLog = terminalLog + line
+        }
+    }
+
     fun installManager(item: DownloadedArtifact) {
         if (!rootGranted) {
             showFailure(
@@ -295,7 +301,7 @@ fun FlashScreen(
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    RootUtils.installApk(item.filePath)
+                    RootUtils.installApk(context, item.filePath, ::appendTerminalOutput)
                 }.getOrElse { error ->
                     RootUtils.ShellResult(false, listOf(error.message ?: error::class.java.simpleName))
                 }
@@ -339,10 +345,10 @@ fun FlashScreen(
             val result = withContext(Dispatchers.IO) {
                 runCatching {
                     when (item.type) {
-                        ArtifactType.KERNEL_IMG -> RootUtils.flashImage(item.filePath)
-                        ArtifactType.ANYKERNEL3 -> RootUtils.flashAnyKernel3(context, item.filePath)
-                        ArtifactType.SUSFS_MODULE -> RootUtils.installModule(item.filePath)
-                        ArtifactType.KSU_MANAGER -> RootUtils.installApk(item.filePath)
+                        ArtifactType.KERNEL_IMG -> RootUtils.flashImage(item.filePath, onOutput = ::appendTerminalOutput)
+                        ArtifactType.ANYKERNEL3 -> RootUtils.flashAnyKernel3(context, item.filePath, ::appendTerminalOutput)
+                        ArtifactType.SUSFS_MODULE -> RootUtils.installModule(item.filePath, ::appendTerminalOutput)
+                        ArtifactType.KSU_MANAGER -> RootUtils.installApk(context, item.filePath, ::appendTerminalOutput)
                         else -> RootUtils.ShellResult(false, listOf("不支持此文件类型的自动刷写"))
                     }
                 }.getOrElse { error ->
@@ -2170,6 +2176,9 @@ private fun FlashTerminalDialog(
     }
     val terminalTextColor = colorScheme.onSurface
     val terminalCommandColor = colorScheme.primary
+    LaunchedEffect(logLines.size) {
+        terminalScroll.animateScrollTo(terminalScroll.maxValue)
+    }
     AlertDialog(
         onDismissRequest = { if (!running) onClose() },
         icon = {
