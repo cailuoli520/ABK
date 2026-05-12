@@ -702,7 +702,7 @@ jobs:
           variant_input="${{ inputs.ksu_variant }}"
           KSU_OFFICIAL_COMMIT="3f388ef137c78e1ca0c92c0ada3b8717cdcc4302"
           SUKISU_COMMIT="6a316b122eb3ee6a03203d6e7241a8437dd17e1c"
-          RESUKISU_COMMIT="b09af429463dedb8a7639268945ad8172892d25c"
+          RESUKISU_COMMIT="0d096be05c40338205bc183f5ec072233e15f9c0"
 
           if [ "$variant_input" = "Official" ]; then
             BRANCH="-s $KSU_OFFICIAL_COMMIT"
