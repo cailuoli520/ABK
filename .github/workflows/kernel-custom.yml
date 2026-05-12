@@ -52,7 +52,6 @@ on:
         required: true
         type: choice
         options:
-          - None
           - Official
           #- Next
           - SukiSU
