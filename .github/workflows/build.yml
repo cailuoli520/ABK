@@ -881,7 +881,15 @@ jobs:
                   selinux_c = kernel_dir / "selinux/selinux.c"
                   if selinux_c.exists():
                       text = selinux_c.read_text()
-                      if "ksu_selinux_hide_running" not in tree_text and "struct selinux_state fake_state" not in tree_text:
+                      compat_symbols = [
+                          "ksu_selinux_hide_running",
+                          "struct selinux_state fake_state",
+                          "struct selinux_policy *backup_sepolicy",
+                          "security_context_to_sid_with_policy",
+                          "security_sid_to_context_with_policy",
+                          "security_compute_av_user_with_policy",
+                      ]
+                      if not all(symbol in tree_text for symbol in compat_symbols):
                           anchor = "u32 ksu_file_sid __read_mostly = 0;\n"
                           block = "\n".join([
                               "",
@@ -889,6 +897,23 @@ jobs:
                               "#ifdef CONFIG_KSU_SUSFS",
                               "struct selinux_state fake_state;",
                               "bool ksu_selinux_hide_running __read_mostly = false;",
+                              "struct selinux_policy *backup_sepolicy;",
+                              "#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)",
+                              "int security_context_to_sid_with_policy(struct selinux_policy *policy, const char *scontext, u32 scontext_len,",
+                              "                                        u32 *sid, u32 def_sid, unsigned int gfp_flags)",
+                              "{",
+                              "    return -22;",
+                              "}",
+                              "int security_sid_to_context_with_policy(struct selinux_policy *policy, u32 sid, char **scontext,",
+                              "                                        u32 *scontext_len)",
+                              "{",
+                              "    return -22;",
+                              "}",
+                              "void security_compute_av_user_with_policy(struct selinux_policy *policy, u32 ssid, u32 tsid, u16 tclass,",
+                              "                                          struct av_decision *avd)",
+                              "{",
+                              "}",
+                              "#endif",
                               "#endif",
                               "",
                           ])
@@ -1802,11 +1827,9 @@ jobs:
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
           BBG_MAKEFILE="Baseband-guard/Makefile"
           if { { [ "${{ inputs.android_version }}" = "android12" ] && \
-                 [ "${{ inputs.kernel_version }}" = "5.10" ] && \
-                 [ "${{ inputs.sub_level }}" = "43" ]; } || \
+                 [ "${{ inputs.kernel_version }}" = "5.10" ]; } || \
                { [ "${{ inputs.android_version }}" = "android13" ] && \
-                 [ "${{ inputs.kernel_version }}" = "5.15" ] && \
-                 [ "${{ inputs.sub_level }}" = "41" ]; }; } && \
+                 [ "${{ inputs.kernel_version }}" = "5.15" ]; }; } && \
              [ -f "$BBG_MAKEFILE" ]; then
             echo "应用 BBG legacy host header 生成兼容修复: ${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}"
             python3 - "$BBG_MAKEFILE" "common/security/selinux" <<'PY'
