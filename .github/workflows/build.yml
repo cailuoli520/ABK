@@ -700,24 +700,27 @@ jobs:
         run: |
           branch_input="${{ inputs.ksu_branch }}"
           variant_input="${{ inputs.ksu_variant }}"
+          KSU_OFFICIAL_COMMIT="3f388ef137c78e1ca0c92c0ada3b8717cdcc4302"
+          SUKISU_COMMIT="6a316b122eb3ee6a03203d6e7241a8437dd17e1c"
+          RESUKISU_COMMIT="b09af429463dedb8a7639268945ad8172892d25c"
 
-          if [ "$variant_input" = "ReSukiSU" ]; then
-            BRANCH="-s main"
+          if [ "$variant_input" = "Official" ]; then
+            BRANCH="-s $KSU_OFFICIAL_COMMIT"
+          elif [ "$variant_input" = "SukiSU" ]; then
+            BRANCH="-s $SUKISU_COMMIT"
+          elif [ "$variant_input" = "ReSukiSU" ]; then
+            BRANCH="-s $RESUKISU_COMMIT"
           else
             case "$branch_input" in
               "Stable(标准)")
                 case "$variant_input" in
                   "Next") ;;
-                  "SukiSU") BRANCH="-s builtin" ;;
-                  "Official") BRANCH="-s main" ;;
                   *) BRANCH="-" ;;
                 esac
                 ;;
               "Dev(开发)")
                 case "$variant_input" in
-                  "Official") BRANCH="-s main" ;;
                   "Next") ;;
-                  "SukiSU") BRANCH="-s builtin" ;;
                   *) echo "未知变体: $variant_input" >&2; exit 1 ;;
                 esac
                 ;;
@@ -727,23 +730,6 @@ jobs:
                 ;;
             esac
 
-            # SukiSU 不启用 SUSFS 时强制使用 main 分支
-            if [ "$variant_input" = "SukiSU" ] && [ "${{ inputs.enable_susfs }}" = "false" ]; then
-              BRANCH="-s main"
-            fi
-          fi
-
-          # 检查自定义提交 (仅对 SukiSU 生效)
-          CONFIG_FILE="config/config"
-          if [ -f "$CONFIG_FILE" ]; then
-            CUSTOM_ENABLED=$(grep "^custom=" "$CONFIG_FILE" | cut -d'=' -f2)
-            if [ "$CUSTOM_ENABLED" == "true" ] && [ "$variant_input" == "SukiSU" ]; then
-              SUKISU_COMMIT=$(grep "^sukisu=" "$CONFIG_FILE" | cut -d'=' -f2)
-              if [ -n "$SUKISU_COMMIT" ]; then
-                BRANCH="-s $SUKISU_COMMIT"
-                echo "SukiSU 使用自定义提交: $SUKISU_COMMIT"
-              fi
-            fi
           fi
 
           echo "BRANCH=$BRANCH" >> $GITHUB_ENV
