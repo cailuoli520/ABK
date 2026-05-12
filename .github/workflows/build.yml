@@ -877,6 +877,29 @@ jobs:
                       ksu_c.write_text(text.replace(anchor, anchor + "\n".join(block), 1))
                       print("Injected missing SukiSU/ReSukiSU SUSFS static key definitions:", ", ".join(missing_true + missing_false))
 
+              if variant == "ReSukiSU":
+                  selinux_c = kernel_dir / "selinux/selinux.c"
+                  if selinux_c.exists():
+                      text = selinux_c.read_text()
+                      if "ksu_selinux_hide_running" not in tree_text and "struct selinux_state fake_state" not in tree_text:
+                          anchor = "u32 ksu_file_sid __read_mostly = 0;\n"
+                          block = "\n".join([
+                              "",
+                              "/* ABK: simonpunk SUSFS SELinux hooks reference KernelSU selinux_hide globals. */",
+                              "#ifdef CONFIG_KSU_SUSFS",
+                              "struct selinux_state fake_state;",
+                              "bool ksu_selinux_hide_running __read_mostly = false;",
+                              "#endif",
+                              "",
+                          ])
+                          if anchor in text:
+                              selinux_c.write_text(text.replace(anchor, anchor + block, 1))
+                          elif '#include "selinux_defs.h"\n' in text:
+                              selinux_c.write_text(text.replace('#include "selinux_defs.h"\n', '#include "selinux_defs.h"\n' + block, 1))
+                          else:
+                              raise SystemExit(f"{selinux_c} missing SELinux compatibility insertion anchor")
+                          print("Injected ReSukiSU SUSFS SELinux hide compatibility globals")
+
               sucompat_c = kernel_dir / "feature/sucompat.c"
               if sucompat_c.exists():
                   text = sucompat_c.read_text()
