@@ -764,7 +764,7 @@ jobs:
               ;;
             "ReSukiSU")
               echo "添加 ReSukiSU..."
-              curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash $BRANCH
+              curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s "$BRANCH"
               ;;
           esac
 
