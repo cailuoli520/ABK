@@ -1710,11 +1710,14 @@ jobs:
         run: |
           wget -O- https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh | bash
           BBG_MAKEFILE="Baseband-guard/Makefile"
-          if [ "${{ inputs.android_version }}" = "android13" ] && \
-             [ "${{ inputs.kernel_version }}" = "5.15" ] && \
-             [ "${{ inputs.sub_level }}" = "41" ] && \
+          if { { [ "${{ inputs.android_version }}" = "android12" ] && \
+                 [ "${{ inputs.kernel_version }}" = "5.10" ] && \
+                 [ "${{ inputs.sub_level }}" = "43" ]; } || \
+               { [ "${{ inputs.android_version }}" = "android13" ] && \
+                 [ "${{ inputs.kernel_version }}" = "5.15" ] && \
+                 [ "${{ inputs.sub_level }}" = "41" ]; }; } && \
              [ -f "$BBG_MAKEFILE" ]; then
-            echo "应用 BBG legacy host header 生成兼容修复: android13-5.15.41"
+            echo "应用 BBG legacy host header 生成兼容修复: ${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}"
             python3 - "$BBG_MAKEFILE" "common/security/selinux" <<'PY'
           import sys
           import re
