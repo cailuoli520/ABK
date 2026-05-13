@@ -72,6 +72,7 @@ data class MainUiState(
     val moduleCatalogRepositories: List<ModuleCatalogRepository> = emptyList(),
     val refreshingModuleCatalogRepositoryIds: Set<String> = emptySet(),
     val validatingCustomExternalModule: Boolean = false,
+    val customExternalModuleError: String? = null,
     val recommendedBuildConfig: KernelBuildConfig? = null,
     val workflowEnablementPrompt: WorkflowEnablementPrompt? = null,
     val buildParameterSummaries: Map<Long, BuildParameterSummary> = emptyMap(),
@@ -1678,17 +1679,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun addCustomExternalModuleFromUrl(url: String, stage: String): Boolean {
         val cleanUrl = url.trim()
         if (cleanUrl.isBlank()) {
-            _uiState.update { it.copy(error = "模块仓库链接不能为空") }
+            _uiState.update { it.copy(customExternalModuleError = "模块仓库链接不能为空") }
             return false
         }
         val normalizedStage = CustomExternalModuleStage.normalize(stage)
-        _uiState.update { it.copy(validatingCustomExternalModule = true, error = null) }
+        _uiState.update { it.copy(validatingCustomExternalModule = true, customExternalModuleError = null) }
         return try {
             when (val result = github.fetchExternalModuleMetadata(cleanUrl)) {
                 is Result.Success -> {
                     val metadata = result.data
                     if (normalizedStage !in metadata.supportedStages) {
-                        _uiState.update { it.copy(error = "该模块不支持 $normalizedStage") }
+                        _uiState.update { it.copy(customExternalModuleError = "该模块不支持 $normalizedStage") }
                         false
                     } else {
                         val currentConfig = KernelSupport.normalize(_uiState.value.buildConfig)
@@ -1714,7 +1715,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
                 is Result.Error -> {
-                    _uiState.update { it.copy(error = result.message) }
+                    _uiState.update { it.copy(customExternalModuleError = result.message) }
                     false
                 }
                 Result.Loading -> false
@@ -1971,6 +1972,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun clearError() = _uiState.update { it.copy(error = null) }
+
+    fun clearCustomExternalModuleError() = _uiState.update { it.copy(customExternalModuleError = null) }
 
     override fun onCleared() {
         runCatching { getApplication<Application>().unregisterReceiver(statusReceiver) }

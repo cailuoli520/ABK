@@ -679,6 +679,39 @@ fun BuildScreen(
                             Text(if (state.validatingCustomExternalModule) "检查中" else "添加模块")
                         }
 
+                        state.customExternalModuleError?.let { err ->
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer
+                                )
+                            ) {
+                                Row(
+                                    Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Error,
+                                        null,
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        err,
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    IconButton(onClick = { vm.clearCustomExternalModuleError() }) {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = "关闭模块错误提示",
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         val manualModules = config.customExternalModules.filter {
                             catalogModuleByUrl[it.url.trim().lowercase()] == null
                         }
