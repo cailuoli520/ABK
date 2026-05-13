@@ -2,7 +2,12 @@
 
 package com.abk.kernel.ui.screens
 
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -10,20 +15,25 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.Web
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -39,6 +49,10 @@ import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.ui.webui.ModuleWebUiActivity
 import com.abk.kernel.utils.RootUtils
 import com.abk.kernel.viewmodel.MainViewModel
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun RuntimeHomeScreen(
@@ -95,7 +109,12 @@ fun RuntimeHomeScreen(
 fun InstalledModulesScreen(vm: MainViewModel) {
     val state by vm.uiState.collectAsState()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var query by rememberSaveable { mutableStateOf("") }
+    var installDialogVisible by remember { mutableStateOf(false) }
+    var installRunning by remember { mutableStateOf(false) }
+    var installSuccess by remember { mutableStateOf<Boolean?>(null) }
+    var installLog by remember { mutableStateOf<List<String>>(emptyList()) }
     val modules = remember(state.abkRuntimeStatus?.modules, query) {
         state.abkRuntimeStatus?.modules.orEmpty()
             .filter { it.matchesRuntimeModuleQuery(query) }
@@ -104,6 +123,65 @@ fun InstalledModulesScreen(vm: MainViewModel) {
                     .thenBy { !it.enabled }
                     .thenBy { it.displayName().lowercase() }
             )
+    }
+
+    fun appendInstallLog(line: String) {
+        scope.launch(Dispatchers.Main.immediate) {
+            installLog = installLog + line
+        }
+    }
+
+    fun installModuleFromUri(uri: Uri) {
+        if (installRunning) return
+        installDialogVisible = true
+        installRunning = true
+        installSuccess = null
+        installLog = listOf(
+            "${'$'} module install",
+            "source: $uri",
+            "",
+            "正在复制模块文件..."
+        )
+        scope.launch {
+            var stagedName = "module.zip"
+            var stagedPath = ""
+            val result = withContext(Dispatchers.IO) {
+                var stagedFile: File? = null
+                runCatching {
+                    stagedFile = copyRuntimeModuleUriToCache(context, uri).also {
+                        stagedName = it.name
+                        stagedPath = it.absolutePath
+                    }
+                    appendInstallLog("file: $stagedPath")
+                    appendInstallLog("等待 root shell 返回，请不要退出应用...")
+                    if (!RootUtils.refreshRootState()) {
+                        RootUtils.ShellResult(false, listOf("管理器未激活"))
+                    } else {
+                        RootUtils.installModule(stagedPath, ::appendInstallLog)
+                    }
+                }.getOrElse {
+                    RootUtils.ShellResult(false, listOf("模块文件读取失败"))
+                }.also {
+                    stagedFile?.delete()
+                }
+            }
+            installRunning = false
+            installSuccess = result.success
+            installLog = listOf(
+                "${'$'} module install $stagedName",
+                "file: ${stagedPath.ifBlank { "未创建临时文件" }}",
+                ""
+            ) + result.output.ifEmpty {
+                listOf(if (result.success) "模块安装完成，无输出。" else "模块安装失败，但未返回日志。")
+            }
+            if (result.success) vm.refreshAbkRuntimeStatus()
+        }
+    }
+
+    val modulePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) installModuleFromUri(uri)
     }
 
     LaunchedEffect(state.runtimeNavigationEnabled, state.rootGranted) {
@@ -121,6 +199,17 @@ fun InstalledModulesScreen(vm: MainViewModel) {
                     }
                 }
             )
+        },
+        floatingActionButton = {
+            SmallFloatingActionButton(
+                onClick = {
+                    if (!installRunning) modulePicker.launch(MODULE_INSTALL_MIME_TYPES)
+                },
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+            ) {
+                Icon(Icons.Default.UploadFile, contentDescription = "安装模块")
+            }
         }
     ) { padding ->
         Column(
@@ -192,6 +281,20 @@ fun InstalledModulesScreen(vm: MainViewModel) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface
                     )
+                }
+            }
+        )
+    }
+
+    if (installDialogVisible) {
+        RuntimeModuleInstallDialog(
+            running = installRunning,
+            success = installSuccess,
+            logLines = installLog,
+            onClose = { if (!installRunning) installDialogVisible = false },
+            onReboot = {
+                if (!installRunning) {
+                    scope.launch(Dispatchers.IO) { RootUtils.reboot() }
                 }
             }
         )
@@ -276,11 +379,7 @@ private fun RuntimeManagerCard(runtimeStatus: AbkRuntimeStatus) {
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 chips.forEach { label ->
-                    AssistChip(
-                        onClick = {},
-                        label = { Text(label) },
-                        enabled = false
-                    )
+                    RuntimeModuleChip(label, secondary = true)
                 }
             }
         }
@@ -333,11 +432,7 @@ private fun RuntimeFeatureChips(build: AbkRuntimeBuildInfo) {
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         features.forEach { feature ->
-            AssistChip(
-                onClick = {},
-                label = { Text(feature) },
-                enabled = false
-            )
+            RuntimeModuleChip(feature, secondary = true)
         }
     }
 }
@@ -544,24 +639,115 @@ private fun InstalledRuntimeModuleCard(
 }
 
 @Composable
-private fun RuntimeModuleChip(label: String, secondary: Boolean = false) {
-    val leadingIcon: @Composable (() -> Unit)? = if (!secondary) {
-        { Icon(Icons.Default.Extension, null, modifier = Modifier.size(15.dp)) }
+private fun RuntimeModuleInstallDialog(
+    running: Boolean,
+    success: Boolean?,
+    logLines: List<String>,
+    onClose: () -> Unit,
+    onReboot: () -> Unit
+) {
+    val terminalScroll = rememberScrollState()
+    val colorScheme = MaterialTheme.colorScheme
+    val isLightTheme = colorScheme.surface.luminance() > 0.5f
+    val terminalContainer = if (isLightTheme) {
+        colorScheme.surfaceContainerHighest
     } else {
-        null
+        colorScheme.surfaceContainerLowest
     }
-    AssistChip(
-        onClick = {},
-        label = {
+
+    LaunchedEffect(logLines.size) {
+        terminalScroll.animateScrollTo(terminalScroll.maxValue)
+    }
+
+    AlertDialog(
+        onDismissRequest = { if (!running) onClose() },
+        icon = {
+            when {
+                running -> LoadingIndicator(modifier = Modifier.size(24.dp))
+                success == true -> Icon(Icons.Default.CheckCircle, null, tint = colorScheme.primary)
+                success == false -> Icon(Icons.Default.Error, null, tint = colorScheme.error)
+                else -> Icon(Icons.Default.UploadFile, null)
+            }
+        },
+        title = { Text(if (running) "正在安装模块" else "安装模块") },
+        text = {
+            Surface(
+                modifier = Modifier.fillMaxWidth().heightIn(min = 190.dp, max = 360.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = terminalContainer,
+                contentColor = colorScheme.onSurface,
+                border = BorderStroke(1.dp, colorScheme.outlineVariant)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(terminalScroll)
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    logLines.ifEmpty { listOf("等待输出...") }.forEach { line ->
+                        Text(
+                            text = line,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = if (line.startsWith("${'$'}")) colorScheme.primary else colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (running) {
+                TextButton(onClick = {}, enabled = false) { Text("执行中") }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = onClose) { Text("关闭") }
+                    if (success == true) {
+                        Button(
+                            onClick = onReboot,
+                            colors = ButtonDefaults.buttonColors(containerColor = colorScheme.error)
+                        ) {
+                            Icon(Icons.Default.RestartAlt, null, modifier = Modifier.size(17.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("重启")
+                        }
+                    }
+                }
+            }
+        }
+    )
+}
+
+@Composable
+private fun RuntimeModuleChip(label: String, secondary: Boolean = false) {
+    val accentColor = if (secondary) {
+        MaterialTheme.colorScheme.secondary
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+    Surface(
+        shape = RoundedCornerShape(7.dp),
+        color = accentColor.copy(alpha = 0.10f),
+        contentColor = accentColor,
+        border = BorderStroke(1.dp, accentColor.copy(alpha = 0.62f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            if (!secondary) {
+                Icon(Icons.Default.Extension, null, modifier = Modifier.size(14.dp))
+            }
             Text(
                 text = label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (secondary) FontWeight.Medium else FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-        },
-        leadingIcon = leadingIcon,
-        enabled = false
-    )
+        }
+    }
 }
 
 private fun AbkRuntimeModule.matchesRuntimeModuleQuery(query: String): Boolean {
@@ -661,3 +847,37 @@ private fun internalRuntimeControlCapability(): String =
     intArrayOf(97, 98, 107, 95, 99, 111, 110, 116, 114, 111, 108)
         .map { it.toChar() }
         .joinToString("")
+
+private val MODULE_INSTALL_MIME_TYPES = arrayOf(
+    "application/zip",
+    "application/octet-stream",
+    "application/x-zip-compressed",
+    "*/*"
+)
+
+private fun copyRuntimeModuleUriToCache(context: Context, uri: Uri): File {
+    val cacheDir = File(context.cacheDir, "runtime-module-install").apply {
+        mkdirs()
+    }
+    cacheDir.listFiles()
+        ?.filter { it.isFile && it.name.startsWith("module-") }
+        ?.forEach { it.delete() }
+
+    val target = File(cacheDir, "module-${System.currentTimeMillis()}.zip")
+    try {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            target.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        } ?: error("module input stream unavailable")
+    } catch (error: Throwable) {
+        target.delete()
+        throw error
+    }
+
+    if (target.length() <= 0L) {
+        target.delete()
+        error("empty module file")
+    }
+    return target
+}
