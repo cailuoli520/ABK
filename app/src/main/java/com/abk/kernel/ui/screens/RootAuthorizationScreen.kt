@@ -2,15 +2,18 @@
 
 package com.abk.kernel.ui.screens
 
+import android.graphics.drawable.Drawable
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -18,18 +21,23 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -47,11 +55,17 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.abk.kernel.data.model.RootGrantApp
 import com.abk.kernel.data.model.RootGrantProfile
+import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ExpressiveSectionCard
 import com.abk.kernel.ui.components.ExpressiveStatusChip
 import com.abk.kernel.ui.components.ExpressiveSwitch
@@ -64,7 +78,7 @@ fun RootAuthorizationScreen(vm: MainViewModel) {
     val state by vm.uiState.collectAsState()
     var query by rememberSaveable { mutableStateOf("") }
     var showSystemApps by rememberSaveable { mutableStateOf(false) }
-    var selectedApp by remember { mutableStateOf<RootGrantApp?>(null) }
+    var selectedPackage by rememberSaveable { mutableStateOf<String?>(null) }
     val apps = remember(state.rootGrantApps, query, showSystemApps) {
         state.rootGrantApps
             .filter { showSystemApps || !it.isSystemApp }
@@ -76,102 +90,126 @@ fun RootAuthorizationScreen(vm: MainViewModel) {
                     app.uid.toString().contains(needle)
             }
     }
+    val selectedApp = remember(state.rootGrantApps, selectedPackage) {
+        selectedPackage?.let { packageName ->
+            state.rootGrantApps.firstOrNull { it.packageName == packageName }
+        }
+    }
+    val canLeaveDetail = state.rootGrantSavingPackage == null
 
     LaunchedEffect(state.runtimeNavigationEnabled, state.abkRuntimeStatus?.runtimeBackend?.backend) {
         if (state.runtimeNavigationEnabled) vm.refreshRootGrantApps()
     }
 
+    BackHandler(enabled = selectedApp != null && canLeaveDetail) {
+        selectedPackage = null
+    }
+
     Scaffold(
         containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
         topBar = {
-            ExpressiveTopBar(
-                title = "授权",
-                actions = {
-                    androidx.compose.material3.IconButton(onClick = vm::refreshRootGrantApps) {
-                        Icon(Icons.Default.Refresh, contentDescription = "刷新授权列表")
+            if (selectedApp == null) {
+                ExpressiveTopBar(
+                    title = "超级用户",
+                    actions = {
+                        IconButton(onClick = vm::refreshRootGrantApps) {
+                            Icon(Icons.Default.Refresh, contentDescription = "刷新授权列表")
+                        }
                     }
-                }
-            )
+                )
+            } else {
+                ExpressiveTopBar(
+                    title = selectedApp.label.ifBlank { selectedApp.packageName },
+                    navigationIcon = {
+                        IconButton(
+                            enabled = canLeaveDetail,
+                            onClick = { selectedPackage = null }
+                        ) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "返回授权列表")
+                        }
+                    },
+                    largeTitle = true
+                )
+            }
         }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier.fillMaxWidth(),
-                leadingIcon = { Icon(Icons.Default.Search, null) },
-                placeholder = { Text("搜索应用") },
-                singleLine = true,
-                shape = RoundedCornerShape(14.dp)
-            )
-
-            ExpressiveSectionCard(
-                title = "Root 授权",
-                subtitle = "管理其他应用的内核权限配置",
-                icon = Icons.Default.AdminPanelSettings
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "显示系统应用",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Switch(checked = showSystemApps, onCheckedChange = { showSystemApps = it })
+        if (selectedApp != null) {
+            RootGrantProfilePage(
+                app = selectedApp,
+                padding = padding,
+                saving = state.rootGrantSavingPackage == selectedApp.packageName,
+                onSave = { profile ->
+                    vm.saveRootGrantProfile(profile)
                 }
-            }
-
-            if (state.rootGrantLoading) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            }
-
-            state.rootGrantError?.let {
-                RootGrantMessageCard(it, vm::refreshRootGrantApps)
-            }
-
-            if (!state.rootGrantLoading && apps.isEmpty()) {
-                Text(
-                    text = if (query.isBlank()) "没有可显示的应用" else "没有匹配的应用",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 24.dp)
+            )
+        } else {
+            Column(
+                modifier = Modifier
+                    .padding(padding)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = AbkScreenHorizontalPadding),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    leadingIcon = { Icon(Icons.Default.Search, null) },
+                    placeholder = { Text("搜索应用") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp)
                 )
-            }
 
-            apps.forEach { app ->
-                RootGrantAppCard(
-                    app = app,
-                    saving = state.rootGrantSavingPackage == app.packageName,
-                    anySaving = state.rootGrantSavingPackage != null,
-                    onToggle = { allowed -> vm.setRootGrantAllowed(app.packageName, allowed) },
-                    onOpen = { selectedApp = app }
-                )
-            }
+                ExpressiveSectionCard(
+                    title = "Root 授权",
+                    subtitle = "管理其他应用的内核权限配置",
+                    icon = Icons.Default.AdminPanelSettings
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "显示系统应用",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Switch(checked = showSystemApps, onCheckedChange = { showSystemApps = it })
+                    }
+                }
 
-            Spacer(Modifier.height(80.dp))
+                if (state.rootGrantLoading) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+
+                state.rootGrantError?.let {
+                    RootGrantMessageCard(it, vm::refreshRootGrantApps)
+                }
+
+                if (!state.rootGrantLoading && apps.isEmpty()) {
+                    Text(
+                        text = if (query.isBlank()) "没有可显示的应用" else "没有匹配的应用",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 24.dp)
+                    )
+                }
+
+                apps.forEach { app ->
+                    RootGrantAppCard(
+                        app = app,
+                        saving = state.rootGrantSavingPackage == app.packageName,
+                        anySaving = state.rootGrantSavingPackage != null,
+                        onToggle = { allowed -> vm.setRootGrantAllowed(app.packageName, allowed) },
+                        onOpen = { selectedPackage = app.packageName }
+                    )
+                }
+
+                Spacer(Modifier.height(80.dp))
+            }
         }
-    }
-
-    selectedApp?.let { app ->
-        RootGrantProfileDialog(
-            app = app,
-            saving = state.rootGrantSavingPackage == app.packageName,
-            onDismiss = { if (state.rootGrantSavingPackage == null) selectedApp = null },
-            onSave = {
-                vm.saveRootGrantProfile(it)
-                selectedApp = null
-            }
-        )
     }
 }
 
@@ -197,11 +235,10 @@ private fun RootGrantAppCard(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(verticalAlignment = Alignment.Top) {
-                Icon(
-                    imageVector = if (app.profile.allowSu) Icons.Default.Security else Icons.Default.Apps,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 2.dp).size(24.dp)
+                AppIcon(
+                    packageName = app.packageName,
+                    label = app.label,
+                    modifier = Modifier.size(56.dp)
                 )
                 Spacer(Modifier.width(10.dp))
                 Column(
@@ -238,6 +275,12 @@ private fun RootGrantAppCard(
                         onCheckedChange = onToggle
                     )
                 }
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 4.dp, top = 10.dp).size(24.dp)
+                )
             }
 
             Row(
@@ -254,10 +297,44 @@ private fun RootGrantAppCard(
 }
 
 @Composable
-private fun RootGrantProfileDialog(
+private fun AppIcon(
+    packageName: String,
+    label: String,
+    modifier: Modifier = Modifier.size(56.dp),
+    cornerSize: Dp = 14.dp
+) {
+    val context = LocalContext.current
+    val drawable: Drawable? = remember(packageName) {
+        runCatching { context.packageManager.getApplicationIcon(packageName) }.getOrNull()
+    }
+    val iconModifier = modifier.clip(RoundedCornerShape(cornerSize))
+    if (drawable != null) {
+        AsyncImage(
+            model = drawable,
+            contentDescription = label.ifBlank { packageName },
+            contentScale = ContentScale.Crop,
+            modifier = iconModifier
+        )
+    } else {
+        Box(
+            modifier = iconModifier.background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Apps,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(28.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun RootGrantProfilePage(
     app: RootGrantApp,
+    padding: androidx.compose.foundation.layout.PaddingValues,
     saving: Boolean,
-    onDismiss: () -> Unit,
     onSave: (RootGrantProfile) -> Unit
 ) {
     val profile = app.profile
@@ -274,64 +351,160 @@ private fun RootGrantProfileDialog(
     var umountModules by rememberSaveable(app.packageName) { mutableStateOf(profile.umountModules) }
     var rulesText by rememberSaveable(app.packageName) { mutableStateOf(profile.rules) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            Button(
-                enabled = !saving,
-                onClick = {
-                    onSave(
-                        profile.copy(
-                            name = app.packageName,
-                            currentUid = app.uid,
-                            allowSu = allowSu,
-                            rootUseDefault = rootUseDefault,
-                            rootTemplate = rootTemplate.trim(),
-                            uid = uidText.toIntOrNull() ?: 0,
-                            gid = gidText.toIntOrNull() ?: 0,
-                            groups = parseIntList(groupsText),
-                            capabilities = parseIntList(capabilitiesText),
-                            context = contextText.trim().ifBlank { "u:r:ksu:s0" },
-                            namespace = namespaceText.toIntOrNull() ?: 0,
-                            nonRootUseDefault = nonRootUseDefault,
-                            umountModules = umountModules,
-                            rules = rulesText
-                        )
-                    )
-                }
-            ) {
-                Text("保存")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !saving) {
-                Text("取消")
-            }
-        },
-        title = { Text(app.label.ifBlank { app.packageName }) },
-        text = {
+    fun saveProfile() {
+        onSave(
+            profile.copy(
+                name = app.packageName,
+                currentUid = app.uid,
+                allowSu = allowSu,
+                rootUseDefault = rootUseDefault,
+                rootTemplate = rootTemplate.trim(),
+                uid = uidText.toIntOrNull() ?: 0,
+                gid = gidText.toIntOrNull() ?: 0,
+                groups = parseIntList(groupsText),
+                capabilities = parseIntList(capabilitiesText),
+                context = contextText.trim().ifBlank { "u:r:ksu:s0" },
+                namespace = namespaceText.toIntOrNull() ?: 0,
+                nonRootUseDefault = nonRootUseDefault,
+                umountModules = umountModules,
+                rules = rulesText
+            )
+        )
+    }
+
+    Column(
+        modifier = Modifier
+            .padding(padding)
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = AbkScreenHorizontalPadding),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AppIcon(
+                packageName = app.packageName,
+                label = app.label,
+                modifier = Modifier.size(64.dp),
+                cornerSize = 16.dp
+            )
+            Spacer(Modifier.width(14.dp))
             Column(
-                modifier = Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
             ) {
-                RootGrantSwitchRow("允许 Root", allowSu) { allowSu = it }
+                Text(
+                    text = app.label.ifBlank { app.packageName },
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = app.packageName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        ExpressiveSectionCard(
+            title = "超级用户",
+            subtitle = if (allowSu) "允许请求 Root 权限" else "拒绝 Root 权限",
+            icon = Icons.Default.Security
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (allowSu) "已允许" else "未允许",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                ExpressiveSwitch(
+                    checked = allowSu,
+                    enabled = !saving,
+                    onCheckedChange = { allowSu = it }
+                )
+            }
+        }
+
+        ExpressiveSectionCard(
+            title = "App Profile",
+            subtitle = if (allowSu) {
+                if (rootUseDefault) "默认" else "自定义"
+            } else {
+                if (nonRootUseDefault) "默认非 Root 配置" else "自定义非 Root 配置"
+            },
+            icon = Icons.Default.AccountCircle
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (allowSu) {
-                    RootGrantSwitchRow("使用默认 Root 配置", rootUseDefault) { rootUseDefault = it }
-                    RootGrantTextField("模板", rootTemplate, { rootTemplate = it }, "可留空")
-                    RootGrantTextField("UID", uidText, { uidText = it })
-                    RootGrantTextField("GID", gidText, { gidText = it })
-                    RootGrantTextField("Groups", groupsText, { groupsText = it }, "逗号分隔")
-                    RootGrantTextField("Capabilities", capabilitiesText, { capabilitiesText = it }, "逗号分隔")
-                    RootGrantTextField("SELinux Context", contextText, { contextText = it })
-                    RootGrantTextField("Namespace", namespaceText, { namespaceText = it }, "0 继承 / 1 全局 / 2 独立")
-                    RootGrantTextField("SEPolicy Rules", rulesText, { rulesText = it }, "可留空", singleLine = false)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = rootUseDefault,
+                            onClick = { rootUseDefault = true },
+                            label = { Text("默认") }
+                        )
+                        FilterChip(
+                            selected = !rootUseDefault && rootTemplate.isNotBlank(),
+                            onClick = {
+                                rootUseDefault = false
+                                if (rootTemplate.isBlank()) rootTemplate = "default"
+                            },
+                            label = { Text("模板") }
+                        )
+                        FilterChip(
+                            selected = !rootUseDefault && rootTemplate.isBlank(),
+                            onClick = {
+                                rootUseDefault = false
+                                rootTemplate = ""
+                            },
+                            label = { Text("自定义") }
+                        )
+                    }
+                    if (!rootUseDefault && rootTemplate.isNotBlank()) {
+                        RootGrantTextField("模板", rootTemplate, { rootTemplate = it }, "模板名称")
+                    }
+                    if (!rootUseDefault) {
+                        RootGrantTextField("UID", uidText, { uidText = it })
+                        RootGrantTextField("GID", gidText, { gidText = it })
+                        RootGrantTextField("Groups", groupsText, { groupsText = it }, "逗号分隔")
+                        RootGrantTextField("Capabilities", capabilitiesText, { capabilitiesText = it }, "逗号分隔")
+                        RootGrantTextField("SELinux Context", contextText, { contextText = it })
+                        RootGrantTextField("Namespace", namespaceText, { namespaceText = it }, "0 继承 / 1 全局 / 2 独立")
+                        RootGrantTextField("SEPolicy Rules", rulesText, { rulesText = it }, "可留空", singleLine = false)
+                    }
                 } else {
                     RootGrantSwitchRow("使用默认非 Root 配置", nonRootUseDefault) { nonRootUseDefault = it }
                     RootGrantSwitchRow("卸载模块", umountModules) { umountModules = it }
                 }
             }
         }
-    )
+
+        Button(
+            onClick = ::saveProfile,
+            enabled = !saving,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            if (saving) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            } else {
+                Icon(Icons.Default.Done, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("保存")
+            }
+        }
+
+        Spacer(Modifier.height(80.dp))
+    }
 }
 
 @Composable

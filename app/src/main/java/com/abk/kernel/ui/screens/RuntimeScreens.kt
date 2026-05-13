@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import com.abk.kernel.data.model.AbkRuntimeBuildInfo
 import com.abk.kernel.data.model.AbkRuntimeModule
 import com.abk.kernel.data.model.AbkRuntimeStatus
+import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ExpressiveSwitch
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveSectionCard
@@ -86,7 +87,7 @@ fun RuntimeHomeScreen(
                 .padding(padding)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp),
+                .padding(horizontal = AbkScreenHorizontalPadding),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             RuntimeStatusHeader(
@@ -217,7 +218,7 @@ fun InstalledModulesScreen(vm: MainViewModel) {
                 .padding(padding)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp),
+                .padding(horizontal = AbkScreenHorizontalPadding),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             RuntimeModuleSearchField(query, onValueChange = { query = it })

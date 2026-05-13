@@ -16,27 +16,32 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.abk.kernel.ui.theme.uiSurfaceColor
+
+val AbkScreenHorizontalPadding: Dp = 24.dp
 
 @Composable
 fun ExpressiveTopBar(
     title: String,
     modifier: Modifier = Modifier,
     navigationIcon: @Composable (() -> Unit)? = null,
+    largeTitle: Boolean = false,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
     val hasNavigation = navigationIcon != null
-    val titleStyle = if (hasNavigation) {
-        MaterialTheme.typography.titleLarge.copy(
+    val useLargeTitle = largeTitle || !hasNavigation
+    val titleStyle = if (useLargeTitle) {
+        MaterialTheme.typography.headlineLarge.copy(
+            fontSize = 44.sp,
+            lineHeight = 50.sp,
             fontWeight = FontWeight.Normal,
             letterSpacing = 0.sp
         )
     } else {
-        MaterialTheme.typography.headlineMedium.copy(
-            fontSize = 34.sp,
-            lineHeight = 40.sp,
+        MaterialTheme.typography.titleLarge.copy(
             fontWeight = FontWeight.Normal,
             letterSpacing = 0.sp
         )
@@ -52,10 +57,10 @@ fun ExpressiveTopBar(
                 .fillMaxWidth()
                 .statusBarsPadding()
                 .padding(
-                    start = if (hasNavigation) 4.dp else 18.dp,
-                    top = 10.dp,
-                    end = 18.dp,
-                    bottom = 10.dp
+                    start = if (hasNavigation) 4.dp else AbkScreenHorizontalPadding,
+                    top = if (useLargeTitle) 18.dp else 10.dp,
+                    end = AbkScreenHorizontalPadding,
+                    bottom = if (useLargeTitle) 18.dp else 10.dp
                 ),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -71,7 +76,7 @@ fun ExpressiveTopBar(
                 text = title,
                 modifier = Modifier.weight(1f),
                 style = titleStyle,
-                maxLines = 1,
+                maxLines = if (useLargeTitle) 2 else 1,
                 overflow = TextOverflow.Ellipsis
             )
             Row(

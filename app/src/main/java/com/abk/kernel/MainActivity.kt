@@ -285,7 +285,7 @@ private enum class AbkTab(val label: String) {
     Flash("刷写"),
     RuntimeHome("首页"),
     InstalledModules("已安装模块"),
-    RootAuth("授权"),
+    RootAuth("超级用户"),
     Settings("设置")
 }
 
