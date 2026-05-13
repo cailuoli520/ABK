@@ -1,6 +1,7 @@
 package com.abk.kernel.utils
 
 import android.content.Context
+import android.util.Base64
 import android.util.Log
 import com.topjohnwu.superuser.CallbackList
 import com.topjohnwu.superuser.Shell
@@ -23,10 +24,15 @@ object RootUtils {
     }
 
     fun isRootAvailable(): Boolean {
-        return Shell.isAppGrantedRoot() == true
+        if (Shell.isAppGrantedRoot() == true) return true
+        return refreshRootState()
     }
 
     fun requestRoot(): Boolean {
+        return refreshRootState()
+    }
+
+    fun refreshRootState(): Boolean {
         return try {
             createRootShell(timeoutSeconds = 10L).use { isShellRoot(it) }
         } catch (e: Exception) {
@@ -292,6 +298,17 @@ object RootUtils {
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
     }
 
+    fun runKsuModuleAction(moduleId: String, onOutput: ((String) -> Unit)? = null): ShellResult {
+        val safeId = shellQuote(moduleId.trim())
+        val script = """
+            set -e
+            ksud_path=${'$'}(abk_find_ksud)
+            [ -n "${'$'}ksud_path" ] || exit 127
+            "${'$'}ksud_path" module action $safeId
+        """.trimIndent()
+        return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 300L, onOutput = onOutput)
+    }
+
     fun setKsuModuleEnabled(moduleId: String, enabled: Boolean): ShellResult {
         val safeId = shellQuote(moduleId.trim())
         val verb = if (enabled) "enable" else "disable"
@@ -304,6 +321,27 @@ object RootUtils {
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
     }
 
+    fun listKpmModules(): ShellResult {
+        val script = """
+            set -e
+            ksud_path=${'$'}(abk_find_ksud)
+            [ -n "${'$'}ksud_path" ] || exit 127
+            "${'$'}ksud_path" kpm list
+        """.trimIndent()
+        return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
+    }
+
+    fun getKpmModuleInfo(name: String): ShellResult {
+        val safeName = shellQuote(name.trim())
+        val script = """
+            set -e
+            ksud_path=${'$'}(abk_find_ksud)
+            [ -n "${'$'}ksud_path" ] || exit 127
+            "${'$'}ksud_path" kpm info $safeName
+        """.trimIndent()
+        return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
+    }
+
     fun writeAbkControlCommand(command: String): ShellResult {
         val safeNode = shellQuote(managerNodePath())
         val safeCommand = shellQuote(command.trim())
@@ -311,6 +349,63 @@ object RootUtils {
             "printf '%s\\n' $safeCommand > $safeNode",
             timeoutSeconds = 10L
         )
+    }
+
+    fun execRootCommandForWebUi(command: String, cwd: String = "", timeoutSeconds: Long = 120L): ShellResult {
+        val prefix = if (cwd.isBlank()) {
+            ""
+        } else {
+            "cd ${shellQuote(cwd)} 2>/dev/null || exit 2\n"
+        }
+        return execRootScript(prefix + command, timeoutSeconds = timeoutSeconds)
+    }
+
+    fun readModuleWebResource(moduleId: String, relativePath: String): ByteArray? {
+        val cleanId = moduleId.trim()
+        val cleanRelativePath = sanitizeWebRelativePath(relativePath) ?: return null
+        if (cleanId.isBlank()) return null
+
+        val filePath = "/data/adb/modules/$cleanId/webroot/$cleanRelativePath"
+        return try {
+            createRootShell(timeoutSeconds = 30L).use { shell ->
+                val result = execWithShell(
+                    shell = shell,
+                    script = """
+                        file=${shellQuote(filePath)}
+                        [ -f "${'$'}file" ] || exit 2
+                        base64 "${'$'}file" 2>/dev/null | tr -d '\n'
+                    """.trimIndent(),
+                    normalizeOutput = false
+                )
+                if (!result.success) return null
+                val encoded = result.output.joinToString("").trim()
+                if (encoded.isBlank()) ByteArray(0) else Base64.decode(encoded, Base64.DEFAULT)
+            }
+        } catch (error: Throwable) {
+            null
+        }
+    }
+
+    fun moduleInfoJson(moduleId: String): String {
+        val cleanId = moduleId.trim()
+        if (cleanId.isBlank()) return "{}"
+        val moduleDir = "/data/adb/modules/$cleanId"
+        val modules = listKsuModules().takeIf { it.success }?.output?.joinToString("\n").orEmpty()
+        val moduleJson = runCatching {
+            val array = org.json.JSONArray(modules.ifBlank { "[]" })
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                if (item.optString("id") == cleanId) {
+                    item.put("moduleDir", moduleDir)
+                    return@runCatching item.toString()
+                }
+            }
+            org.json.JSONObject()
+                .put("id", cleanId)
+                .put("moduleDir", moduleDir)
+                .toString()
+        }.getOrDefault("{}")
+        return moduleJson
     }
 
     data class ShellResult(val success: Boolean, val output: List<String>)
@@ -517,6 +612,15 @@ object RootUtils {
             .map { it.toChar() }
             .joinToString("")
         return "$dir/$name"
+    }
+
+    private fun sanitizeWebRelativePath(value: String): String? {
+        val path = value.substringBefore('?').substringBefore('#')
+            .trim()
+            .trimStart('/')
+            .ifBlank { "index.html" }
+        if (path.split('/').any { it == ".." || it.contains('\u0000') }) return null
+        return path
     }
 
     private fun rootOutputList(onOutput: ((String) -> Unit)?): MutableList<String> {

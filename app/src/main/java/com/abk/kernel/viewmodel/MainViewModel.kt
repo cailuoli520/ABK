@@ -110,7 +110,9 @@ data class MainUiState(
     val abkRuntimeStatus: AbkRuntimeStatus? = null,
     val abkRuntimeLoading: Boolean = false,
     val abkRuntimeError: String? = null,
-    val abkRuntimeModuleActionId: String? = null
+    val abkRuntimeModuleActionId: String? = null,
+    val abkRuntimeModuleActionTitle: String? = null,
+    val abkRuntimeModuleActionOutput: List<String> = emptyList()
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -393,20 +395,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshAbkRuntimeStatus() {
-        if (!_uiState.value.rootGranted) {
-            _uiState.update {
-                it.copy(
-                    abkRuntimeStatus = null,
-                    abkRuntimeLoading = false,
-                    abkRuntimeError = "管理器未激活"
-                )
-            }
-            return
-        }
-
         viewModelScope.launch {
             _uiState.update { it.copy(abkRuntimeLoading = true, abkRuntimeError = null) }
             val runtimeStatus = withContext(Dispatchers.IO) {
+                RootUtils.refreshRootState()
                 val snapshot = RootUtils.readManagerRuntimeSnapshot()
                 if (!snapshot.manager.active) {
                     null
@@ -421,6 +413,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 if (runtimeStatus != null) {
                     it.copy(
+                        rootGranted = true,
                         abkRuntimeStatus = runtimeStatus,
                         abkRuntimeLoading = false,
                         abkRuntimeError = null
@@ -446,9 +439,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         val ksuModules = parseKsuModules(ksuModulesJson)
         val controlModules = controlStatus?.modules.orEmpty().map { module ->
-            module.copy(source = module.source.ifBlank { "abk" })
+            module.copy(
+                type = module.type.ifBlank { "builtin" },
+                source = module.source.ifBlank { "abk" },
+                readonly = module.readonly || !module.controllable
+            )
         }
-        val mergedModules = mergeRuntimeModules(controlModules, ksuModules)
+        val kpmModules = parseKpmModules()
+        val mergedModules = mergeRuntimeModules(controlModules, ksuModules, kpmModules)
         val managerInfo = if (manager.backend == "su" && controlStatus?.manager != null) {
             val capabilities = (controlStatus.manager.capabilities + "root_shell").distinct()
             controlStatus.manager.copy(active = true, capabilities = capabilities)
@@ -485,29 +483,119 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 id = id,
                 name = item.runtimeString("name").ifBlank { id },
                 author = item.runtimeString("author"),
+                type = "standard",
                 version = item.runtimeString("version"),
                 versionCode = item.runtimeLong("versionCode"),
                 description = item.runtimeString("description"),
                 stage = "runtime",
                 source = "ksud",
+                moduleDir = "/data/adb/modules/$id",
+                webRoot = "/data/adb/modules/$id/webroot",
+                readonly = false,
                 controllable = true,
                 enabled = item.runtimeBoolean("enabled", true),
                 update = item.runtimeBoolean("update"),
                 remove = item.runtimeBoolean("remove"),
                 hasWebUi = item.runtimeBoolean("web"),
-                hasActionScript = item.runtimeBoolean("action")
+                hasActionScript = item.runtimeBoolean("action"),
+                actionSupported = item.runtimeBoolean("action")
             )
         }
     }
 
+    private fun parseKpmModules(): List<AbkRuntimeModule> {
+        val listResult = RootUtils.listKpmModules()
+        if (!listResult.success) return emptyList()
+        return parseKpmModuleNames(listResult.output.joinToString("\n"))
+            .map { name ->
+                val properties = RootUtils.getKpmModuleInfo(name)
+                    .takeIf { it.success }
+                    ?.output
+                    ?.flatMap { it.lineSequence().toList() }
+                    ?.mapNotNull { line ->
+                        val clean = line.trim()
+                        if (clean.isBlank() || clean.startsWith("#")) return@mapNotNull null
+                        val separator = when {
+                            "=" in clean -> "="
+                            ":" in clean -> ":"
+                            else -> return@mapNotNull null
+                        }
+                        val parts = clean.split(separator, limit = 2)
+                        parts[0].trim().lowercase() to parts.getOrElse(1) { "" }.trim()
+                    }
+                    ?.toMap()
+                    .orEmpty()
+                AbkRuntimeModule(
+                    id = name,
+                    name = properties["name"].orEmpty().ifBlank { name },
+                    author = properties["author"].orEmpty(),
+                    type = "kpm",
+                    version = properties["version"].orEmpty(),
+                    description = properties["description"].orEmpty(),
+                    source = "kpm",
+                    readonly = true,
+                    controllable = false,
+                    enabled = true,
+                    kpmArgs = properties["args"].orEmpty()
+                )
+            }
+    }
+
+    private fun parseKpmModuleNames(output: String): List<String> {
+        if (output.isBlank()) return emptyList()
+        val jsonNames = runCatching {
+            val root = gson.fromJson(output, Any::class.java)
+            when (root) {
+                is List<*> -> root.mapNotNull(::kpmNameFromJsonRecord)
+                is Map<*, *> -> {
+                    val modules = root["modules"] ?: root["items"] ?: root["data"]
+                    if (modules is List<*>) modules.mapNotNull(::kpmNameFromJsonRecord) else null
+                }
+                else -> null
+            }?.distinct()
+        }.getOrNull()
+        if (jsonNames != null) return jsonNames
+
+        val namePattern = Regex("""^[A-Za-z0-9_.@+-]+$""")
+        val keyValuePattern = Regex("""^(?:name|module|id)\s*[:=]\s*(\S+).*$""", RegexOption.IGNORE_CASE)
+        return output
+            .lineSequence()
+            .map { it.trim().trim('-', '*', ' ') }
+            .map { line ->
+                val keyValue = keyValuePattern.matchEntire(line)?.groupValues?.getOrNull(1)
+                keyValue ?: line
+                    .replace(Regex("""^\[\d+]\s*"""), "")
+                    .replace(Regex("""^\d+[.)]\s*"""), "")
+                    .substringBefore('\t')
+                    .substringBefore(' ')
+                    .trim()
+            }
+            .filter { it.isNotBlank() && namePattern.matches(it) }
+            .filterNot { it.equals("loaded", ignoreCase = true) || it.equals("modules", ignoreCase = true) }
+            .distinct()
+            .toList()
+    }
+
+    private fun kpmNameFromJsonRecord(record: Any?): String? =
+        when (record) {
+            is String -> record.trim()
+            is Map<*, *> -> listOf("name", "id", "module")
+                .asSequence()
+                .mapNotNull { key -> record[key]?.toString()?.trim()?.takeIf { it.isNotBlank() } }
+                .firstOrNull()
+            else -> null
+        }
+
     private fun mergeRuntimeModules(
         controlModules: List<AbkRuntimeModule>,
-        ksuModules: List<AbkRuntimeModule>
+        ksuModules: List<AbkRuntimeModule>,
+        kpmModules: List<AbkRuntimeModule>
     ): List<AbkRuntimeModule> {
         val merged = linkedMapOf<String, AbkRuntimeModule>()
 
         fun put(module: AbkRuntimeModule) {
-            val key = module.id.ifBlank { module.name }.trim()
+            val keyId = module.id.ifBlank { module.name }.trim()
+            val key = if (module.normalizedType() == "kpm") "kpm:$keyId" else keyId
             if (key.isBlank()) return
             val current = merged[key]
             merged[key] = if (current == null) {
@@ -520,6 +608,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     versionCode = current.versionCode.takeIf { it > 0 } ?: module.versionCode,
                     description = current.description.ifBlank { module.description },
                     repoUrl = current.repoUrl.ifBlank { module.repoUrl },
+                    type = mergeRuntimeModuleType(current, module),
                     stage = listOf(current.stage, module.stage)
                         .flatMap { it.split(',') }
                         .map { it.trim() }
@@ -532,24 +621,43 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         .filter { it.isNotBlank() }
                         .distinct()
                         .joinToString(","),
+                    moduleDir = current.moduleDir.ifBlank { module.moduleDir },
+                    webRoot = current.webRoot.ifBlank { module.webRoot },
+                    readonly = current.readonly && module.readonly,
                     controllable = current.controllable || module.controllable,
                     enabled = current.enabled && module.enabled,
                     update = current.update || module.update,
                     remove = current.remove || module.remove,
                     hasWebUi = current.hasWebUi || module.hasWebUi,
-                    hasActionScript = current.hasActionScript || module.hasActionScript
+                    hasActionScript = current.hasActionScript || module.hasActionScript,
+                    actionSupported = current.actionSupported || module.actionSupported,
+                    kpmArgs = current.kpmArgs.ifBlank { module.kpmArgs }
                 )
             }
         }
 
         ksuModules.forEach(::put)
-        val includeMetadataOnly = ksuModules.isEmpty()
-        controlModules
-            .filter { includeMetadataOnly || it.controllable }
-            .forEach(::put)
+        controlModules.forEach(::put)
+        kpmModules.forEach(::put)
 
         return merged.values.toList()
     }
+
+    private fun mergeRuntimeModuleType(current: AbkRuntimeModule, next: AbkRuntimeModule): String =
+        when {
+            current.normalizedType() == "kpm" || next.normalizedType() == "kpm" -> "kpm"
+            current.normalizedType() == "standard" || next.normalizedType() == "standard" -> "standard"
+            else -> "builtin"
+        }
+
+    private fun AbkRuntimeModule.normalizedType(): String =
+        type.ifBlank {
+            when {
+                source.split(',').any { it.trim() == "kpm" } -> "kpm"
+                source.split(',').any { it.trim() == "ksud" } -> "standard"
+                else -> "builtin"
+            }
+        }
 
     private fun Map<String, Any?>.runtimeString(key: String): String =
         this[key]?.toString()?.trim().orEmpty()
@@ -576,19 +684,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun AbkRuntimeModule.isKsuBacked(): Boolean =
-        source.split(',').any { it.trim() == "ksud" }
+        normalizedType() == "standard" || source.split(',').any { it.trim() == "ksud" }
 
     fun setAbkRuntimeModuleEnabled(moduleId: String, enabled: Boolean) {
         val cleanId = moduleId.trim()
         if (cleanId.isBlank() || _uiState.value.abkRuntimeModuleActionId != null) return
-        if (!_uiState.value.rootGranted) {
-            _uiState.update { it.copy(abkRuntimeError = "操作未完成") }
-            return
-        }
 
         viewModelScope.launch {
+            val hasRoot = _uiState.value.rootGranted || withContext(Dispatchers.IO) {
+                RootUtils.refreshRootState()
+            }
+            if (!hasRoot) {
+                _uiState.update { it.copy(abkRuntimeError = "操作未完成") }
+                return@launch
+            }
             val module = _uiState.value.abkRuntimeStatus?.modules?.firstOrNull { it.id == cleanId }
-            _uiState.update { it.copy(abkRuntimeModuleActionId = cleanId, abkRuntimeError = null) }
+            _uiState.update {
+                it.copy(
+                    rootGranted = true,
+                    abkRuntimeModuleActionId = cleanId,
+                    abkRuntimeError = null
+                )
+            }
             val result = withContext(Dispatchers.IO) {
                 if (module?.isKsuBacked() == true) {
                     RootUtils.setKsuModuleEnabled(cleanId, enabled)
@@ -610,6 +727,47 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    fun runRuntimeModuleAction(moduleId: String) {
+        val cleanId = moduleId.trim()
+        val module = _uiState.value.abkRuntimeStatus?.modules?.firstOrNull { it.id == cleanId } ?: return
+        if (cleanId.isBlank() || !module.actionSupported || _uiState.value.abkRuntimeModuleActionId != null) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update {
+                it.copy(
+                    abkRuntimeModuleActionId = cleanId,
+                    abkRuntimeModuleActionTitle = "${module.displayNameForRuntime()} Action",
+                    abkRuntimeModuleActionOutput = emptyList(),
+                    abkRuntimeError = null
+                )
+            }
+            val result = RootUtils.runKsuModuleAction(cleanId) { line ->
+                _uiState.update { state ->
+                    state.copy(abkRuntimeModuleActionOutput = state.abkRuntimeModuleActionOutput + line)
+                }
+            }
+            _uiState.update { state ->
+                val output = state.abkRuntimeModuleActionOutput.ifEmpty { result.output }
+                state.copy(
+                    abkRuntimeModuleActionId = null,
+                    abkRuntimeModuleActionOutput = output,
+                    abkRuntimeError = if (result.success) null else "操作未完成"
+                )
+            }
+        }
+    }
+
+    fun dismissRuntimeModuleActionOutput() {
+        _uiState.update {
+            it.copy(
+                abkRuntimeModuleActionTitle = null,
+                abkRuntimeModuleActionOutput = emptyList()
+            )
+        }
+    }
+
+    private fun AbkRuntimeModule.displayNameForRuntime(): String =
+        name.ifBlank { id.ifBlank { "模块" } }
 
     private suspend fun applyInitialBuildConfigIfNeeded(recommended: KernelBuildConfig?): KernelBuildConfig? {
         if (recommended == null || hasSavedBuildConfig) return null

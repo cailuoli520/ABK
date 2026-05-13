@@ -40,6 +40,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ui.webui.ModuleWebUiActivity"
+            android:exported="false"
+            android:theme="@style/Theme.ABK" />
+
         <service
             android:name=".utils.BuildMonitorService"
             android:foregroundServiceType="dataSync"

@@ -406,18 +406,24 @@ data class AbkRuntimeModule(
     val id: String = "",
     val name: String = "",
     val author: String = "",
+    val type: String = "",
     val version: String = "",
     @SerializedName("version_code") val versionCode: Long = 0L,
     val description: String = "",
     @SerializedName("repo_url") val repoUrl: String = "",
     val stage: String = "",
     val source: String = "",
+    @SerializedName("module_dir") val moduleDir: String = "",
+    @SerializedName("web_root") val webRoot: String = "",
+    val readonly: Boolean = false,
     val controllable: Boolean = false,
     val enabled: Boolean = true,
     val update: Boolean = false,
     val remove: Boolean = false,
     @SerializedName("has_web_ui") val hasWebUi: Boolean = false,
-    @SerializedName("has_action_script") val hasActionScript: Boolean = false
+    @SerializedName("has_action_script") val hasActionScript: Boolean = false,
+    @SerializedName("action_supported") val actionSupported: Boolean = false,
+    @SerializedName("kpm_args") val kpmArgs: String = ""
 )
 
 data class BuildPlan(

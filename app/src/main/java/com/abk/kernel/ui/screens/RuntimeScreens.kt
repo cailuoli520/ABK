@@ -2,6 +2,7 @@
 
 package com.abk.kernel.ui.screens
 
+import android.content.Intent
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -10,29 +11,32 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Extension
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Web
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.abk.kernel.data.model.AbkRuntimeBuildInfo
 import com.abk.kernel.data.model.AbkRuntimeModule
 import com.abk.kernel.data.model.AbkRuntimeStatus
+import com.abk.kernel.ui.components.ExpressiveSwitch
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveSectionCard
 import com.abk.kernel.ui.components.ExpressiveStatusChip
 import com.abk.kernel.ui.components.ExpressiveTopBar
 import com.abk.kernel.ui.theme.uiSurfaceColor
+import com.abk.kernel.ui.webui.ModuleWebUiActivity
 import com.abk.kernel.utils.RootUtils
 import com.abk.kernel.viewmodel.MainViewModel
 
@@ -74,7 +78,6 @@ fun RuntimeHomeScreen(
             RuntimeStatusHeader(
                 runtimeStatus = state.abkRuntimeStatus,
                 loading = state.abkRuntimeLoading,
-                onGrantRoot = vm::requestRoot,
                 onRefresh = vm::refreshAbkRuntimeStatus
             )
 
@@ -91,11 +94,16 @@ fun RuntimeHomeScreen(
 @Composable
 fun InstalledModulesScreen(vm: MainViewModel) {
     val state by vm.uiState.collectAsState()
+    val context = LocalContext.current
     var query by rememberSaveable { mutableStateOf("") }
     val modules = remember(state.abkRuntimeStatus?.modules, query) {
         state.abkRuntimeStatus?.modules.orEmpty()
             .filter { it.matchesRuntimeModuleQuery(query) }
-            .sortedWith(compareBy<AbkRuntimeModule> { !it.controllable }.thenBy { it.displayName().lowercase() })
+            .sortedWith(
+                compareBy<AbkRuntimeModule> { it.typeOrder() }
+                    .thenBy { !it.enabled }
+                    .thenBy { it.displayName().lowercase() }
+            )
     }
 
     LaunchedEffect(state.runtimeNavigationEnabled, state.rootGranted) {
@@ -132,7 +140,6 @@ fun InstalledModulesScreen(vm: MainViewModel) {
             state.abkRuntimeError?.let {
                 RuntimeErrorCard(
                     message = if (state.abkRuntimeStatus == null) "管理器未激活" else "操作未完成，请刷新后重试",
-                    onGrantRoot = vm::requestRoot,
                     onRefresh = vm::refreshAbkRuntimeStatus
                 )
             }
@@ -149,7 +156,15 @@ fun InstalledModulesScreen(vm: MainViewModel) {
                     InstalledRuntimeModuleCard(
                         module = module,
                         actionInFlight = state.abkRuntimeModuleActionId == module.id,
-                        onSetEnabled = { enabled -> vm.setAbkRuntimeModuleEnabled(module.id, enabled) }
+                        onSetEnabled = { enabled -> vm.setAbkRuntimeModuleEnabled(module.id, enabled) },
+                        onRunAction = { vm.runRuntimeModuleAction(module.id) },
+                        onOpenWebUi = {
+                            context.startActivity(
+                                Intent(context, ModuleWebUiActivity::class.java)
+                                    .putExtra(ModuleWebUiActivity.EXTRA_MODULE_ID, module.id)
+                                    .putExtra(ModuleWebUiActivity.EXTRA_MODULE_NAME, module.displayName())
+                            )
+                        }
                     )
                 }
             }
@@ -157,13 +172,36 @@ fun InstalledModulesScreen(vm: MainViewModel) {
             Spacer(Modifier.height(80.dp))
         }
     }
+
+    if (state.abkRuntimeModuleActionTitle != null) {
+        AlertDialog(
+            onDismissRequest = vm::dismissRuntimeModuleActionOutput,
+            confirmButton = {
+                TextButton(onClick = vm::dismissRuntimeModuleActionOutput) {
+                    Text("关闭")
+                }
+            },
+            title = { Text(state.abkRuntimeModuleActionTitle.orEmpty()) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (state.abkRuntimeModuleActionId != null) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                    Text(
+                        text = state.abkRuntimeModuleActionOutput.ifEmpty { listOf("等待输出...") }.joinToString("\n"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+        )
+    }
 }
 
 @Composable
 private fun RuntimeStatusHeader(
     runtimeStatus: AbkRuntimeStatus?,
     loading: Boolean,
-    onGrantRoot: () -> Unit,
     onRefresh: () -> Unit
 ) {
     ExpressiveHeroCard(
@@ -201,29 +239,17 @@ private fun RuntimeStatusHeader(
         }
     ) {
         if (runtimeStatus == null) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Button(
+                onClick = onRefresh,
+                enabled = !loading,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                OutlinedButton(
-                    onClick = onGrantRoot,
-                    enabled = !loading,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("授权 Root")
-                }
-                Button(
-                    onClick = onRefresh,
-                    enabled = !loading,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    if (loading) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(Icons.Default.Refresh, null, modifier = Modifier.size(17.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("刷新")
-                    }
+                if (loading) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Default.Refresh, null, modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("重新检测")
                 }
             }
         }
@@ -267,7 +293,7 @@ private fun RuntimeBuildParametersCard(runtimeStatus: AbkRuntimeStatus) {
     val systemKernelVersion = remember { RootUtils.getKernelVersion() }
     ExpressiveSectionCard(
         title = "当前内核编译参数",
-        subtitle = "来自管理器运行态信息",
+        subtitle = "来自编译器写入的构建记录",
         icon = Icons.Default.Tune
     ) {
         if (build == null) {
@@ -281,11 +307,11 @@ private fun RuntimeBuildParametersCard(runtimeStatus: AbkRuntimeStatus) {
 
         Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
             RuntimeInfoRow("Android", build.androidVersion)
-            RuntimeInfoRow("内核", listOf(build.kernelVersion, build.subLevel).filter { it.isNotBlank() }.joinToString("."))
+            RuntimeInfoRow("目标内核", listOf(build.kernelVersion, build.subLevel).filter { it.isNotBlank() }.joinToString("."))
+            RuntimeInfoRow("内核版本", systemKernelVersion)
             RuntimeInfoRow("补丁级别", build.osPatchLevel)
             RuntimeInfoRow("修订版本", build.revision)
             RuntimeInfoRow("KSU", listOf(build.kernelsuVariant, build.kernelsuBranch).filter { it.isNotBlank() }.joinToString(" / "))
-            RuntimeInfoRow("内核版本", systemKernelVersion)
             RuntimeInfoRow("构建时间", build.buildTime)
             RuntimeInfoRow("虚拟化", build.virtualizationSupport)
             RuntimeInfoRow("ZRAM 额外算法", build.zramExtraAlgos)
@@ -342,7 +368,6 @@ private fun RuntimeInfoRow(label: String, value: String) {
 @Composable
 private fun RuntimeErrorCard(
     message: String,
-    onGrantRoot: () -> Unit,
     onRefresh: () -> Unit
 ) {
     ElevatedCard(
@@ -361,13 +386,8 @@ private fun RuntimeErrorCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onGrantRoot, modifier = Modifier.weight(1f)) {
-                    Text("授权 Root")
-                }
-                Button(onClick = onRefresh, modifier = Modifier.weight(1f)) {
-                    Text("刷新")
-                }
+            Button(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) {
+                Text("重新检测")
             }
         }
     }
@@ -390,7 +410,9 @@ private fun RuntimeModuleSearchField(value: String, onValueChange: (String) -> U
 private fun InstalledRuntimeModuleCard(
     module: AbkRuntimeModule,
     actionInFlight: Boolean,
-    onSetEnabled: (Boolean) -> Unit
+    onSetEnabled: (Boolean) -> Unit,
+    onRunAction: () -> Unit,
+    onOpenWebUi: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -438,12 +460,11 @@ private fun InstalledRuntimeModuleCard(
                         )
                     }
                 }
-                if (module.controllable) {
-                    Icon(
-                        imageVector = Icons.Default.PowerSettingsNew,
-                        contentDescription = null,
-                        tint = if (module.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
+                if (module.controllable && !module.readonly) {
+                    ExpressiveSwitch(
+                        checked = module.enabled,
+                        enabled = !actionInFlight,
+                        onCheckedChange = onSetEnabled
                     )
                 }
             }
@@ -463,14 +484,22 @@ private fun InstalledRuntimeModuleCard(
                 horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 RuntimeModuleChip(module.id.ifBlank { module.repoName() })
+                RuntimeModuleChip(runtimeModuleTypeLabel(module), secondary = true)
                 if (module.stage.isNotBlank()) RuntimeModuleChip(module.stage, secondary = true)
                 if (module.source.isNotBlank()) RuntimeModuleChip(runtimeModuleSourceLabel(module.source), secondary = true)
                 RuntimeModuleChip(if (module.enabled) "已启用" else "已关闭", secondary = !module.enabled)
                 if (module.update) RuntimeModuleChip("待更新", secondary = true)
                 if (module.remove) RuntimeModuleChip("待卸载", secondary = true)
                 if (module.hasWebUi) RuntimeModuleChip("WebUI", secondary = true)
-                if (module.hasActionScript) RuntimeModuleChip("Action", secondary = true)
-                RuntimeModuleChip(if (module.controllable) "可控制" else "仅元数据", secondary = !module.controllable)
+                if (module.actionSupported || module.hasActionScript) RuntimeModuleChip("Action", secondary = true)
+                RuntimeModuleChip(
+                    when {
+                        module.readonly -> "只读"
+                        module.controllable -> "可控制"
+                        else -> "仅元数据"
+                    },
+                    secondary = !module.controllable || module.readonly
+                )
             }
 
             if (module.repoUrl.isNotBlank()) {
@@ -483,18 +512,30 @@ private fun InstalledRuntimeModuleCard(
                 )
             }
 
-            if (module.controllable) {
-                Button(
-                    onClick = { onSetEnabled(!module.enabled) },
-                    enabled = !actionInFlight,
-                    modifier = Modifier.align(Alignment.End).height(40.dp)
+            if (module.hasWebUi || module.actionSupported || actionInFlight) {
+                Row(
+                    modifier = Modifier.align(Alignment.End),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (actionInFlight) {
-                        CircularProgressIndicator(modifier = Modifier.size(17.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(Icons.Default.PowerSettingsNew, null, modifier = Modifier.size(17.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(if (module.enabled) "关闭" else "启用")
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    }
+                    if (module.hasWebUi) {
+                        IconButton(
+                            onClick = onOpenWebUi,
+                            enabled = module.enabled && !module.remove && !module.update
+                        ) {
+                            Icon(Icons.Default.Web, contentDescription = "打开 WebUI")
+                        }
+                    }
+                    if (module.actionSupported) {
+                        IconButton(
+                            onClick = onRunAction,
+                            enabled = module.enabled && !actionInFlight
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = "执行 Action")
+                        }
                     }
                 }
             }
@@ -526,7 +567,7 @@ private fun RuntimeModuleChip(label: String, secondary: Boolean = false) {
 private fun AbkRuntimeModule.matchesRuntimeModuleQuery(query: String): Boolean {
     val cleanQuery = query.trim()
     if (cleanQuery.isBlank()) return true
-    return listOf(id, name, version, description, repoUrl, stage)
+    return listOf(id, name, version, description, repoUrl, stage, type, source, author)
         .any { it.contains(cleanQuery, ignoreCase = true) }
 }
 
@@ -591,6 +632,29 @@ private fun runtimeModuleSourceLabel(source: String): String {
             }
         }
     return labels.joinToString("+")
+}
+
+private fun runtimeModuleTypeLabel(module: AbkRuntimeModule): String = when (module.normalizedType()) {
+    "standard" -> "普通模块"
+    "builtin" -> "预编译模块"
+    "kpm" -> "KPM"
+    else -> module.normalizedType()
+}
+
+private fun AbkRuntimeModule.normalizedType(): String =
+    type.ifBlank {
+        when {
+            source.split(',').any { it.trim() == "kpm" } -> "kpm"
+            source.split(',').any { it.trim() == "ksud" } -> "standard"
+            else -> "builtin"
+        }
+    }
+
+private fun AbkRuntimeModule.typeOrder(): Int = when (normalizedType()) {
+    "builtin" -> 0
+    "standard" -> 1
+    "kpm" -> 2
+    else -> 3
 }
 
 private fun internalRuntimeControlCapability(): String =
