@@ -288,12 +288,14 @@ private fun AbkMainScaffold(vm: MainViewModel) {
     var flashDetailPageVisible by rememberSaveable { mutableStateOf(false) }
     var settingsThemePageVisible by rememberSaveable { mutableStateOf(false) }
     var buildPlanPageVisible by rememberSaveable { mutableStateOf(false) }
+    var moduleRepositoryPageVisible by rememberSaveable { mutableStateOf(false) }
     var lastBackAt by remember { mutableStateOf(0L) }
     val visibleTabs = AbkTab.entries
     val activeTab = selectedTab
     val motionScheme = MaterialTheme.motionScheme
     val hideBottomBar = when (activeTab) {
         AbkTab.Build -> buildPlanPageVisible
+        AbkTab.Modules -> moduleRepositoryPageVisible
         AbkTab.Flash -> flashDetailPageVisible
         AbkTab.Settings -> settingsThemePageVisible
         else -> false
@@ -302,11 +304,13 @@ private fun AbkMainScaffold(vm: MainViewModel) {
     LaunchedEffect(activeTab) {
         when (activeTab) {
             AbkTab.Build -> {
+                moduleRepositoryPageVisible = false
                 flashDetailPageVisible = false
                 settingsThemePageVisible = false
             }
             AbkTab.Flash -> {
                 buildPlanPageVisible = false
+                moduleRepositoryPageVisible = false
                 settingsThemePageVisible = false
             }
             AbkTab.Modules -> {
@@ -316,10 +320,12 @@ private fun AbkMainScaffold(vm: MainViewModel) {
             }
             AbkTab.Settings -> {
                 buildPlanPageVisible = false
+                moduleRepositoryPageVisible = false
                 flashDetailPageVisible = false
             }
             else -> {
                 buildPlanPageVisible = false
+                moduleRepositoryPageVisible = false
                 flashDetailPageVisible = false
                 settingsThemePageVisible = false
             }
@@ -415,7 +421,8 @@ private fun AbkMainScaffold(vm: MainViewModel) {
                     )
                     AbkTab.Modules -> ModuleRepositoryScreen(
                         vm = vm,
-                        outerPadding = contentPadding
+                        outerPadding = contentPadding,
+                        onRepositoryPageVisibleChange = { moduleRepositoryPageVisible = it }
                     )
                     AbkTab.Flash -> FlashScreen(
                         vm = vm,

@@ -5,7 +5,10 @@ import com.abk.kernel.data.api.GitHubApiService
 import com.abk.kernel.data.api.GitHubAuthService
 import com.abk.kernel.data.api.NetworkClient
 import com.abk.kernel.data.model.*
-import com.google.gson.Gson
+import com.google.gson.JsonArray
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -25,7 +28,6 @@ class GitHubRepository(
     private var apiService: GitHubApiService? = null
 ) {
     private val clientId = BuildConfig.GITHUB_CLIENT_ID
-    private val gson = Gson()
     private val publicHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
@@ -83,23 +85,18 @@ class GitHubRepository(
                     }
 
                     val body = resp.body?.string().orEmpty()
-                    val raw = runCatching { gson.fromJson(body, RawModuleCatalogDocument::class.java) }
+                    val catalog = runCatching { parseModuleCatalogDocument(body, repositoryUrl) }
                         .getOrElse {
                             lastError = "JSON 解析失败: ${it.message ?: "格式错误"}"
                             return@use
                         }
 
-                    val modules = raw.modules.orEmpty().mapNotNull(::sanitizeCatalogItem)
-                        .distinctBy { it.repoUrl.trim().lowercase() }
-                    val skipped = raw.modules.orEmpty().size - modules.size
-                    val name = raw.name?.trim().orEmpty().ifBlank { repositoryUrl.toCatalogFallbackName() }
-
                     return@withContext Result.Success(
                         ModuleCatalogFetchResult(
-                            name = name,
+                            name = catalog.name,
                             indexUrl = indexUrl,
-                            modules = modules,
-                            skippedCount = skipped.coerceAtLeast(0)
+                            modules = catalog.modules,
+                            skippedCount = catalog.skippedCount
                         )
                     )
                 }
@@ -443,28 +440,65 @@ class GitHubRepository(
         return GithubRepositoryParts(owner, repo, branch)
     }
 
-    private fun sanitizeCatalogItem(raw: RawModuleCatalogItem): ModuleCatalogItem? {
-        val repoUrl = raw.repoUrl?.trim().orEmpty()
+    private fun parseModuleCatalogDocument(body: String, repositoryUrl: String): ParsedModuleCatalogDocument {
+        val root = JsonParser.parseString(body)
+        val document = root.asJsonObjectOrNull() ?: error("根节点必须是 JSON 对象")
+        val rawModules = document.arrayOrEmpty("modules")
+        val modules = rawModules.mapNotNull { element ->
+            element.asJsonObjectOrNull()?.let(::sanitizeCatalogItem)
+        }.distinctBy { it.repoUrl.trim().lowercase() }
+        return ParsedModuleCatalogDocument(
+            name = document.stringOrEmpty("name").ifBlank { repositoryUrl.toCatalogFallbackName() },
+            modules = modules,
+            skippedCount = (rawModules.size() - modules.size).coerceAtLeast(0)
+        )
+    }
+
+    private fun sanitizeCatalogItem(raw: JsonObject): ModuleCatalogItem? {
+        val repoUrl = raw.stringOrEmpty("repoUrl")
         if (repoUrl.isBlank()) return null
-        val supportedStages = raw.supportedStages.orEmpty()
+        val supportedStages = raw.stringList("supportedStages")
             .map { CustomExternalModuleStage.normalize(it) }
             .distinct()
             .ifEmpty { listOf(CustomExternalModuleStage.AFTER_PATCH) }
-        val defaultStage = CustomExternalModuleStage.normalize(raw.defaultStage.orEmpty())
+        val defaultStage = CustomExternalModuleStage.normalize(raw.stringOrEmpty("defaultStage"))
             .takeIf { it in supportedStages }
             ?: supportedStages.first()
 
         return ModuleCatalogItem(
-            name = raw.name?.trim().orEmpty().ifBlank { repoUrl.toCatalogFallbackName() },
-            version = raw.version?.trim().orEmpty(),
-            description = raw.description?.trim().orEmpty(),
+            name = raw.stringOrEmpty("name").ifBlank { repoUrl.toCatalogFallbackName() },
+            version = raw.stringOrEmpty("version"),
+            description = raw.stringOrEmpty("description"),
             repoUrl = repoUrl,
             defaultStage = defaultStage,
             supportedStages = supportedStages,
-            author = raw.author?.trim().orEmpty(),
-            homepage = raw.homepage?.trim().orEmpty()
+            author = raw.stringOrEmpty("author"),
+            homepage = raw.stringOrEmpty("homepage")
         )
     }
+
+    private fun JsonElement.asJsonObjectOrNull(): JsonObject? =
+        takeIf { it.isJsonObject }?.asJsonObject
+
+    private fun JsonObject.stringOrEmpty(name: String): String =
+        get(name)
+            ?.takeIf { !it.isJsonNull && it.isJsonPrimitive }
+            ?.asString
+            ?.trim()
+            .orEmpty()
+
+    private fun JsonObject.stringList(name: String): List<String> =
+        get(name)
+            ?.takeIf { !it.isJsonNull && it.isJsonArray }
+            ?.asJsonArray
+            ?.mapNotNull { element ->
+                element.takeIf { !it.isJsonNull && it.isJsonPrimitive }?.asString?.trim()
+            }
+            ?.filter { it.isNotBlank() }
+            .orEmpty()
+
+    private fun JsonObject.arrayOrEmpty(name: String): JsonArray =
+        get(name)?.takeIf { !it.isJsonNull && it.isJsonArray }?.asJsonArray ?: JsonArray()
 
     private fun String.toCatalogFallbackName(): String = trim()
         .trimEnd('/')
@@ -484,18 +518,8 @@ private data class GithubRepositoryParts(
     val branch: String?
 )
 
-private data class RawModuleCatalogDocument(
-    val name: String? = null,
-    val modules: List<RawModuleCatalogItem>? = null
-)
-
-private data class RawModuleCatalogItem(
-    val name: String? = null,
-    val version: String? = null,
-    val description: String? = null,
-    val repoUrl: String? = null,
-    val defaultStage: String? = null,
-    val supportedStages: List<String>? = null,
-    val author: String? = null,
-    val homepage: String? = null
+private data class ParsedModuleCatalogDocument(
+    val name: String,
+    val modules: List<ModuleCatalogItem>,
+    val skippedCount: Int
 )
