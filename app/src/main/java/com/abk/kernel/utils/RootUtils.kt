@@ -10,6 +10,7 @@ import com.abk.kernel.data.model.RootGrantApp
 import com.abk.kernel.data.model.RootGrantProfile
 import com.topjohnwu.superuser.CallbackList
 import com.topjohnwu.superuser.Shell
+import org.json.JSONObject
 import java.io.File
 import java.util.Collections
 
@@ -260,8 +261,12 @@ object RootUtils {
     fun reboot(): ShellResult = execRootScript("svc power reboot || reboot", timeoutSeconds = 15L)
 
     fun readAbkControlStatus(): ShellResult {
-        val safeNode = shellQuote(managerNodePath())
-        return execRootScript("cat $safeNode", timeoutSeconds = 10L)
+        val status = AbkKsuNative.controlStatus()
+        return if (status != null) {
+            ShellResult(true, listOf(status))
+        } else {
+            ShellResult(false, listOf("未激活"))
+        }
     }
 
     fun readManagerRuntimeSnapshot(): ManagerRuntimeSnapshot {
@@ -390,12 +395,11 @@ object RootUtils {
     }
 
     fun writeAbkControlCommand(command: String): ShellResult {
-        val safeNode = shellQuote(managerNodePath())
-        val safeCommand = shellQuote(command.trim())
-        return execRootScript(
-            "printf '%s\\n' $safeCommand > $safeNode",
-            timeoutSeconds = 10L
-        )
+        return if (AbkKsuNative.controlCommand(command)) {
+            ShellResult(true, emptyList())
+        } else {
+            ShellResult(false, listOf("未激活"))
+        }
     }
 
     fun execRootCommandForWebUi(command: String, cwd: String = "", timeoutSeconds: Long = 120L): ShellResult {
@@ -596,9 +600,22 @@ object RootUtils {
     private fun detectNativeManagerRuntime(): ManagerRuntimeProbe? {
         val status = AbkKsuNative.status() ?: return null
         if (!status.isManager) return null
+        val controlVariant = AbkKsuNative.controlStatus()
+            ?.let { json ->
+                runCatching {
+                    JSONObject(json)
+                        .optJSONObject("manager")
+                        ?.optString("variant")
+                        .orEmpty()
+                        .trim()
+                }.getOrDefault("")
+            }
+            .orEmpty()
+        val displayVariant = controlVariant.ifBlank { "KernelSU" }
         val capabilities = buildList {
             add("native_manager")
             add("root_policy")
+            if (controlVariant.isNotBlank()) add("abk_control")
             if (status.superuserCount > 0) add("superuser_profiles")
             if (status.isLkmMode) add("lkm")
             if (status.isLateLoadMode) add("late_load")
@@ -613,8 +630,8 @@ object RootUtils {
             .joinToString(" · ")
         return ManagerRuntimeProbe(
             active = true,
-            displayName = "KernelSU",
-            variant = "KernelSU",
+            displayName = displayVariant,
+            variant = displayVariant,
             backend = "native",
             version = versionText,
             capabilities = capabilities
@@ -702,14 +719,6 @@ object RootUtils {
             "kernelsu" in lower || version.isNotBlank() -> "KernelSU"
             else -> ""
         }
-    }
-
-    private fun managerNodePath(): String {
-        val dir = charArrayOf('/', 'd', 'e', 'v').concatToString()
-        val name = intArrayOf(97, 98, 107, 95, 99, 111, 110, 116, 114, 111, 108)
-            .map { it.toChar() }
-            .joinToString("")
-        return "$dir/$name"
     }
 
     private fun sanitizeWebRelativePath(value: String): String? {

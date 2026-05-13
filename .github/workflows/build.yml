@@ -775,66 +775,235 @@ jobs:
             echo "KSU_LATEST_COMMIT_DATE=未知" >> $GITHUB_ENV
           fi
 
-      - name: 配置 ABK 管理器身份
+      - name: 准备 ABK 管理器签名
+        if: inputs.ksu_variant == 'Official' || inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU'
+        env:
+          ABK_MANAGER_CERT_SIZE_VAR: ${{ vars.ABK_MANAGER_CERT_SIZE }}
+          ABK_MANAGER_CERT_SHA256_VAR: ${{ vars.ABK_MANAGER_CERT_SHA256 }}
+          ABK_MANAGER_CERT_SIZE_SECRET: ${{ secrets.ABK_MANAGER_CERT_SIZE }}
+          ABK_MANAGER_CERT_SHA256_SECRET: ${{ secrets.ABK_MANAGER_CERT_SHA256 }}
+          ABK_RELEASE_KEYSTORE_BASE64: ${{ secrets.ABK_RELEASE_KEYSTORE_BASE64 }}
+          ABK_RELEASE_STORE_PASSWORD: ${{ secrets.ABK_RELEASE_STORE_PASSWORD }}
+          ABK_RELEASE_KEY_ALIAS: ${{ secrets.ABK_RELEASE_KEY_ALIAS }}
+          ABK_RELEASE_STORE_TYPE: ${{ secrets.ABK_RELEASE_STORE_TYPE }}
+        run: |
+          set -euo pipefail
+
+          size="${ABK_MANAGER_CERT_SIZE_VAR:-${ABK_MANAGER_CERT_SIZE_SECRET:-}}"
+          hash="${ABK_MANAGER_CERT_SHA256_VAR:-${ABK_MANAGER_CERT_SHA256_SECRET:-}}"
+
+          if [ -z "$size" ] || [ -z "$hash" ]; then
+            if [ -n "${ABK_RELEASE_KEYSTORE_BASE64:-}" ] && \
+               [ -n "${ABK_RELEASE_STORE_PASSWORD:-}" ] && \
+               [ -n "${ABK_RELEASE_KEY_ALIAS:-}" ]; then
+              work="$RUNNER_TEMP/abk-manager-cert"
+              mkdir -p "$work"
+              store="$work/abk-release.jks"
+              cert="$work/abk-manager-cert.der"
+              printf '%s' "$ABK_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$store"
+              store_type="${ABK_RELEASE_STORE_TYPE:-JKS}"
+              keytool -exportcert \
+                -keystore "$store" \
+                -storetype "$store_type" \
+                -storepass "$ABK_RELEASE_STORE_PASSWORD" \
+                -alias "$ABK_RELEASE_KEY_ALIAS" \
+                -file "$cert"
+              size="$(wc -c < "$cert" | tr -d '[:space:]')"
+              hash="$(sha256sum "$cert" | awk '{print $1}')"
+            fi
+          fi
+
+          if ! printf '%s' "$size" | grep -Eq '^[0-9]+$'; then
+            echo "::error::缺少合法的 ABK 管理器证书长度。请配置 vars/secrets.ABK_MANAGER_CERT_SIZE，或提供 ABK_RELEASE_* 签名密钥。"
+            exit 1
+          fi
+          if ! printf '%s' "$hash" | grep -Eiq '^[0-9a-f]{64}$'; then
+            echo "::error::缺少合法的 ABK 管理器证书 SHA-256。请配置 vars/secrets.ABK_MANAGER_CERT_SHA256，或提供 ABK_RELEASE_* 签名密钥。"
+            exit 1
+          fi
+
+          {
+            echo "ABK_MANAGER_PACKAGE=com.abk.kernel"
+            echo "ABK_MANAGER_CERT_SIZE=$size"
+            echo "ABK_MANAGER_CERT_SHA256=${hash,,}"
+          } >> "$GITHUB_ENV"
+
+      - name: 配置 ABK 管理器身份和私有控制通道
         if: inputs.ksu_variant == 'Official' || inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU'
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           set -euo pipefail
 
           python3 - <<'PY'
+          import os
           from pathlib import Path
 
-          package = "com.abk.kernel"
+          package = os.environ["ABK_MANAGER_PACKAGE"]
+          cert_size = os.environ["ABK_MANAGER_CERT_SIZE"]
+          cert_hash = os.environ["ABK_MANAGER_CERT_SHA256"]
           root = Path(".")
-          marker = "ABK_MANAGER_PACKAGE"
+          identity_marker = "ABK_MANAGER_IDENTITY_BOUND"
+          dispatch_marker = "ABK_CONTROL_PRIVATE_IOCTL"
 
+          bound = 0
           for kbuild in root.rglob("Kbuild"):
               text = kbuild.read_text(errors="ignore")
               if "KSU_EXPECTED_HASH" not in text and "EXPECTED_HASH" not in text and "KSU_MANAGER_PACKAGE" not in text:
                   continue
-              if marker in text:
+              if identity_marker in text:
+                  bound += 1
                   continue
-              text += "\n# ABK: allow the integrated ABK app to use KernelSU manager ioctls.\n"
-              text += f"ccflags-y += -D{marker}=\\\"{package}\\\"\n"
+              prefix = (
+                  f"# ABK: {identity_marker}\n"
+                  f"KSU_MANAGER_PACKAGE := {package}\n"
+                  f"KSU_EXPECTED_SIZE := {cert_size}\n"
+                  f"KSU_EXPECTED_HASH := {cert_hash}\n"
+                  "\n"
+              )
+              text = prefix + text
               kbuild.write_text(text)
-              print(f"Configured ABK manager package in {kbuild}")
+              bound += 1
+              print(f"Bound ABK manager package and certificate in {kbuild}")
 
-          injected = 0
-          snippet = f"""#ifdef {marker}
-              {{
-                  char abk_pkg[KSU_MAX_PACKAGE_NAME];
-                  if (get_pkg_from_apk_path(abk_pkg, path) == 0 &&
-                      !strncmp(abk_pkg, {marker}, sizeof({marker}))) {{
-          #ifdef KSU_SIGNATURE_INDEX_DYNAMIC_MANAGER
-                      if (signature_index) {{
-                          *signature_index = KSU_SIGNATURE_INDEX_DYNAMIC_MANAGER;
-                      }}
-          #endif
-                      return true;
-                  }}
-              }}
-          #endif
-          """
+          if bound == 0:
+              raise SystemExit("未找到可绑定 ABK 管理器身份的 KernelSU Kbuild")
 
           for source in root.rglob("apk_sign.c"):
               text = source.read_text(errors="ignore")
-              if marker in text or "bool is_manager_apk" not in text:
+              if "static apk_sign_key_t apk_sign_keys[] = {" not in text:
                   continue
-              anchor = "bool is_manager_apk(char *path)"
-              if anchor not in text:
-                  anchor = "bool is_manager_apk(char *path, u8 *signature_index)"
-              if anchor not in text:
+              marker = "ABK_MANAGER_EXPECTED_SIGNATURE"
+              if marker in text:
                   continue
-              body = anchor + "\n{"
-              if body not in text:
-                  continue
-              text = text.replace(body, body + "\n" + snippet, 1)
+              text = text.replace(
+                  "static apk_sign_key_t apk_sign_keys[] = {\n",
+                  "static apk_sign_key_t apk_sign_keys[] = {\n"
+                  f"#ifdef EXPECTED_SIZE /* ABK: {marker} */\n"
+                  "    { EXPECTED_SIZE, EXPECTED_HASH },\n"
+                  "#endif\n",
+                  1,
+              )
               source.write_text(text)
-              injected += 1
-              print(f"Injected ABK manager package fast-path in {source}")
+              print(f"Ensured ABK expected signature is accepted in {source}")
+
+          def inject_dispatch(path: Path) -> bool:
+              text = path.read_text(errors="ignore")
+              if dispatch_marker in text:
+                  return False
+              if "static const struct ksu_ioctl_cmd_map ksu_ioctl_handlers[] = {" not in text:
+                  return False
+
+              include_anchor = '#include "supercall/supercall.h"\n'
+              include_block = (
+                  f'{include_anchor}\n'
+                  f'/* ABK: {dispatch_marker} */\n'
+                  '#include <linux/kconfig.h>\n'
+                  '#if IS_ENABLED(CONFIG_ABK_CONTROL)\n'
+                  '#include <linux/abk_control.h>\n'
+                  '#endif\n'
+              )
+              if include_anchor in text:
+                  text = text.replace(include_anchor, include_block, 1)
+              else:
+                  text = (
+                      f'/* ABK: {dispatch_marker} */\n'
+                      '#include <linux/kconfig.h>\n'
+                      '#if IS_ENABLED(CONFIG_ABK_CONTROL)\n'
+                      '#include <linux/abk_control.h>\n'
+                      '#endif\n'
+                  ) + text
+
+              helper_anchor = "// IOCTL handlers mapping table"
+              helpers = r'''
+#if IS_ENABLED(CONFIG_ABK_CONTROL)
+static int do_abk_control_get_status(void __user *arg)
+{
+    struct abk_control_status_cmd cmd;
+    char *status = NULL;
+    size_t status_len = 0;
+    int ret;
+
+    if (copy_from_user(&cmd, arg, sizeof(cmd))) {
+        return -EFAULT;
+    }
+
+    ret = abk_control_get_status_json(&status, &status_len);
+    if (ret) {
+        return ret;
+    }
+
+    if (!cmd.data || cmd.data_len < status_len + 1) {
+        cmd.data_len = status_len + 1;
+        ret = copy_to_user(arg, &cmd, sizeof(cmd)) ? -EFAULT : -ENOSPC;
+        kfree(status);
+        return ret;
+    }
+
+    if (copy_to_user((void __user *)(unsigned long)cmd.data, status, status_len + 1)) {
+        kfree(status);
+        return -EFAULT;
+    }
+
+    cmd.data_len = status_len;
+    ret = copy_to_user(arg, &cmd, sizeof(cmd)) ? -EFAULT : 0;
+    kfree(status);
+    return ret;
+}
+
+static int do_abk_control_run_command(void __user *arg)
+{
+    struct abk_control_command_cmd cmd;
+    char command[ABK_CONTROL_MAX_COMMAND + 1];
+
+    if (copy_from_user(&cmd, arg, sizeof(cmd))) {
+        return -EFAULT;
+    }
+    if (!cmd.command || cmd.command_len == 0 || cmd.command_len > ABK_CONTROL_MAX_COMMAND) {
+        return -EINVAL;
+    }
+    if (copy_from_user(command, (void __user *)(unsigned long)cmd.command, cmd.command_len)) {
+        return -EFAULT;
+    }
+    command[cmd.command_len] = '\0';
+
+    return abk_control_run_command(command, cmd.command_len);
+}
+#endif
+
+'''
+              if helper_anchor in text:
+                  text = text.replace(helper_anchor, helpers + helper_anchor, 1)
+              else:
+                  text = helpers + text
+
+              table_anchor = "static const struct ksu_ioctl_cmd_map ksu_ioctl_handlers[] = {\n"
+              entries = r'''#if IS_ENABLED(CONFIG_ABK_CONTROL)
+    {
+        .cmd = ABK_CONTROL_IOCTL_GET_STATUS,
+        .name = "ABK_CONTROL_GET_STATUS",
+        .handler = do_abk_control_get_status,
+        .perm_check = only_manager
+    },
+    {
+        .cmd = ABK_CONTROL_IOCTL_RUN_COMMAND,
+        .name = "ABK_CONTROL_RUN_COMMAND",
+        .handler = do_abk_control_run_command,
+        .perm_check = only_manager
+    },
+#endif
+'''
+              text = text.replace(table_anchor, table_anchor + entries, 1)
+              path.write_text(text)
+              return True
+
+          injected = 0
+          for dispatch in root.rglob("supercall/dispatch.c"):
+              if inject_dispatch(dispatch):
+                  injected += 1
+                  print(f"Injected ABK private ioctl dispatch in {dispatch}")
 
           if injected == 0:
-              raise SystemExit("未找到可注入的 KernelSU manager/apk_sign.c")
+              raise SystemExit("未找到可注入的 KernelSU supercall/dispatch.c")
           PY
 
       - name: 修复 ReSukiSU SUSFS 源码兼容

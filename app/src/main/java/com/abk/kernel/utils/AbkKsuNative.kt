@@ -34,6 +34,8 @@ object AbkKsuNative {
     external fun isSelinuxHideEnabled(): Boolean
     external fun setSelinuxHideEnabled(enabled: Boolean): Int
     external fun getUserName(uid: Int): String?
+    external fun getControlStatus(): String?
+    external fun runControlCommand(command: String): Boolean
 
     fun status(): NativeStatus? {
         if (!libraryLoaded) return null
@@ -72,6 +74,18 @@ object AbkKsuNative {
 
     fun userName(uid: Int): String =
         if (!libraryLoaded) "" else runCatching { getUserName(uid).orEmpty() }.getOrDefault("")
+
+    fun controlStatus(): String? {
+        if (!libraryLoaded) return null
+        return runCatching { getControlStatus()?.trim()?.takeIf { it.startsWith("{") } }.getOrNull()
+    }
+
+    fun controlCommand(command: String): Boolean {
+        if (!libraryLoaded) return false
+        val cleanCommand = command.trim()
+        if (cleanCommand.isBlank()) return false
+        return runCatching { runControlCommand(cleanCommand) }.getOrDefault(false)
+    }
 
     data class NativeStatus(
         val version: Int,

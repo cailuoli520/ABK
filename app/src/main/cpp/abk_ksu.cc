@@ -16,6 +16,8 @@
 #include <climits>
 #include <sys/syscall.h>
 #include <cerrno>
+#include <string>
+#include <vector>
 #include "abk_ksu.h"
 
 static int fd = -1;
@@ -221,4 +223,50 @@ bool is_selinux_hide_enabled() {
         return false;
     }
     return value != 0;
+}
+
+bool abk_control_get_status(std::string *out) {
+    if (!out) {
+        return false;
+    }
+
+    struct abk_control_status_cmd cmd = {};
+    int ret = ksuctl(ABK_CONTROL_IOCTL_GET_STATUS, &cmd);
+    if (ret != 0 && errno != ENOSPC) {
+        return false;
+    }
+    if (cmd.data_len == 0 || cmd.data_len > 1024 * 1024) {
+        return false;
+    }
+
+    std::vector<char> buffer(static_cast<size_t>(cmd.data_len) + 1, '\0');
+    cmd.data = reinterpret_cast<uintptr_t>(buffer.data());
+    cmd.data_len = buffer.size();
+
+    if (ksuctl(ABK_CONTROL_IOCTL_GET_STATUS, &cmd) != 0) {
+        return false;
+    }
+
+    size_t len = static_cast<size_t>(cmd.data_len);
+    if (len >= buffer.size()) {
+        len = buffer.size() - 1;
+    }
+    out->assign(buffer.data(), strnlen(buffer.data(), len));
+    return true;
+}
+
+bool abk_control_run_command(const char *command) {
+    if (!command) {
+        return false;
+    }
+
+    size_t len = strnlen(command, ABK_CONTROL_MAX_COMMAND + 1);
+    if (len == 0 || len > ABK_CONTROL_MAX_COMMAND) {
+        return false;
+    }
+
+    struct abk_control_command_cmd cmd = {};
+    cmd.command_len = len;
+    cmd.command = reinterpret_cast<uintptr_t>(command);
+    return ksuctl(ABK_CONTROL_IOCTL_RUN_COMMAND, &cmd) == 0;
 }

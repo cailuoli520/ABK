@@ -8,8 +8,10 @@
 #include <cstdint>
 #include <sys/ioctl.h>
 #include <sys/prctl.h>
+#include <string>
 #include <utility>
 
+#include "uapi/abk_control.h"
 #include "uapi/ksu.h"
 
 uint32_t get_version();
@@ -48,6 +50,10 @@ int set_selinux_hide_enabled(bool enabled);
 bool is_selinux_hide_enabled();
 
 bool get_allow_list(struct ksu_new_get_allow_list_cmd *);
+
+bool abk_control_get_status(std::string *out);
+
+bool abk_control_run_command(const char *command);
 
 inline std::pair<int, int> legacy_get_info() {
     int32_t version = -1;

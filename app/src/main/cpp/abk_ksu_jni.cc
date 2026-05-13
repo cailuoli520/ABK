@@ -8,6 +8,7 @@
 
 #include <android/log.h>
 #include <cstring>
+#include <string>
 
 #include "abk_ksu.h"
 #include "logging.h"
@@ -354,6 +355,31 @@ Java_com_abk_kernel_utils_AbkKsuNative_getUserName(JNIEnv *env, jobject thiz, ji
         return env->NewStringUTF(pw->pw_name);
     }
     return nullptr;
+}
+
+extern "C"
+JNIEXPORT jstring JNICALL
+Java_com_abk_kernel_utils_AbkKsuNative_getControlStatus(JNIEnv *env, jobject thiz) {
+    std::string status;
+    if (!abk_control_get_status(&status)) {
+        return nullptr;
+    }
+    return env->NewStringUTF(status.c_str());
+}
+
+extern "C"
+JNIEXPORT jboolean JNICALL
+Java_com_abk_kernel_utils_AbkKsuNative_runControlCommand(JNIEnv *env, jobject thiz, jstring command) {
+    if (!command) {
+        return false;
+    }
+    const char *nativeCommand = env->GetStringUTFChars(command, nullptr);
+    if (!nativeCommand) {
+        return false;
+    }
+    bool ok = abk_control_run_command(nativeCommand);
+    env->ReleaseStringUTFChars(command, nativeCommand);
+    return ok;
 }
 
 extern "C"
