@@ -1,8 +1,13 @@
 package com.abk.kernel.utils
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Base64
 import android.util.Log
+import com.abk.kernel.data.model.RootGrantApp
+import com.abk.kernel.data.model.RootGrantProfile
 import com.topjohnwu.superuser.CallbackList
 import com.topjohnwu.superuser.Shell
 import java.io.File
@@ -288,6 +293,48 @@ object RootUtils {
         )
     }
 
+    fun isNativeManagerActive(): Boolean = AbkKsuNative.isUsableManager()
+
+    fun listRootGrantApps(context: Context): List<RootGrantApp> {
+        if (!AbkKsuNative.isUsableManager()) return emptyList()
+        val packageManager = context.packageManager
+        val apps = installedApplications(packageManager)
+        return apps
+            .asSequence()
+            .filter { it.packageName.isNotBlank() }
+            .mapNotNull { appInfo ->
+                val packageName = appInfo.packageName ?: return@mapNotNull null
+                val uid = appInfo.uid
+                val profile = AbkKsuNative.readProfile(packageName, uid)
+                    ?: RootGrantProfile(name = packageName, currentUid = uid)
+                RootGrantApp(
+                    packageName = packageName,
+                    label = runCatching {
+                        packageManager.getApplicationLabel(appInfo).toString()
+                    }.getOrDefault(packageName),
+                    uid = uid,
+                    userName = AbkKsuNative.userName(uid),
+                    isSystemApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0,
+                    profile = profile
+                )
+            }
+            .distinctBy { "${it.uid}:${it.packageName}" }
+            .sortedWith(
+                compareByDescending<RootGrantApp> { it.profile.allowSu }
+                    .thenBy { it.label.lowercase() }
+                    .thenBy { it.packageName }
+            )
+            .toList()
+    }
+
+    fun setRootGrantProfile(profile: RootGrantProfile): Boolean {
+        if (!AbkKsuNative.isUsableManager()) return false
+        if (profile.allowSu && !profile.rootUseDefault && profile.rules.isNotBlank()) {
+            if (!setProfileSepolicy(profile.name, profile.rules)) return false
+        }
+        return AbkKsuNative.writeProfile(profile)
+    }
+
     fun listKsuModules(): ShellResult {
         val script = """
             set -e
@@ -408,6 +455,27 @@ object RootUtils {
         return moduleJson
     }
 
+    @Suppress("DEPRECATION")
+    private fun installedApplications(packageManager: PackageManager): List<ApplicationInfo> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0))
+        } else {
+            packageManager.getInstalledApplications(0)
+        }
+
+    private fun setProfileSepolicy(packageName: String, rules: String): Boolean {
+        if (packageName.isBlank()) return false
+        val safePackage = shellQuote(packageName)
+        val safeRules = shellQuote(rules)
+        val script = """
+            set -e
+            ksud_path=${'$'}(abk_find_ksud)
+            [ -n "${'$'}ksud_path" ] || exit 127
+            "${'$'}ksud_path" profile set-sepolicy $safePackage $safeRules
+        """.trimIndent()
+        return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L).success
+    }
+
     data class ShellResult(val success: Boolean, val output: List<String>)
 
     data class ManagerRuntimeSnapshot(
@@ -462,6 +530,8 @@ object RootUtils {
     }
 
     private fun detectManagerRuntime(): ManagerRuntimeProbe {
+        detectNativeManagerRuntime()?.let { return it }
+
         return try {
             createRootShell(timeoutSeconds = 10L).use { shell ->
                 val ksudPath = execWithShell(
@@ -521,6 +591,34 @@ object RootUtils {
         } catch (error: Throwable) {
             ManagerRuntimeProbe()
         }
+    }
+
+    private fun detectNativeManagerRuntime(): ManagerRuntimeProbe? {
+        val status = AbkKsuNative.status() ?: return null
+        if (!status.isManager) return null
+        val capabilities = buildList {
+            add("native_manager")
+            add("root_policy")
+            if (status.superuserCount > 0) add("superuser_profiles")
+            if (status.isLkmMode) add("lkm")
+            if (status.isLateLoadMode) add("late_load")
+            if (status.isSafeMode) add("safe_mode")
+        }
+        val versionText = listOf(
+            status.fullVersion,
+            "kernel ${status.version}",
+            status.hookType
+        )
+            .filter { it.isNotBlank() }
+            .joinToString(" · ")
+        return ManagerRuntimeProbe(
+            active = true,
+            displayName = "KernelSU",
+            variant = "KernelSU",
+            backend = "native",
+            version = versionText,
+            capabilities = capabilities
+        )
     }
 
     private fun createRootShell(

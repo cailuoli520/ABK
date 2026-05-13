@@ -775,6 +775,68 @@ jobs:
             echo "KSU_LATEST_COMMIT_DATE=未知" >> $GITHUB_ENV
           fi
 
+      - name: 配置 ABK 管理器身份
+        if: inputs.ksu_variant == 'Official' || inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU'
+        working-directory: ${{ env.KERNEL_ROOT }}
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          package = "com.abk.kernel"
+          root = Path(".")
+          marker = "ABK_MANAGER_PACKAGE"
+
+          for kbuild in root.rglob("Kbuild"):
+              text = kbuild.read_text(errors="ignore")
+              if "KSU_EXPECTED_HASH" not in text and "EXPECTED_HASH" not in text and "KSU_MANAGER_PACKAGE" not in text:
+                  continue
+              if marker in text:
+                  continue
+              text += "\n# ABK: allow the integrated ABK app to use KernelSU manager ioctls.\n"
+              text += f"ccflags-y += -D{marker}=\\\"{package}\\\"\n"
+              kbuild.write_text(text)
+              print(f"Configured ABK manager package in {kbuild}")
+
+          injected = 0
+          snippet = f"""#ifdef {marker}
+              {{
+                  char abk_pkg[KSU_MAX_PACKAGE_NAME];
+                  if (get_pkg_from_apk_path(abk_pkg, path) == 0 &&
+                      !strncmp(abk_pkg, {marker}, sizeof({marker}))) {{
+          #ifdef KSU_SIGNATURE_INDEX_DYNAMIC_MANAGER
+                      if (signature_index) {{
+                          *signature_index = KSU_SIGNATURE_INDEX_DYNAMIC_MANAGER;
+                      }}
+          #endif
+                      return true;
+                  }}
+              }}
+          #endif
+          """
+
+          for source in root.rglob("apk_sign.c"):
+              text = source.read_text(errors="ignore")
+              if marker in text or "bool is_manager_apk" not in text:
+                  continue
+              anchor = "bool is_manager_apk(char *path)"
+              if anchor not in text:
+                  anchor = "bool is_manager_apk(char *path, u8 *signature_index)"
+              if anchor not in text:
+                  continue
+              body = anchor + "\n{"
+              if body not in text:
+                  continue
+              text = text.replace(body, body + "\n" + snippet, 1)
+              source.write_text(text)
+              injected += 1
+              print(f"Injected ABK manager package fast-path in {source}")
+
+          if injected == 0:
+              raise SystemExit("未找到可注入的 KernelSU manager/apk_sign.c")
+          PY
+
       - name: 修复 ReSukiSU SUSFS 源码兼容
         if: inputs.ksu_variant == 'ReSukiSU' && inputs.enable_susfs && inputs.ksu_variant != 'None'
         working-directory: ${{ env.KERNEL_ROOT }}

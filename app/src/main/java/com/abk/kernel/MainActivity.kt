@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.FolderOpen
@@ -74,6 +75,7 @@ import com.abk.kernel.ui.screens.BuildScreen
 import com.abk.kernel.ui.screens.FlashScreen
 import com.abk.kernel.ui.screens.InstalledModulesScreen
 import com.abk.kernel.ui.screens.ModuleRepositoryScreen
+import com.abk.kernel.ui.screens.RootAuthorizationScreen
 import com.abk.kernel.ui.screens.RuntimeHomeScreen
 import com.abk.kernel.ui.screens.SettingsScreen
 import com.abk.kernel.ui.screens.StatusScreen
@@ -283,6 +285,7 @@ private enum class AbkTab(val label: String) {
     Flash("刷写"),
     RuntimeHome("首页"),
     InstalledModules("已安装模块"),
+    RootAuth("授权"),
     Settings("设置")
 }
 
@@ -297,10 +300,16 @@ private fun AbkMainScaffold(vm: MainViewModel) {
     var moduleRepositoryPageVisible by rememberSaveable { mutableStateOf(false) }
     var lastBackAt by remember { mutableStateOf(0L) }
     val runtimeManagerActive = state.abkRuntimeStatus != null
-    val visibleTabs = remember(state.runtimeNavigationEnabled, runtimeManagerActive) {
+    val runtimeNativeManagerActive = state.abkRuntimeStatus?.runtimeBackend?.backend == "native"
+    val visibleTabs = remember(state.runtimeNavigationEnabled, runtimeManagerActive, runtimeNativeManagerActive) {
         if (state.runtimeNavigationEnabled) {
             if (runtimeManagerActive) {
-                listOf(AbkTab.RuntimeHome, AbkTab.InstalledModules, AbkTab.Settings)
+                buildList {
+                    add(AbkTab.RuntimeHome)
+                    add(AbkTab.InstalledModules)
+                    if (runtimeNativeManagerActive) add(AbkTab.RootAuth)
+                    add(AbkTab.Settings)
+                }
             } else {
                 listOf(AbkTab.RuntimeHome, AbkTab.Settings)
             }
@@ -403,6 +412,7 @@ private fun AbkMainScaffold(vm: MainViewModel) {
                                         AbkTab.Flash -> if (state.rootGranted) Icons.Default.FlashOn else Icons.Default.FolderOpen
                                         AbkTab.RuntimeHome -> Icons.Default.Memory
                                         AbkTab.InstalledModules -> Icons.Default.Extension
+                                        AbkTab.RootAuth -> Icons.Default.AdminPanelSettings
                                         AbkTab.Settings -> Icons.Default.Settings
                                     },
                                     contentDescription = tab.displayLabel(state.rootGranted)
@@ -463,6 +473,7 @@ private fun AbkMainScaffold(vm: MainViewModel) {
                         onSwitchToClassic = { vm.setRuntimeNavigationEnabled(false) }
                     )
                     AbkTab.InstalledModules -> InstalledModulesScreen(vm)
+                    AbkTab.RootAuth -> RootAuthorizationScreen(vm)
                     AbkTab.Settings -> SettingsScreen(
                         vm = vm,
                         outerPadding = contentPadding,

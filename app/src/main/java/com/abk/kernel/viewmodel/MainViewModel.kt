@@ -112,7 +112,11 @@ data class MainUiState(
     val abkRuntimeError: String? = null,
     val abkRuntimeModuleActionId: String? = null,
     val abkRuntimeModuleActionTitle: String? = null,
-    val abkRuntimeModuleActionOutput: List<String> = emptyList()
+    val abkRuntimeModuleActionOutput: List<String> = emptyList(),
+    val rootGrantApps: List<RootGrantApp> = emptyList(),
+    val rootGrantLoading: Boolean = false,
+    val rootGrantError: String? = null,
+    val rootGrantSavingPackage: String? = null
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -398,7 +402,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _uiState.update { it.copy(abkRuntimeLoading = true, abkRuntimeError = null) }
             val runtimeStatus = withContext(Dispatchers.IO) {
-                RootUtils.refreshRootState()
+                if (!RootUtils.isNativeManagerActive()) {
+                    RootUtils.refreshRootState()
+                }
                 val snapshot = RootUtils.readManagerRuntimeSnapshot()
                 if (!snapshot.manager.active) {
                     null
@@ -429,6 +435,84 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun refreshRootGrantApps() {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(rootGrantLoading = true, rootGrantError = null)
+            }
+            val (active, apps) = withContext(Dispatchers.IO) {
+                val nativeActive = RootUtils.isNativeManagerActive()
+                nativeActive to if (nativeActive) {
+                    RootUtils.listRootGrantApps(getApplication<Application>())
+                } else {
+                    emptyList()
+                }
+            }
+            _uiState.update {
+                if (!active) {
+                    it.copy(
+                        rootGrantApps = emptyList(),
+                        rootGrantLoading = false,
+                        rootGrantError = "管理器未激活"
+                    )
+                } else {
+                    it.copy(
+                        rootGrantApps = apps,
+                        rootGrantLoading = false,
+                        rootGrantError = null
+                    )
+                }
+            }
+        }
+    }
+
+    fun setRootGrantAllowed(packageName: String, allowed: Boolean) {
+        val app = _uiState.value.rootGrantApps.firstOrNull { it.packageName == packageName } ?: return
+        val updatedProfile = app.profile.copy(
+            allowSu = allowed,
+            rootUseDefault = true,
+            nonRootUseDefault = true,
+            name = app.packageName,
+            currentUid = app.uid
+        )
+        saveRootGrantProfile(updatedProfile)
+    }
+
+    fun saveRootGrantProfile(profile: RootGrantProfile) {
+        val cleanPackage = profile.name.trim()
+        if (cleanPackage.isBlank() || _uiState.value.rootGrantSavingPackage != null) return
+
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(rootGrantSavingPackage = cleanPackage, rootGrantError = null)
+            }
+            val result = withContext(Dispatchers.IO) {
+                RootUtils.setRootGrantProfile(profile.copy(name = cleanPackage))
+            }
+            _uiState.update { state ->
+                if (result) {
+                    state.copy(
+                        rootGrantSavingPackage = null,
+                        rootGrantError = null,
+                        rootGrantApps = state.rootGrantApps.map { app ->
+                            if (app.packageName == cleanPackage) {
+                                app.copy(profile = profile.copy(name = cleanPackage))
+                            } else {
+                                app
+                            }
+                        }
+                    )
+                } else {
+                    state.copy(
+                        rootGrantSavingPackage = null,
+                        rootGrantError = "保存失败"
+                    )
+                }
+            }
+            if (result) refreshRootGrantApps()
+        }
+    }
+
     private fun mergeRuntimeStatus(
         manager: RootUtils.ManagerRuntimeProbe,
         controlJson: String?,
@@ -447,16 +531,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         val kpmModules = parseKpmModules()
         val mergedModules = mergeRuntimeModules(controlModules, ksuModules, kpmModules)
-        val managerInfo = if (manager.backend == "su" && controlStatus?.manager != null) {
-            val capabilities = (controlStatus.manager.capabilities + "root_shell").distinct()
-            controlStatus.manager.copy(active = true, capabilities = capabilities)
-        } else {
-            manager.toRuntimeInfo()
-        }
+        val runtimeBackendInfo = manager.toRuntimeInfo()
+        val managerInfo = controlStatus?.manager?.let { compilerManager ->
+            val extraCaps = when (manager.backend) {
+                "native" -> listOf("native_manager", "root_policy")
+                "su", "ksud" -> listOf("root_shell")
+                else -> emptyList()
+            }
+            compilerManager.copy(
+                active = true,
+                capabilities = (compilerManager.capabilities + extraCaps).distinct()
+            )
+        } ?: runtimeBackendInfo
         return (controlStatus ?: AbkRuntimeStatus()).copy(
             schema = maxOf(controlStatus?.schema ?: 0, 3),
             abkVersion = controlStatus?.abkVersion?.ifBlank { BuildConfig.VERSION_NAME } ?: BuildConfig.VERSION_NAME,
             manager = managerInfo,
+            runtimeBackend = runtimeBackendInfo,
             modules = mergedModules
         )
     }

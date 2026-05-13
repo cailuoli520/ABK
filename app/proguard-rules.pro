@@ -7,6 +7,10 @@
 -keep class com.topjohnwu.superuser.** { *; }
 -dontwarn com.topjohnwu.superuser.**
 
+# Native KernelSU bridge resolves this class and profile fields by JNI name.
+-keep class com.abk.kernel.utils.AbkKsuNative { *; }
+-keep class com.abk.kernel.utils.AbkKsuNative$Profile { *; }
+
 # Module WebUI JavaScript bridge methods are called by name from WebView.
 -keepclassmembers class com.abk.kernel.ui.webui.ModuleWebUiActivity$ModuleWebBridge {
     @android.webkit.JavascriptInterface <methods>;

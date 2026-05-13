@@ -374,6 +374,7 @@ data class AbkRuntimeStatus(
     @SerializedName("abk_version") val abkVersion: String = "",
     @SerializedName("abk_commit") val abkCommit: String = "",
     val manager: AbkRuntimeManagerInfo? = null,
+    @SerializedName("runtime_backend") val runtimeBackend: AbkRuntimeManagerInfo? = null,
     val build: AbkRuntimeBuildInfo? = null,
     val modules: List<AbkRuntimeModule> = emptyList()
 )
@@ -424,6 +425,32 @@ data class AbkRuntimeModule(
     @SerializedName("has_action_script") val hasActionScript: Boolean = false,
     @SerializedName("action_supported") val actionSupported: Boolean = false,
     @SerializedName("kpm_args") val kpmArgs: String = ""
+)
+
+data class RootGrantApp(
+    val packageName: String = "",
+    val label: String = "",
+    val uid: Int = 0,
+    val userName: String = "",
+    val isSystemApp: Boolean = false,
+    val profile: RootGrantProfile = RootGrantProfile()
+)
+
+data class RootGrantProfile(
+    val name: String = "",
+    val currentUid: Int = 0,
+    val allowSu: Boolean = false,
+    val rootUseDefault: Boolean = true,
+    val rootTemplate: String = "",
+    val uid: Int = 0,
+    val gid: Int = 0,
+    val groups: List<Int> = emptyList(),
+    val capabilities: List<Int> = emptyList(),
+    val context: String = "u:r:ksu:s0",
+    val namespace: Int = 0,
+    val nonRootUseDefault: Boolean = true,
+    val umountModules: Boolean = true,
+    val rules: String = ""
 )
 
 data class BuildPlan(

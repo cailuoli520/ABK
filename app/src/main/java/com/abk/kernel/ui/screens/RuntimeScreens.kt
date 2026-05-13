@@ -362,18 +362,27 @@ private fun RuntimeStatusHeader(
 @Composable
 private fun RuntimeManagerCard(runtimeStatus: AbkRuntimeStatus) {
     val manager = runtimeStatus.manager ?: return
+    val backend = runtimeStatus.runtimeBackend
     ExpressiveSectionCard(
-        title = "管理器后端",
-        subtitle = "当前设备可用能力",
+        title = "内核管理器",
+        subtitle = "编译身份与当前运行后端",
         icon = Icons.Default.Memory
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
             RuntimeInfoRow("类型", manager.displayName.ifBlank { manager.variant })
             RuntimeInfoRow("版本", manager.version)
-            RuntimeInfoRow("兼容层", runtimeBackendLabel(manager.backend))
+            RuntimeInfoRow("来源", runtimeBackendLabel(manager.backend))
+            if (backend != null && backend != manager) {
+                Spacer(Modifier.height(2.dp))
+                RuntimeInfoRow("运行后端", backend.displayName.ifBlank { backend.variant })
+                RuntimeInfoRow("后端版本", backend.version)
+                RuntimeInfoRow("兼容层", runtimeBackendLabel(backend.backend))
+            }
             val chips = manager.capabilities
+                .plus(backend?.capabilities.orEmpty())
                 .map(::runtimeCapabilityLabel)
                 .ifEmpty { listOf("Root Shell") }
+                .distinct()
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -789,6 +798,12 @@ private fun runtimeCapabilityLabel(key: String): String =
     } else {
         when (key) {
             "root_shell" -> "Root Shell"
+            "native_manager" -> "原生管理器"
+            "root_policy" -> "授权配置"
+            "superuser_profiles" -> "授权列表"
+            "lkm" -> "LKM"
+            "late_load" -> "Late Load"
+            "safe_mode" -> "安全模式"
             "modules" -> "模块列表"
             "module_control" -> "模块控制"
             "susfs" -> "SUSFS"
@@ -799,6 +814,7 @@ private fun runtimeCapabilityLabel(key: String): String =
     }
 
 private fun runtimeBackendLabel(backend: String): String = when (backend) {
+    "native" -> "原生控制"
     "ksud" -> "KSU 兼容"
     "su" -> "通用 su"
     "kernel" -> "内核运行态"
