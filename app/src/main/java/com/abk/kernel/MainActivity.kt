@@ -296,14 +296,19 @@ private fun AbkMainScaffold(vm: MainViewModel) {
     var buildPlanPageVisible by rememberSaveable { mutableStateOf(false) }
     var moduleRepositoryPageVisible by rememberSaveable { mutableStateOf(false) }
     var lastBackAt by remember { mutableStateOf(0L) }
-    val visibleTabs = remember(state.runtimeNavigationEnabled) {
+    val runtimeManagerActive = state.abkRuntimeStatus != null
+    val visibleTabs = remember(state.runtimeNavigationEnabled, runtimeManagerActive) {
         if (state.runtimeNavigationEnabled) {
-            listOf(AbkTab.RuntimeHome, AbkTab.InstalledModules, AbkTab.Settings)
+            if (runtimeManagerActive) {
+                listOf(AbkTab.RuntimeHome, AbkTab.InstalledModules, AbkTab.Settings)
+            } else {
+                listOf(AbkTab.RuntimeHome, AbkTab.Settings)
+            }
         } else {
             listOf(AbkTab.Status, AbkTab.Build, AbkTab.Modules, AbkTab.Flash, AbkTab.Settings)
         }
     }
-    val activeTab = selectedTab
+    val activeTab = if (selectedTab in visibleTabs) selectedTab else visibleTabs.first()
     val motionScheme = MaterialTheme.motionScheme
     val hideBottomBar = when (activeTab) {
         AbkTab.Build -> buildPlanPageVisible
@@ -344,11 +349,9 @@ private fun AbkMainScaffold(vm: MainViewModel) {
         }
     }
 
-    LaunchedEffect(state.runtimeNavigationEnabled) {
-        if (state.runtimeNavigationEnabled && selectedTab !in visibleTabs) {
-            selectedTab = AbkTab.RuntimeHome
-        } else if (!state.runtimeNavigationEnabled && selectedTab !in visibleTabs) {
-            selectedTab = AbkTab.Status
+    LaunchedEffect(visibleTabs, selectedTab, state.runtimeNavigationEnabled) {
+        if (selectedTab !in visibleTabs) {
+            selectedTab = if (state.runtimeNavigationEnabled) AbkTab.RuntimeHome else AbkTab.Status
         }
     }
 

@@ -397,7 +397,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 it.copy(
                     abkRuntimeStatus = null,
                     abkRuntimeLoading = false,
-                    abkRuntimeError = "需要 Root 权限读取 /dev/abk_control"
+                    abkRuntimeError = "管理器未激活"
                 )
             }
             return
@@ -422,7 +422,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         it.copy(
                             abkRuntimeStatus = null,
                             abkRuntimeLoading = false,
-                            abkRuntimeError = "无法解析 /dev/abk_control 输出"
+                            abkRuntimeError = "管理器未激活"
                         )
                     }
                 }
@@ -431,9 +431,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     it.copy(
                         abkRuntimeStatus = null,
                         abkRuntimeLoading = false,
-                        abkRuntimeError = result.output.joinToString("\n").ifBlank {
-                            "无法读取 /dev/abk_control"
-                        }
+                        abkRuntimeError = "管理器未激活"
                     )
                 }
             }
@@ -444,7 +442,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val cleanId = moduleId.trim()
         if (cleanId.isBlank() || _uiState.value.abkRuntimeModuleActionId != null) return
         if (!_uiState.value.rootGranted) {
-            _uiState.update { it.copy(abkRuntimeError = "需要 Root 权限写入 /dev/abk_control") }
+            _uiState.update { it.copy(abkRuntimeError = "操作未完成") }
             return
         }
 
@@ -456,9 +454,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         abkRuntimeModuleActionId = null,
-                        abkRuntimeError = result.output.joinToString("\n").ifBlank {
-                            "模块控制命令执行失败"
-                        }
+                        abkRuntimeError = "操作未完成"
                     )
                 }
             } else {

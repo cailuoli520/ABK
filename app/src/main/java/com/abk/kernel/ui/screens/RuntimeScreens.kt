@@ -73,7 +73,6 @@ fun RuntimeHomeScreen(
             RuntimeStatusHeader(
                 runtimeStatus = state.abkRuntimeStatus,
                 loading = state.abkRuntimeLoading,
-                error = state.abkRuntimeError,
                 onGrantRoot = vm::requestRoot,
                 onRefresh = vm::refreshAbkRuntimeStatus
             )
@@ -128,9 +127,9 @@ fun InstalledModulesScreen(vm: MainViewModel) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
 
-            state.abkRuntimeError?.let { error ->
+            state.abkRuntimeError?.let {
                 RuntimeErrorCard(
-                    error = error,
+                    message = if (state.abkRuntimeStatus == null) "管理器未激活" else "操作未完成，请刷新后重试",
                     onGrantRoot = vm::requestRoot,
                     onRefresh = vm::refreshAbkRuntimeStatus
                 )
@@ -162,15 +161,14 @@ fun InstalledModulesScreen(vm: MainViewModel) {
 private fun RuntimeStatusHeader(
     runtimeStatus: AbkRuntimeStatus?,
     loading: Boolean,
-    error: String?,
     onGrantRoot: () -> Unit,
     onRefresh: () -> Unit
 ) {
     ExpressiveHeroCard(
-        title = if (runtimeStatus != null) "ABK Runtime" else "未连接 ABK Runtime",
+        title = if (runtimeStatus != null) "管理器已激活" else "管理器未激活",
         subtitle = runtimeStatus?.let {
             "ABK ${it.abkVersion.ifBlank { "unknown" }} · ${it.modules.size} 个模块"
-        } ?: (error ?: "读取 /dev/abk_control 以显示当前内核信息"),
+        } ?: "安装并启用支持 ABK Control 的内核后可查看运行态信息",
         icon = if (runtimeStatus != null) Icons.Default.CheckCircle else Icons.Default.Memory,
         containerColor = if (runtimeStatus != null) {
             MaterialTheme.colorScheme.primaryContainer
@@ -308,7 +306,7 @@ private fun RuntimeInfoRow(label: String, value: String) {
 
 @Composable
 private fun RuntimeErrorCard(
-    error: String,
+    message: String,
     onGrantRoot: () -> Unit,
     onRefresh: () -> Unit
 ) {
@@ -324,7 +322,7 @@ private fun RuntimeErrorCard(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = error,
+                text = message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
