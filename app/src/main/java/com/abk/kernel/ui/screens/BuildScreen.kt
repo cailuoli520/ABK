@@ -46,8 +46,8 @@ import com.abk.kernel.data.model.BuildPlan
 import com.abk.kernel.data.model.BuildProgress
 import com.abk.kernel.data.model.BuildStepProgress
 import com.abk.kernel.data.model.BuildStatus
-import com.abk.kernel.data.model.CustomExternalModule
 import com.abk.kernel.data.model.CustomExternalModuleStage
+import com.abk.kernel.data.model.ExternalModuleMetadata
 import com.abk.kernel.data.model.KernelSupport
 import com.abk.kernel.data.model.KernelBuildConfig
 import com.abk.kernel.data.model.ModuleCatalogItem
@@ -138,7 +138,9 @@ fun BuildScreen(
     var renamePlanName by remember { mutableStateOf("") }
     var deletePlanTarget by remember { mutableStateOf<BuildPlan?>(null) }
     var customModuleUrl by remember { mutableStateOf("") }
-    var customModuleStage by remember { mutableStateOf(CustomExternalModuleStage.AFTER_PATCH) }
+    var pendingCustomModuleUrl by remember { mutableStateOf("") }
+    var pendingCustomModuleMetadata by remember { mutableStateOf<ExternalModuleMetadata?>(null) }
+    var selectedCustomModuleStages by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var removingCatalogModuleKeys by rememberSaveable { mutableStateOf(emptyList<String>()) }
     val coroutineScope = rememberCoroutineScope()
     val catalogModules = remember(state.moduleCatalogRepositories) {
@@ -319,6 +321,101 @@ fun BuildScreen(
                 vm.deleteBuildPlan(plan.id)
                 deletePlanTarget = null
                 Toast.makeText(context, "方案已删除", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
+    pendingCustomModuleMetadata?.let { metadata ->
+        val selectedStages = metadata.supportedStages.filter { it in selectedCustomModuleStages }
+        AlertDialog(
+            onDismissRequest = {
+                pendingCustomModuleMetadata = null
+                pendingCustomModuleUrl = ""
+                selectedCustomModuleStages = emptyList()
+            },
+            icon = { Icon(Icons.Default.Extension, null) },
+            title = { Text("选择注入阶段") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = metadata.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (metadata.version.isNotBlank() || metadata.description.isNotBlank()) {
+                        Text(
+                            text = buildString {
+                                if (metadata.version.isNotBlank()) append("版本: ${metadata.version}")
+                                if (metadata.version.isNotBlank() && metadata.description.isNotBlank()) appendLine()
+                                if (metadata.description.isNotBlank()) append(metadata.description)
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    metadata.supportedStages.forEach { stage ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Checkbox(
+                                checked = stage in selectedCustomModuleStages,
+                                onCheckedChange = { checked ->
+                                    selectedCustomModuleStages = if (checked) {
+                                        (selectedCustomModuleStages + stage).distinct()
+                                    } else {
+                                        selectedCustomModuleStages - stage
+                                    }
+                                }
+                            )
+                            Text(
+                                text = if (stage == metadata.defaultStage) "$stage（推荐）" else stage,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (vm.addCustomExternalModulesFromUrl(pendingCustomModuleUrl, selectedStages)) {
+                            customModuleUrl = ""
+                            pendingCustomModuleMetadata = null
+                            pendingCustomModuleUrl = ""
+                            selectedCustomModuleStages = emptyList()
+                        }
+                    },
+                    enabled = selectedStages.isNotEmpty()
+                ) {
+                    Text("添加所选")
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(
+                        onClick = {
+                            if (vm.addCustomExternalModulesFromUrl(pendingCustomModuleUrl, metadata.supportedStages)) {
+                                customModuleUrl = ""
+                                pendingCustomModuleMetadata = null
+                                pendingCustomModuleUrl = ""
+                                selectedCustomModuleStages = emptyList()
+                            }
+                        }
+                    ) {
+                        Text("全部阶段")
+                    }
+                    TextButton(
+                        onClick = {
+                            pendingCustomModuleMetadata = null
+                            pendingCustomModuleUrl = ""
+                            selectedCustomModuleStages = emptyList()
+                        }
+                    ) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                }
             }
         )
     }
@@ -647,19 +744,15 @@ fun BuildScreen(
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
                         )
-                        DropdownField(
-                            label = "注入阶段",
-                            value = customModuleStage,
-                            options = CustomExternalModuleStage.options,
-                            onSelect = { customModuleStage = it }
-                        )
                         Button(
                             onClick = {
                                 val cleanUrl = customModuleUrl.trim()
                                 if (cleanUrl.isNotEmpty()) {
                                     coroutineScope.launch {
-                                        if (vm.addCustomExternalModuleFromUrl(cleanUrl, customModuleStage)) {
-                                            customModuleUrl = ""
+                                        vm.checkCustomExternalModuleMetadata(cleanUrl)?.let { metadata ->
+                                            pendingCustomModuleUrl = cleanUrl
+                                            pendingCustomModuleMetadata = metadata
+                                            selectedCustomModuleStages = listOf(metadata.defaultStage)
                                         }
                                     }
                                 }
@@ -676,7 +769,7 @@ fun BuildScreen(
                                 contentDescription = null
                             )
                             Spacer(Modifier.width(8.dp))
-                            Text(if (state.validatingCustomExternalModule) "检查中" else "添加模块")
+                            Text(if (state.validatingCustomExternalModule) "检查中" else "检查模块")
                         }
 
                         state.customExternalModuleError?.let { err ->

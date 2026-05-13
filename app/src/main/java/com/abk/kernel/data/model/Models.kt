@@ -306,7 +306,8 @@ data class ExternalModuleMetadata(
     val name: String,
     val version: String = "",
     val description: String = "",
-    val supportedStages: List<String> = CustomExternalModuleStage.options
+    val supportedStages: List<String> = CustomExternalModuleStage.options,
+    val defaultStage: String = CustomExternalModuleStage.AFTER_PATCH
 )
 
 data class ModuleCatalogItem(

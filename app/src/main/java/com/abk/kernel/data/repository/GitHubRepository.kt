@@ -547,11 +547,18 @@ class GitHubRepository(
             ?.distinct()
             .orEmpty()
             .ifEmpty { CustomExternalModuleStage.options }
+        val defaultStage = CustomExternalModuleStage.normalize(
+            values["ABK_MODULE_DEFAULT_STAGE"]
+                ?: values["ABK_MODULE_RECOMMENDED_STAGE"]
+                ?: values["ABK_MODULE_STAGE"]
+                ?: ""
+        ).takeIf { it in supportedStages } ?: supportedStages.first()
         return ExternalModuleMetadata(
             name = name,
             version = values["ABK_MODULE_VERSION"].orEmpty().trim(),
             description = values["ABK_MODULE_DESCRIPTION"].orEmpty().trim(),
-            supportedStages = supportedStages
+            supportedStages = supportedStages,
+            defaultStage = defaultStage
         )
     }
 
