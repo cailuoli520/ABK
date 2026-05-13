@@ -775,18 +775,73 @@ jobs:
             echo "KSU_LATEST_COMMIT_DATE=未知" >> $GITHUB_ENV
           fi
 
-      - name: 配置 ABK 管理器身份
+      - name: 配置 ABK 官方管理器签名
         if: inputs.ksu_variant == 'Official' || inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU'
         working-directory: ${{ env.KERNEL_ROOT }}
+        env:
+          ABK_MANAGER_CERT_FILE: ${{ github.workspace }}/app/signing/abk-manager-cert.env
+          ABK_MANAGER_PACKAGE_VAR: ${{ vars.ABK_MANAGER_PACKAGE }}
+          ABK_MANAGER_CERT_SIZE_VAR: ${{ vars.ABK_MANAGER_CERT_SIZE }}
+          ABK_MANAGER_CERT_SHA256_VAR: ${{ vars.ABK_MANAGER_CERT_SHA256 }}
+          ABK_MANAGER_PACKAGE_SECRET: ${{ secrets.ABK_MANAGER_PACKAGE }}
+          ABK_MANAGER_CERT_SIZE_SECRET: ${{ secrets.ABK_MANAGER_CERT_SIZE }}
+          ABK_MANAGER_CERT_SHA256_SECRET: ${{ secrets.ABK_MANAGER_CERT_SHA256 }}
         run: |
           set -euo pipefail
 
           python3 - <<'PY'
+          import os
+          import re
           from pathlib import Path
 
-          package = "com.abk.kernel"
+          def read_env_file(path):
+              values = {}
+              if not path.exists():
+                  return values
+              for raw in path.read_text().splitlines():
+                  line = raw.strip()
+                  if not line or line.startswith("#") or "=" not in line:
+                      continue
+                  key, value = line.split("=", 1)
+                  values[key.strip()] = value.strip().strip('"').strip("'")
+              return values
+
+          cert_file = Path(os.environ["ABK_MANAGER_CERT_FILE"])
+          cert_env = read_env_file(cert_file)
+          package = (
+              os.environ.get("ABK_MANAGER_PACKAGE_VAR")
+              or os.environ.get("ABK_MANAGER_PACKAGE_SECRET")
+              or cert_env.get("ABK_MANAGER_PACKAGE")
+              or "com.abk.kernel"
+          )
+          cert_size = (
+              os.environ.get("ABK_MANAGER_CERT_SIZE_VAR")
+              or os.environ.get("ABK_MANAGER_CERT_SIZE_SECRET")
+              or cert_env.get("ABK_MANAGER_CERT_SIZE")
+              or ""
+          )
+          cert_hash = (
+              os.environ.get("ABK_MANAGER_CERT_SHA256_VAR")
+              or os.environ.get("ABK_MANAGER_CERT_SHA256_SECRET")
+              or cert_env.get("ABK_MANAGER_CERT_SHA256")
+              or ""
+          ).lower()
+
+          if not re.fullmatch(r"[A-Za-z0-9_.]+", package):
+              raise SystemExit(f"ABK 管理器包名不合法: {package}")
+          if not re.fullmatch(r"(0x[0-9a-fA-F]+|[0-9]+)", cert_size):
+              raise SystemExit(
+                  "缺少合法的 ABK 管理器证书长度。请同步 app/signing/abk-manager-cert.env，"
+                  "或配置 ABK_MANAGER_CERT_SIZE。"
+              )
+          if not re.fullmatch(r"[0-9a-f]{64}", cert_hash):
+              raise SystemExit(
+                  "缺少合法的 ABK 管理器证书 SHA-256。请同步 app/signing/abk-manager-cert.env，"
+                  "或配置 ABK_MANAGER_CERT_SHA256。"
+              )
+
           root = Path(".")
-          marker = "ABK_MANAGER_PACKAGE"
+          marker = "ABK_MANAGER_OFFICIAL_CERT"
 
           for kbuild in root.rglob("Kbuild"):
               text = kbuild.read_text(errors="ignore")
@@ -794,24 +849,22 @@ jobs:
                   continue
               if marker in text:
                   continue
-              text += "\n# ABK: allow the integrated ABK app to use KernelSU manager ioctls.\n"
-              text += f"ccflags-y += -D{marker}=\\\"{package}\\\"\n"
+              text += "\n# ABK: trust the official ABK manager release certificate without overriding native managers.\n"
+              text += f"ccflags-y += -DABK_MANAGER_PACKAGE=\\\"{package}\\\"\n"
+              text += f"ccflags-y += -DABK_MANAGER_CERT_SIZE={cert_size}\n"
+              text += f"ccflags-y += -DABK_MANAGER_CERT_SHA256=\\\"{cert_hash}\\\"\n"
+              text += f"ccflags-y += -D{marker}=1\n"
               kbuild.write_text(text)
-              print(f"Configured ABK manager package in {kbuild}")
+              print(f"Configured ABK official manager certificate in {kbuild}")
 
           injected = 0
-          snippet = f"""#ifdef {marker}
-              {{
-                  char abk_pkg[KSU_MAX_PACKAGE_NAME];
-                  if (get_pkg_from_apk_path(abk_pkg, path) == 0 &&
-                      !strncmp(abk_pkg, {marker}, sizeof({marker}))) {{
-          #ifdef KSU_SIGNATURE_INDEX_DYNAMIC_MANAGER
-                      if (signature_index) {{
-                          *signature_index = KSU_SIGNATURE_INDEX_DYNAMIC_MANAGER;
-                      }}
+          array_snippet = """#ifdef ABK_MANAGER_OFFICIAL_CERT
+              { ABK_MANAGER_CERT_SIZE, ABK_MANAGER_CERT_SHA256 }, /* ABK official manager */
           #endif
+          """
+          direct_snippet = """#ifdef ABK_MANAGER_OFFICIAL_CERT
+              if (check_v2_signature(path, ABK_MANAGER_CERT_SIZE, ABK_MANAGER_CERT_SHA256)) {
                       return true;
-                  }}
               }}
           #endif
           """
@@ -819,6 +872,18 @@ jobs:
           for source in root.rglob("apk_sign.c"):
               text = source.read_text(errors="ignore")
               if marker in text or "bool is_manager_apk" not in text:
+                  continue
+              if "static apk_sign_key_t apk_sign_keys[] = {" in text:
+                  array_start = text.find("static apk_sign_key_t apk_sign_keys[] = {")
+                  array_end = text.find("};", array_start)
+                  if array_end < 0:
+                      continue
+                  text = text[:array_end] + array_snippet + text[array_end:]
+                  source.write_text(text)
+                  injected += 1
+                  print(f"Injected ABK official certificate key in {source}")
+                  continue
+              if "check_v2_signature(char *path, unsigned expected_size, const char *expected_sha256)" not in text:
                   continue
               anchor = "bool is_manager_apk(char *path)"
               if anchor not in text:
@@ -828,10 +893,10 @@ jobs:
               body = anchor + "\n{"
               if body not in text:
                   continue
-              text = text.replace(body, body + "\n" + snippet, 1)
+              text = text.replace(body, body + "\n" + direct_snippet, 1)
               source.write_text(text)
               injected += 1
-              print(f"Injected ABK manager package fast-path in {source}")
+              print(f"Injected ABK official certificate check in {source}")
 
           if injected == 0:
               raise SystemExit("未找到可注入的 KernelSU manager/apk_sign.c")

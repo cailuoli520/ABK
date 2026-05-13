@@ -56,6 +56,41 @@ jobs:
           mkdir -p app/signing
           printf '%s' "$ABK_RELEASE_KEYSTORE_BASE64" | base64 --decode > app/signing/abk-release.jks
 
+      - name: Export ABK manager certificate metadata
+        if: ${{ env.HAS_RELEASE_SIGNING == 'true' }}
+        env:
+          ABK_RELEASE_STORE_PASSWORD: ${{ secrets.ABK_RELEASE_STORE_PASSWORD }}
+          ABK_RELEASE_KEY_ALIAS: ${{ secrets.ABK_RELEASE_KEY_ALIAS }}
+          ABK_RELEASE_STORE_TYPE: ${{ secrets.ABK_RELEASE_STORE_TYPE }}
+        run: |
+          set -euo pipefail
+
+          cert="$RUNNER_TEMP/abk-manager-cert.der"
+          keytool -exportcert \
+            -keystore app/signing/abk-release.jks \
+            -storetype "${ABK_RELEASE_STORE_TYPE:-JKS}" \
+            -storepass "$ABK_RELEASE_STORE_PASSWORD" \
+            -alias "$ABK_RELEASE_KEY_ALIAS" \
+            -file "$cert"
+
+          size="$(wc -c < "$cert" | tr -d '[:space:]')"
+          hash="$(sha256sum "$cert" | awk '{print tolower($1)}')"
+          {
+            echo "# Official ABK release signing certificate metadata."
+            echo "# This is public certificate metadata, not a private signing key."
+            echo "ABK_MANAGER_PACKAGE=com.abk.kernel"
+            echo "ABK_MANAGER_CERT_SIZE=$size"
+            echo "ABK_MANAGER_CERT_SHA256=$hash"
+          } > app/signing/abk-manager-cert.generated.env
+
+          {
+            echo "### ABK manager certificate metadata"
+            echo
+            echo '```env'
+            cat app/signing/abk-manager-cert.generated.env
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Build release APK
         env:
           ABK_RELEASE_STORE_FILE: ${{ github.workspace }}/app/signing/abk-release.jks
@@ -82,3 +117,4 @@ jobs:
           path: |
             app/build/outputs/apk/debug/*.apk
             app/build/outputs/apk/release/*.apk
+            app/signing/abk-manager-cert.generated.env
