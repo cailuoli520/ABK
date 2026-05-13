@@ -302,6 +302,13 @@ data class CustomExternalModule(
     val stage: String = CustomExternalModuleStage.AFTER_PATCH
 )
 
+data class ExternalModuleMetadata(
+    val name: String,
+    val version: String = "",
+    val description: String = "",
+    val supportedStages: List<String> = CustomExternalModuleStage.options
+)
+
 data class ModuleCatalogItem(
     val name: String = "",
     val version: String = "",

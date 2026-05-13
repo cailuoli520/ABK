@@ -71,6 +71,7 @@ data class MainUiState(
     val buildPlans: List<BuildPlan> = emptyList(),
     val moduleCatalogRepositories: List<ModuleCatalogRepository> = emptyList(),
     val refreshingModuleCatalogRepositoryIds: Set<String> = emptySet(),
+    val validatingCustomExternalModule: Boolean = false,
     val recommendedBuildConfig: KernelBuildConfig? = null,
     val workflowEnablementPrompt: WorkflowEnablementPrompt? = null,
     val buildParameterSummaries: Map<Long, BuildParameterSummary> = emptyMap(),
@@ -1657,6 +1658,70 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 customExternalModules = modules
             )
         )
+    }
+
+    fun removeCustomExternalModule(url: String, stage: String) {
+        val cleanUrl = url.trim()
+        if (cleanUrl.isBlank()) return
+        val normalizedStage = CustomExternalModuleStage.normalize(stage)
+        val currentConfig = KernelSupport.normalize(_uiState.value.buildConfig)
+        updateBuildConfig(
+            currentConfig.copy(
+                customExternalModules = currentConfig.customExternalModules.filterNot {
+                    it.url.equals(cleanUrl, ignoreCase = true) &&
+                        CustomExternalModuleStage.normalize(it.stage) == normalizedStage
+                }
+            )
+        )
+    }
+
+    suspend fun addCustomExternalModuleFromUrl(url: String, stage: String): Boolean {
+        val cleanUrl = url.trim()
+        if (cleanUrl.isBlank()) {
+            _uiState.update { it.copy(error = "模块仓库链接不能为空") }
+            return false
+        }
+        val normalizedStage = CustomExternalModuleStage.normalize(stage)
+        _uiState.update { it.copy(validatingCustomExternalModule = true, error = null) }
+        return try {
+            when (val result = github.fetchExternalModuleMetadata(cleanUrl)) {
+                is Result.Success -> {
+                    val metadata = result.data
+                    if (normalizedStage !in metadata.supportedStages) {
+                        _uiState.update { it.copy(error = "该模块不支持 $normalizedStage") }
+                        false
+                    } else {
+                        val currentConfig = KernelSupport.normalize(_uiState.value.buildConfig)
+                        val exists = currentConfig.customExternalModules.any {
+                            it.url.equals(cleanUrl, ignoreCase = true) &&
+                                CustomExternalModuleStage.normalize(it.stage) == normalizedStage
+                        }
+                        val modules = if (exists) {
+                            currentConfig.customExternalModules
+                        } else {
+                            currentConfig.customExternalModules + CustomExternalModule(
+                                url = cleanUrl,
+                                stage = normalizedStage
+                            )
+                        }
+                        updateBuildConfig(
+                            currentConfig.copy(
+                                useCustomExternalModules = true,
+                                customExternalModules = modules
+                            )
+                        )
+                        true
+                    }
+                }
+                is Result.Error -> {
+                    _uiState.update { it.copy(error = result.message) }
+                    false
+                }
+                Result.Loading -> false
+            }
+        } finally {
+            _uiState.update { it.copy(validatingCustomExternalModule = false) }
+        }
     }
 
     private fun saveBuildPlans(plans: List<BuildPlan>) {

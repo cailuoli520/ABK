@@ -59,6 +59,43 @@ class GitHubRepository(
 
     // ── Module Catalogs ───────────────────────────────────────────────────
 
+    suspend fun fetchExternalModuleMetadata(repositoryUrl: String): Result<ExternalModuleMetadata> =
+        withContext(Dispatchers.IO) {
+            val candidates = externalModuleConfCandidates(repositoryUrl)
+            if (candidates.isEmpty()) {
+                return@withContext Result.Error("模块仓库链接格式不支持")
+            }
+
+            var lastError = ""
+            for (confUrl in candidates) {
+                val request = Request.Builder()
+                    .url(confUrl)
+                    .header("Accept", "text/plain,*/*")
+                    .build()
+                val response = runCatching { publicHttpClient.newCall(request).execute() }
+                    .getOrElse {
+                        lastError = it.message ?: "网络请求失败"
+                        null
+                    } ?: continue
+
+                response.use { resp ->
+                    if (!resp.isSuccessful) {
+                        lastError = "HTTP ${resp.code}"
+                        return@use
+                    }
+
+                    val body = resp.body?.string().orEmpty()
+                    return@withContext runCatching { parseExternalModuleConf(body) }
+                        .fold(
+                            onSuccess = { Result.Success(it) },
+                            onFailure = { Result.Error("module.conf 无效: ${it.message ?: "格式错误"}") }
+                        )
+                }
+            }
+
+            Result.Error("无法读取 module.conf: $lastError")
+        }
+
     suspend fun fetchModuleCatalog(repositoryUrl: String): Result<ModuleCatalogFetchResult> =
         withContext(Dispatchers.IO) {
             val candidates = moduleCatalogIndexCandidates(repositoryUrl)
@@ -418,6 +455,28 @@ class GitHubRepository(
         return emptyList()
     }
 
+    private fun externalModuleConfCandidates(repositoryUrl: String): List<String> {
+        val clean = repositoryUrl.trim().trimEnd('/')
+        if (clean.isBlank()) return emptyList()
+        if (clean.endsWith("/module.conf", ignoreCase = true)) return listOf(clean)
+        if (clean.startsWith("https://raw.githubusercontent.com/")) {
+            return listOf("$clean/module.conf")
+        }
+
+        parseGithubRepository(clean)?.let { github ->
+            val branches = if (github.branch.isNullOrBlank()) {
+                listOf("main", "master")
+            } else {
+                listOf(github.branch)
+            }
+            return branches.map { branch ->
+                "https://raw.githubusercontent.com/${github.owner}/${github.repo}/$branch/module.conf"
+            }
+        }
+
+        return emptyList()
+    }
+
     private fun parseGithubRepository(url: String): GithubRepositoryParts? {
         val cleaned = url.trim().trimEnd('/')
         val path = when {
@@ -475,6 +534,47 @@ class GitHubRepository(
             author = raw.stringOrEmpty("author"),
             homepage = raw.stringOrEmpty("homepage")
         )
+    }
+
+    private fun parseExternalModuleConf(body: String): ExternalModuleMetadata {
+        val values = parseShellLikeConf(body)
+        val name = values["ABK_MODULE_NAME"].orEmpty().trim()
+        if (name.isBlank()) error("缺少 ABK_MODULE_NAME")
+        val supportedStages = values["ABK_MODULE_SUPPORTED_STAGES"]
+            ?.takeIf { it.isNotBlank() }
+            ?.split(',')
+            ?.map { CustomExternalModuleStage.normalize(it) }
+            ?.distinct()
+            .orEmpty()
+            .ifEmpty { CustomExternalModuleStage.options }
+        return ExternalModuleMetadata(
+            name = name,
+            version = values["ABK_MODULE_VERSION"].orEmpty().trim(),
+            description = values["ABK_MODULE_DESCRIPTION"].orEmpty().trim(),
+            supportedStages = supportedStages
+        )
+    }
+
+    private fun parseShellLikeConf(body: String): Map<String, String> =
+        body.lineSequence()
+            .mapNotNull { line ->
+                val clean = line.substringBefore('#').trim()
+                if (clean.isBlank() || '=' !in clean) return@mapNotNull null
+                val key = clean.substringBefore('=').trim()
+                val value = clean.substringAfter('=').trim().trimShellQuotes()
+                if (key.isBlank()) null else key to value
+            }
+            .toMap()
+
+    private fun String.trimShellQuotes(): String {
+        val clean = trim()
+        return if (clean.length >= 2 &&
+            ((clean.first() == '"' && clean.last() == '"') || (clean.first() == '\'' && clean.last() == '\''))
+        ) {
+            clean.substring(1, clean.length - 1)
+        } else {
+            clean
+        }
     }
 
     private fun JsonElement.asJsonObjectOrNull(): JsonObject? =
