@@ -775,6 +775,97 @@ jobs:
             echo "KSU_LATEST_COMMIT_DATE=未知" >> $GITHUB_ENV
           fi
 
+      - name: 注入 SukiSU SUSFS Kconfig
+        if: inputs.ksu_variant == 'SukiSU' && inputs.enable_susfs
+        working-directory: ${{ env.KERNEL_ROOT }}
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          block = r'''
+
+          # ABK: SukiSU pinned revisions may not declare SUSFS Kconfig symbols.
+          config KSU_SUSFS
+              bool "KernelSU - SUSFS"
+              depends on KSU
+
+          if KSU_SUSFS
+
+          config KSU_SUSFS_SUS_PATH
+              bool "Enable SUSFS sus path"
+              default y
+
+          config KSU_SUSFS_SUS_MOUNT
+              bool "Enable SUSFS sus mount"
+              default y
+
+          config KSU_SUSFS_SUS_KSTAT
+              bool "Enable SUSFS sus kstat"
+              default y
+
+          config KSU_SUSFS_SPOOF_UNAME
+              bool "Enable SUSFS uname spoofing"
+              default y
+
+          config KSU_SUSFS_ENABLE_LOG
+              bool "Enable SUSFS log"
+              default y
+
+          config KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+              bool "Hide KSU and SUSFS symbols"
+              default y
+
+          config KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+              bool "Enable SUSFS cmdline or bootconfig spoofing"
+              default y
+
+          config KSU_SUSFS_OPEN_REDIRECT
+              bool "Enable SUSFS open redirect"
+              default y
+
+          config KSU_SUSFS_SUS_MAP
+              bool "Enable SUSFS sus map"
+              default y
+
+          endif
+          '''
+
+          candidates = [
+              Path("KernelSU/kernel/Kconfig"),
+              Path("common/drivers/kernelsu/Kconfig"),
+              Path("drivers/kernelsu/Kconfig"),
+          ]
+          injected = []
+          checked = []
+          seen = set()
+
+          for path in candidates:
+              if not path.exists():
+                  continue
+              resolved = path.resolve()
+              if resolved in seen:
+                  continue
+              seen.add(resolved)
+              checked.append(str(path))
+              text = path.read_text()
+              if re.search(r"^\s*(?:menu)?config\s+KSU_SUSFS(?:\s|$)", text, re.M):
+                  print(f"{path} already declares KSU_SUSFS")
+                  continue
+              path.write_text(text.rstrip() + "\n" + block + "\n")
+              injected.append(str(path))
+
+          if not checked:
+              raise SystemExit("未找到 SukiSU Kconfig，无法注入 SUSFS Kconfig 符号")
+
+          if injected:
+              print("已注入 SukiSU SUSFS Kconfig:", ", ".join(injected))
+          else:
+              print("SukiSU SUSFS Kconfig 已存在，无需注入")
+          PY
+
       - name: 修复 ReSukiSU SUSFS 源码兼容
         if: inputs.ksu_variant == 'ReSukiSU' && inputs.enable_susfs && inputs.ksu_variant != 'None'
         working-directory: ${{ env.KERNEL_ROOT }}
@@ -1039,8 +1130,11 @@ jobs:
 
               cd ..
               ;;
-            "Next"|"SukiSU"|"ReSukiSU")
-              echo "Next/SukiSU/ReSukiSU 使用内置 SUSFS 支持"
+            "Next"|"ReSukiSU")
+              echo "Next/ReSukiSU 使用内置 SUSFS 支持"
+              ;;
+            "SukiSU")
+              echo "SukiSU 使用 ABK 注入的 SUSFS Kconfig 支持"
               ;;
           esac
 
@@ -1187,6 +1281,75 @@ jobs:
               fi
             }
 
+            fix_sukisu_fdinfo_mask_decl() {
+              if [ "${{ inputs.ksu_variant }}" != "SukiSU" ]; then
+                return 0
+              fi
+
+              local file="./fs/notify/fdinfo.c"
+              [ -f "$file" ] || return 0
+
+              python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path("./fs/notify/fdinfo.c")
+          lines = path.read_text().splitlines(keepends=True)
+
+          start = None
+          for index, line in enumerate(lines):
+              if re.match(r"\s*static\s+void\s+inotify_fdinfo\s*\(", line):
+                  start = index
+                  break
+
+          if start is None:
+              raise SystemExit(0)
+
+          brace_line = None
+          for index in range(start, len(lines)):
+              if "{" in lines[index]:
+                  brace_line = index
+                  break
+
+          if brace_line is None:
+              raise SystemExit(0)
+
+          depth = 0
+          end = None
+          for index in range(brace_line, len(lines)):
+              depth += lines[index].count("{")
+              depth -= lines[index].count("}")
+              if index > brace_line and depth <= 0:
+                  end = index
+                  break
+
+          if end is None:
+              raise SystemExit(0)
+
+          body = "".join(lines[brace_line + 1:end])
+          if "mask, mark->ignored_mask" not in body:
+              raise SystemExit(0)
+
+          decl_re = re.compile(r"^\s*u32\s+mask\s*(?:=\s*mark->mask\s*&\s*IN_ALL_EVENTS)?\s*;\s*(?:/\*.*\*/\s*)?$")
+          new_body = [
+              line for line in lines[brace_line + 1:end]
+              if not decl_re.match(line)
+          ]
+          new_lines = (
+              lines[:brace_line + 1]
+              + ["\tu32 mask = mark->mask & IN_ALL_EVENTS;\n"]
+              + new_body
+              + lines[end:]
+          )
+
+          if new_lines != lines:
+              path.write_text("".join(new_lines))
+              print("已修复 SukiSU fdinfo.c 中 mask 声明作用域")
+          else:
+              print("SukiSU fdinfo.c mask 声明无需修改")
+          PY
+            }
+
             # Android 12 - 5.10 修复
             if [[ "${{ inputs.android_version }}" == "android12" && "${{ inputs.kernel_version }}" == "5.10" ]]; then
               if [[ "$CURRENT_SUB" -le 209 ]]; then
@@ -1195,6 +1358,7 @@ jobs:
               if [[ "$CURRENT_SUB" -le 117 ]]; then
                 cp $KERNEL_PATCHES/wild/susfs_fix_patches/v${SUSFS_VERSION}/a12-5.10/fdinfo.c.patch ./
                 patch -p1 < fdinfo.c.patch || true
+                fix_sukisu_fdinfo_mask_decl
               fi
               if [[ "$CURRENT_SUB" -le 43 ]]; then
                 cp $KERNEL_PATCHES/wild/susfs_fix_patches/v${SUSFS_VERSION}/a12-5.10/base.c.patch ./
@@ -1238,6 +1402,7 @@ jobs:
                 fi
                 cp $KERNEL_PATCHES/wild/susfs_fix_patches/v${SUSFS_VERSION}/a13-5.15/fdinfo.c.patch ./
                 patch -p1 < fdinfo.c.patch || true
+                fix_sukisu_fdinfo_mask_decl
                 cp $KERNEL_PATCHES/wild/susfs_fix_patches/v${SUSFS_VERSION}/a13-5.15/open.c.patch ./
                 patch -p1 < open.c.patch || true
               fi
@@ -2135,6 +2300,16 @@ jobs:
       - name: 添加 SUSFS 配置
         if: inputs.enable_susfs && inputs.ksu_variant != 'None'
         run: |
+          if [ "${{ inputs.ksu_variant }}" == "SukiSU" ]; then
+            if ! grep -ERq '^[[:space:]]*(menu)?config[[:space:]]+KSU_SUSFS([[:space:]]|$)' \
+              "$KERNEL_ROOT/KernelSU/kernel/Kconfig" \
+              "$KERNEL_ROOT/common/drivers/kernelsu/Kconfig" \
+              "$KERNEL_ROOT/drivers/kernelsu/Kconfig" 2>/dev/null; then
+              echo "::error::SukiSU + SUSFS 已启用，但未找到 CONFIG_KSU_SUSFS 的 Kconfig 声明"
+              exit 1
+            fi
+          fi
+
           cat >> "$DEFCONFIG" << 'EOF'
           CONFIG_KSU_SUSFS=y
           CONFIG_KSU_SUSFS_SUS_PATH=y
