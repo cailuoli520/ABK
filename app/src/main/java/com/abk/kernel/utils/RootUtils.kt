@@ -1,6 +1,7 @@
 package com.abk.kernel.utils
 
 import android.content.Context
+import android.util.Log
 import com.topjohnwu.superuser.CallbackList
 import com.topjohnwu.superuser.Shell
 import java.io.File
@@ -8,7 +9,11 @@ import java.util.Collections
 
 object RootUtils {
 
-    fun init() {
+    private const val TAG = "RootUtils"
+    private var appContext: Context? = null
+
+    fun init(context: Context) {
+        appContext = context.applicationContext
         Shell.enableVerboseLogging = false
         Shell.setDefaultBuilder(
             Shell.Builder.create()
@@ -23,8 +28,7 @@ object RootUtils {
 
     fun requestRoot(): Boolean {
         return try {
-            Shell.getShell() // triggers root request
-            Shell.isAppGrantedRoot() == true
+            createRootShell(timeoutSeconds = 10L).use { isShellRoot(it) }
         } catch (e: Exception) {
             false
         }
@@ -73,6 +77,7 @@ object RootUtils {
 
     fun installModule(zipPath: String, onOutput: ((String) -> Unit)? = null): ShellResult {
         val safeZip = shellQuote(zipPath)
+        val embeddedKsud = embeddedKsudPath()?.let(::shellQuote) ?: ""
         val script = """
             set -e
             echo "[ABK] 开始安装模块"
@@ -80,10 +85,16 @@ object RootUtils {
             module_size=${'$'}(wc -c < $safeZip 2>/dev/null || echo 0)
             echo "[ABK] 模块大小: ${'$'}module_size bytes"
             chmod 0644 $safeZip 2>/dev/null || true
-            if command -v ksud >/dev/null 2>&1; then
-                installer=${'$'}(command -v ksud)
+            installer=""
+            for candidate in $embeddedKsud ${'$'}(command -v ksud 2>/dev/null || true) /data/adb/ksud; do
+                [ -n "${'$'}candidate" ] || continue
+                [ -x "${'$'}candidate" ] || continue
+                installer="${'$'}candidate"
+                break
+            done
+            if [ -n "${'$'}installer" ]; then
                 echo "[ABK] 使用 KernelSU 安装模块: ${'$'}installer"
-                if ksud module install $safeZip; then
+                if "${'$'}installer" module install $safeZip; then
                     echo "[ABK] KernelSU 模块安装命令完成"
                 else
                     rc=${'$'}?
@@ -195,16 +206,7 @@ object RootUtils {
         return try {
             scriptFile.writeText(AK3_FLASH_SCRIPT)
             val script = "F=${shellQuote(workDir.absolutePath)} Z=${shellQuote(zipPath)} /system/bin/sh ${shellQuote(scriptFile.absolutePath)}"
-            val output = rootOutputList(onOutput)
-            val result = Shell.Builder.create()
-                .setFlags(Shell.FLAG_MOUNT_MASTER or Shell.FLAG_REDIRECT_STDERR)
-                .setTimeout(300L)
-                .build()
-                .newJob()
-                .to(output, output)
-                .add(script)
-                .exec()
-            ShellResult(result.isSuccess, normalizedOutput(result.isSuccess, output, onOutput))
+            execRootScript(script, timeoutSeconds = 300L, onOutput = onOutput)
         } finally {
             workDir.deleteRecursively()
         }
@@ -227,22 +229,21 @@ object RootUtils {
     }
 
     fun getKsuVersion(): String {
-        val result = Shell.cmd("ksud --version 2>/dev/null || echo N/A").exec()
-        return result.out.firstOrNull() ?: "N/A"
+        return detectManagerRuntime().version.ifBlank { "N/A" }
     }
 
     fun getRootMode(): String {
-        val result = Shell.cmd(
-            "command -v ksud >/dev/null 2>&1 && echo KernelSU || " +
-                "command -v magisk >/dev/null 2>&1 && echo Magisk || " +
-                "command -v apd >/dev/null 2>&1 && echo APatch || echo Unknown"
-        ).exec()
-        return result.out.firstOrNull() ?: "Unknown"
+        val runtime = detectManagerRuntime()
+        return when {
+            runtime.displayName.isNotBlank() -> runtime.displayName
+            runtime.active -> "Root"
+            else -> "Unknown"
+        }
     }
 
     fun getSusfsVersion(): String {
-        val result = Shell.cmd("cat /proc/self/attr/prev 2>/dev/null | head -1 || echo N/A").exec()
-        return result.out.firstOrNull() ?: "N/A"
+        val result = execRootScript("cat /proc/self/attr/prev 2>/dev/null | head -1 || echo N/A", timeoutSeconds = 10L)
+        return result.output.firstOrNull() ?: "N/A"
     }
 
     fun reboot(): ShellResult = execRootScript("svc power reboot || reboot", timeoutSeconds = 15L)
@@ -250,6 +251,57 @@ object RootUtils {
     fun readAbkControlStatus(): ShellResult {
         val safeNode = shellQuote(managerNodePath())
         return execRootScript("cat $safeNode", timeoutSeconds = 10L)
+    }
+
+    fun readManagerRuntimeSnapshot(): ManagerRuntimeSnapshot {
+        val manager = detectManagerRuntime()
+        if (!manager.active) {
+            return ManagerRuntimeSnapshot(manager = manager)
+        }
+
+        val control = readAbkControlStatus().takeIf { it.success }
+            ?.output
+            ?.joinToString("\n")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() && it.startsWith("{") }
+
+        val modules = listKsuModules().takeIf { it.success }
+            ?.output
+            ?.joinToString("\n")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() && it.startsWith("[") }
+
+        if (manager.backend == "su" && control == null && modules == null) {
+            return ManagerRuntimeSnapshot(manager = ManagerRuntimeProbe())
+        }
+
+        return ManagerRuntimeSnapshot(
+            manager = manager,
+            controlStatusJson = control,
+            ksuModulesJson = modules
+        )
+    }
+
+    fun listKsuModules(): ShellResult {
+        val script = """
+            set -e
+            ksud_path=${'$'}(abk_find_ksud)
+            [ -n "${'$'}ksud_path" ] || exit 127
+            "${'$'}ksud_path" module list
+        """.trimIndent()
+        return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
+    }
+
+    fun setKsuModuleEnabled(moduleId: String, enabled: Boolean): ShellResult {
+        val safeId = shellQuote(moduleId.trim())
+        val verb = if (enabled) "enable" else "disable"
+        val script = """
+            set -e
+            ksud_path=${'$'}(abk_find_ksud)
+            [ -n "${'$'}ksud_path" ] || exit 127
+            "${'$'}ksud_path" module $verb $safeId
+        """.trimIndent()
+        return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
     }
 
     fun writeAbkControlCommand(command: String): ShellResult {
@@ -263,21 +315,200 @@ object RootUtils {
 
     data class ShellResult(val success: Boolean, val output: List<String>)
 
+    data class ManagerRuntimeSnapshot(
+        val manager: ManagerRuntimeProbe,
+        val controlStatusJson: String? = null,
+        val ksuModulesJson: String? = null
+    )
+
+    data class ManagerRuntimeProbe(
+        val active: Boolean = false,
+        val displayName: String = "",
+        val variant: String = "",
+        val backend: String = "",
+        val version: String = "",
+        val capabilities: List<String> = emptyList()
+    )
+
     private fun execRootScript(
         script: String,
         timeoutSeconds: Long,
         onOutput: ((String) -> Unit)? = null
     ): ShellResult {
+        return try {
+            createRootShell(timeoutSeconds = timeoutSeconds).use { shell ->
+                execWithShell(shell, script, onOutput)
+            }
+        } catch (error: Throwable) {
+            Log.w(TAG, "root command failed", error)
+            val line = "管理器未激活"
+            onOutput?.invoke(line)
+            ShellResult(false, listOf(line))
+        }
+    }
+
+    private fun execWithShell(
+        shell: Shell,
+        script: String,
+        onOutput: ((String) -> Unit)? = null,
+        normalizeOutput: Boolean = true
+    ): ShellResult {
         val output = rootOutputList(onOutput)
-        val result = Shell.Builder.create()
-            .setFlags(Shell.FLAG_MOUNT_MASTER or Shell.FLAG_REDIRECT_STDERR)
-            .setTimeout(timeoutSeconds)
-            .build()
-            .newJob()
+        val result = shell.newJob()
             .to(output, output)
             .add(script)
             .exec()
-        return ShellResult(result.isSuccess, normalizedOutput(result.isSuccess, output, onOutput))
+        val lines = if (normalizeOutput) {
+            normalizedOutput(result.isSuccess, output, onOutput)
+        } else {
+            output.toList()
+        }
+        return ShellResult(result.isSuccess, lines)
+    }
+
+    private fun detectManagerRuntime(): ManagerRuntimeProbe {
+        return try {
+            createRootShell(timeoutSeconds = 10L).use { shell ->
+                val ksudPath = execWithShell(
+                    shell = shell,
+                    script = withManagerShellHelpers("abk_find_ksud"),
+                    onOutput = null,
+                    normalizeOutput = false
+                ).output.firstOrNull()?.trim().orEmpty()
+
+                if (ksudPath.isNotBlank()) {
+                    val safeKsud = shellQuote(ksudPath)
+                    val version = execWithShell(
+                        shell,
+                        "$safeKsud --version 2>/dev/null || true",
+                        normalizeOutput = false
+                    )
+                        .output
+                        .firstOrNull()
+                        ?.trim()
+                        .orEmpty()
+                    val capabilityOutput = execWithShell(
+                        shell,
+                        """
+                        caps="root_shell modules"
+                        $safeKsud module list >/dev/null 2>&1 && caps="${'$'}caps module_control"
+                        $safeKsud susfs status >/dev/null 2>&1 && caps="${'$'}caps susfs"
+                        $safeKsud kpm version >/dev/null 2>&1 && caps="${'$'}caps kpm"
+                        $safeKsud feature get --config sucompat >/dev/null 2>&1 && caps="${'$'}caps features"
+                        printf '%s\n' "${'$'}caps"
+                        """.trimIndent(),
+                        normalizeOutput = false
+                    ).output.firstOrNull().orEmpty()
+                    val capabilities = capabilityOutput
+                        .split(' ', '\n', '\t')
+                        .map { it.trim() }
+                        .filter { it.isNotBlank() }
+                        .distinct()
+                    val variant = inferManagerVariant(version)
+                    ManagerRuntimeProbe(
+                        active = true,
+                        displayName = variant.ifBlank { "KernelSU" },
+                        variant = variant.ifBlank { "KernelSU" },
+                        backend = "ksud",
+                        version = version,
+                        capabilities = capabilities.ifEmpty { listOf("root_shell", "modules") }
+                    )
+                } else {
+                    ManagerRuntimeProbe(
+                        active = true,
+                        displayName = "Root",
+                        variant = "Generic",
+                        backend = "su",
+                        capabilities = listOf("root_shell")
+                    )
+                }
+            }
+        } catch (error: Throwable) {
+            ManagerRuntimeProbe()
+        }
+    }
+
+    private fun createRootShell(
+        timeoutSeconds: Long,
+        globalMount: Boolean = true
+    ): Shell {
+        val builder = Shell.Builder.create()
+            .setFlags(Shell.FLAG_MOUNT_MASTER or Shell.FLAG_REDIRECT_STDERR)
+            .setTimeout(timeoutSeconds)
+        val candidates = mutableListOf<Array<String>>()
+        embeddedKsudPath()?.let { path ->
+            if (globalMount) {
+                candidates += arrayOf(path, "debug", "su", "-g")
+            } else {
+                candidates += arrayOf(path, "debug", "su")
+            }
+        }
+        if (globalMount) {
+            candidates += arrayOf("ksud", "debug", "su", "-g")
+            candidates += arrayOf("/data/adb/ksud", "debug", "su", "-g")
+            candidates += arrayOf("su", "-mm")
+        } else {
+            candidates += arrayOf("ksud", "debug", "su")
+            candidates += arrayOf("/data/adb/ksud", "debug", "su")
+            candidates += arrayOf("su")
+        }
+
+        candidates.forEach { command ->
+            try {
+                val shell = builder.build(*command)
+                if (isShellRoot(shell)) return shell
+                shell.close()
+            } catch (error: Throwable) {
+                Log.d(TAG, "root shell candidate failed: ${command.firstOrNull().orEmpty()}", error)
+            }
+        }
+
+        val shell = builder.build()
+        if (isShellRoot(shell)) return shell
+        shell.close()
+        error("Root shell unavailable")
+    }
+
+    private fun isShellRoot(shell: Shell): Boolean {
+        val output = mutableListOf<String>()
+        val result = shell.newJob()
+            .to(output, output)
+            .add("id -u")
+            .exec()
+        return result.isSuccess && output.firstOrNull()?.trim() == "0"
+    }
+
+    private fun embeddedKsudPath(): String? {
+        val context = appContext ?: return null
+        return File(context.applicationInfo.nativeLibraryDir, "libksud.so")
+            .takeIf { it.isFile && it.canExecute() }
+            ?.absolutePath
+    }
+
+    private fun withManagerShellHelpers(script: String): String {
+        val embedded = embeddedKsudPath()?.let(::shellQuote).orEmpty()
+        return """
+            abk_find_ksud() {
+                for candidate in $embedded ${'$'}(command -v ksud 2>/dev/null || true) /data/adb/ksud; do
+                    [ -n "${'$'}candidate" ] || continue
+                    [ -x "${'$'}candidate" ] || continue
+                    printf '%s\n' "${'$'}candidate"
+                    return 0
+                done
+                return 1
+            }
+            $script
+        """.trimIndent()
+    }
+
+    private fun inferManagerVariant(version: String): String {
+        val lower = version.lowercase()
+        return when {
+            "resukisu" in lower -> "ReSukiSU"
+            "sukisu" in lower -> "SukiSU"
+            "kernelsu" in lower || version.isNotBlank() -> "KernelSU"
+            else -> ""
+        }
     }
 
     private fun managerNodePath(): String {

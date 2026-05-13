@@ -79,6 +79,7 @@ fun RuntimeHomeScreen(
             )
 
             state.abkRuntimeStatus?.let { runtimeStatus ->
+                RuntimeManagerCard(runtimeStatus)
                 RuntimeBuildParametersCard(runtimeStatus)
             }
 
@@ -168,7 +169,8 @@ private fun RuntimeStatusHeader(
     ExpressiveHeroCard(
         title = if (runtimeStatus != null) "管理器已激活" else "管理器未激活",
         subtitle = runtimeStatus?.let {
-            "ABK ${it.abkVersion.ifBlank { "unknown" }} · ${it.modules.size} 个模块"
+            val managerName = it.manager?.displayName?.takeIf { name -> name.isNotBlank() } ?: "Root"
+            "$managerName · ABK ${it.abkVersion.ifBlank { "unknown" }} · ${it.modules.size} 个模块"
         } ?: "安装并启用支持管理器的内核后可查看运行态信息",
         icon = if (runtimeStatus != null) Icons.Default.CheckCircle else Icons.Default.Memory,
         containerColor = if (runtimeStatus != null) {
@@ -222,6 +224,37 @@ private fun RuntimeStatusHeader(
                         Spacer(Modifier.width(6.dp))
                         Text("刷新")
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RuntimeManagerCard(runtimeStatus: AbkRuntimeStatus) {
+    val manager = runtimeStatus.manager ?: return
+    ExpressiveSectionCard(
+        title = "管理器后端",
+        subtitle = "当前设备可用能力",
+        icon = Icons.Default.Memory
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            RuntimeInfoRow("类型", manager.displayName.ifBlank { manager.variant })
+            RuntimeInfoRow("版本", manager.version)
+            RuntimeInfoRow("兼容层", runtimeBackendLabel(manager.backend))
+            val chips = manager.capabilities
+                .map(::runtimeCapabilityLabel)
+                .ifEmpty { listOf("Root Shell") }
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                chips.forEach { label ->
+                    AssistChip(
+                        onClick = {},
+                        label = { Text(label) },
+                        enabled = false
+                    )
                 }
             }
         }
@@ -386,9 +419,22 @@ private fun InstalledRuntimeModuleCard(
                     )
                     if (module.version.isNotBlank()) {
                         Text(
-                            text = "版本: ${module.version}",
+                            text = buildString {
+                                append("版本: ")
+                                append(module.version)
+                                if (module.versionCode > 0) append(" (${module.versionCode})")
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    if (module.author.isNotBlank()) {
+                        Text(
+                            text = "作者: ${module.author}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -418,7 +464,12 @@ private fun InstalledRuntimeModuleCard(
             ) {
                 RuntimeModuleChip(module.id.ifBlank { module.repoName() })
                 if (module.stage.isNotBlank()) RuntimeModuleChip(module.stage, secondary = true)
+                if (module.source.isNotBlank()) RuntimeModuleChip(runtimeModuleSourceLabel(module.source), secondary = true)
                 RuntimeModuleChip(if (module.enabled) "已启用" else "已关闭", secondary = !module.enabled)
+                if (module.update) RuntimeModuleChip("待更新", secondary = true)
+                if (module.remove) RuntimeModuleChip("待卸载", secondary = true)
+                if (module.hasWebUi) RuntimeModuleChip("WebUI", secondary = true)
+                if (module.hasActionScript) RuntimeModuleChip("Action", secondary = true)
                 RuntimeModuleChip(if (module.controllable) "可控制" else "仅元数据", secondary = !module.controllable)
             }
 
@@ -504,3 +555,45 @@ private fun runtimeFeatureLabel(key: String): String = when (key) {
     "cancel_susfs" -> "SUSFS 已取消"
     else -> key
 }
+
+private fun runtimeCapabilityLabel(key: String): String =
+    if (key == internalRuntimeControlCapability()) {
+        "ABK 控制"
+    } else {
+        when (key) {
+            "root_shell" -> "Root Shell"
+            "modules" -> "模块列表"
+            "module_control" -> "模块控制"
+            "susfs" -> "SUSFS"
+            "kpm" -> "KPM"
+            "features" -> "功能开关"
+            else -> key
+        }
+    }
+
+private fun runtimeBackendLabel(backend: String): String = when (backend) {
+    "ksud" -> "KSU 兼容"
+    "su" -> "通用 su"
+    "kernel" -> "内核运行态"
+    else -> backend
+}
+
+private fun runtimeModuleSourceLabel(source: String): String {
+    val labels = source
+        .split(',')
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .map {
+            when (it) {
+                "ksud" -> "KSU"
+                "abk" -> "ABK"
+                else -> it
+            }
+        }
+    return labels.joinToString("+")
+}
+
+private fun internalRuntimeControlCapability(): String =
+    intArrayOf(97, 98, 107, 95, 99, 111, 110, 116, 114, 111, 108)
+        .map { it.toChar() }
+        .joinToString("")

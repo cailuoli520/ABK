@@ -118,6 +118,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = PreferencesRepository(application)
     val github = GitHubRepository()
     private val gson = Gson()
+    private val ksuModuleListType = object : TypeToken<List<Map<String, Any?>>>() {}.type
     private var hasSavedBuildConfig = false
     private var monitoredRunId: Long = -1L
     private val preparedMirrorArtifacts = mutableMapOf<Long, Set<String>>()
@@ -405,29 +406,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             _uiState.update { it.copy(abkRuntimeLoading = true, abkRuntimeError = null) }
-            val result = withContext(Dispatchers.IO) { RootUtils.readAbkControlStatus() }
-            if (result.success) {
-                val body = result.output.joinToString("\n").trim()
-                val runtimeStatus = runCatching {
-                    gson.fromJson(body, AbkRuntimeStatus::class.java)
-                }.getOrNull()
-                _uiState.update {
-                    if (runtimeStatus != null) {
-                        it.copy(
-                            abkRuntimeStatus = runtimeStatus,
-                            abkRuntimeLoading = false,
-                            abkRuntimeError = null
-                        )
-                    } else {
-                        it.copy(
-                            abkRuntimeStatus = null,
-                            abkRuntimeLoading = false,
-                            abkRuntimeError = "管理器未激活"
-                        )
-                    }
+            val runtimeStatus = withContext(Dispatchers.IO) {
+                val snapshot = RootUtils.readManagerRuntimeSnapshot()
+                if (!snapshot.manager.active) {
+                    null
+                } else {
+                    mergeRuntimeStatus(
+                        manager = snapshot.manager,
+                        controlJson = snapshot.controlStatusJson,
+                        ksuModulesJson = snapshot.ksuModulesJson
+                    )
                 }
-            } else {
-                _uiState.update {
+            }
+            _uiState.update {
+                if (runtimeStatus != null) {
+                    it.copy(
+                        abkRuntimeStatus = runtimeStatus,
+                        abkRuntimeLoading = false,
+                        abkRuntimeError = null
+                    )
+                } else {
                     it.copy(
                         abkRuntimeStatus = null,
                         abkRuntimeLoading = false,
@@ -438,6 +436,148 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun mergeRuntimeStatus(
+        manager: RootUtils.ManagerRuntimeProbe,
+        controlJson: String?,
+        ksuModulesJson: String?
+    ): AbkRuntimeStatus {
+        val controlStatus = controlJson?.let { body ->
+            runCatching { gson.fromJson(body, AbkRuntimeStatus::class.java) }.getOrNull()
+        }
+        val ksuModules = parseKsuModules(ksuModulesJson)
+        val controlModules = controlStatus?.modules.orEmpty().map { module ->
+            module.copy(source = module.source.ifBlank { "abk" })
+        }
+        val mergedModules = mergeRuntimeModules(controlModules, ksuModules)
+        val managerInfo = if (manager.backend == "su" && controlStatus?.manager != null) {
+            val capabilities = (controlStatus.manager.capabilities + "root_shell").distinct()
+            controlStatus.manager.copy(active = true, capabilities = capabilities)
+        } else {
+            manager.toRuntimeInfo()
+        }
+        return (controlStatus ?: AbkRuntimeStatus()).copy(
+            schema = maxOf(controlStatus?.schema ?: 0, 3),
+            abkVersion = controlStatus?.abkVersion?.ifBlank { BuildConfig.VERSION_NAME } ?: BuildConfig.VERSION_NAME,
+            manager = managerInfo,
+            modules = mergedModules
+        )
+    }
+
+    private fun RootUtils.ManagerRuntimeProbe.toRuntimeInfo(): AbkRuntimeManagerInfo =
+        AbkRuntimeManagerInfo(
+            displayName = displayName.ifBlank { if (active) "Root" else "" },
+            variant = variant,
+            backend = backend,
+            version = version,
+            active = active,
+            capabilities = capabilities
+        )
+
+    private fun parseKsuModules(json: String?): List<AbkRuntimeModule> {
+        if (json.isNullOrBlank()) return emptyList()
+        val records = runCatching {
+            gson.fromJson<List<Map<String, Any?>>>(json, ksuModuleListType)
+        }.getOrNull().orEmpty()
+        return records.mapNotNull { item ->
+            val id = item.runtimeString("id")
+            if (id.isBlank()) return@mapNotNull null
+            AbkRuntimeModule(
+                id = id,
+                name = item.runtimeString("name").ifBlank { id },
+                author = item.runtimeString("author"),
+                version = item.runtimeString("version"),
+                versionCode = item.runtimeLong("versionCode"),
+                description = item.runtimeString("description"),
+                stage = "runtime",
+                source = "ksud",
+                controllable = true,
+                enabled = item.runtimeBoolean("enabled", true),
+                update = item.runtimeBoolean("update"),
+                remove = item.runtimeBoolean("remove"),
+                hasWebUi = item.runtimeBoolean("web"),
+                hasActionScript = item.runtimeBoolean("action")
+            )
+        }
+    }
+
+    private fun mergeRuntimeModules(
+        controlModules: List<AbkRuntimeModule>,
+        ksuModules: List<AbkRuntimeModule>
+    ): List<AbkRuntimeModule> {
+        val merged = linkedMapOf<String, AbkRuntimeModule>()
+
+        fun put(module: AbkRuntimeModule) {
+            val key = module.id.ifBlank { module.name }.trim()
+            if (key.isBlank()) return
+            val current = merged[key]
+            merged[key] = if (current == null) {
+                module
+            } else {
+                current.copy(
+                    name = current.name.ifBlank { module.name },
+                    author = current.author.ifBlank { module.author },
+                    version = current.version.ifBlank { module.version },
+                    versionCode = current.versionCode.takeIf { it > 0 } ?: module.versionCode,
+                    description = current.description.ifBlank { module.description },
+                    repoUrl = current.repoUrl.ifBlank { module.repoUrl },
+                    stage = listOf(current.stage, module.stage)
+                        .flatMap { it.split(',') }
+                        .map { it.trim() }
+                        .filter { it.isNotBlank() }
+                        .distinct()
+                        .joinToString(","),
+                    source = listOf(current.source, module.source)
+                        .flatMap { it.split(',') }
+                        .map { it.trim() }
+                        .filter { it.isNotBlank() }
+                        .distinct()
+                        .joinToString(","),
+                    controllable = current.controllable || module.controllable,
+                    enabled = current.enabled && module.enabled,
+                    update = current.update || module.update,
+                    remove = current.remove || module.remove,
+                    hasWebUi = current.hasWebUi || module.hasWebUi,
+                    hasActionScript = current.hasActionScript || module.hasActionScript
+                )
+            }
+        }
+
+        ksuModules.forEach(::put)
+        val includeMetadataOnly = ksuModules.isEmpty()
+        controlModules
+            .filter { includeMetadataOnly || it.controllable }
+            .forEach(::put)
+
+        return merged.values.toList()
+    }
+
+    private fun Map<String, Any?>.runtimeString(key: String): String =
+        this[key]?.toString()?.trim().orEmpty()
+
+    private fun Map<String, Any?>.runtimeBoolean(key: String, default: Boolean = false): Boolean {
+        val value = this[key] ?: return default
+        return when (value) {
+            is Boolean -> value
+            is Number -> value.toInt() != 0
+            else -> when (value.toString().trim().lowercase()) {
+                "1", "y", "yes", "true", "on", "enabled" -> true
+                "0", "n", "no", "false", "off", "disabled" -> false
+                else -> default
+            }
+        }
+    }
+
+    private fun Map<String, Any?>.runtimeLong(key: String): Long {
+        val value = this[key] ?: return 0L
+        return when (value) {
+            is Number -> value.toLong()
+            else -> value.toString().trim().toLongOrNull() ?: 0L
+        }
+    }
+
+    private fun AbkRuntimeModule.isKsuBacked(): Boolean =
+        source.split(',').any { it.trim() == "ksud" }
+
     fun setAbkRuntimeModuleEnabled(moduleId: String, enabled: Boolean) {
         val cleanId = moduleId.trim()
         if (cleanId.isBlank() || _uiState.value.abkRuntimeModuleActionId != null) return
@@ -447,9 +587,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         viewModelScope.launch {
+            val module = _uiState.value.abkRuntimeStatus?.modules?.firstOrNull { it.id == cleanId }
             _uiState.update { it.copy(abkRuntimeModuleActionId = cleanId, abkRuntimeError = null) }
-            val command = if (enabled) "enable $cleanId" else "disable $cleanId"
-            val result = withContext(Dispatchers.IO) { RootUtils.writeAbkControlCommand(command) }
+            val result = withContext(Dispatchers.IO) {
+                if (module?.isKsuBacked() == true) {
+                    RootUtils.setKsuModuleEnabled(cleanId, enabled)
+                } else {
+                    val command = if (enabled) "enable $cleanId" else "disable $cleanId"
+                    RootUtils.writeAbkControlCommand(command)
+                }
+            }
             if (!result.success) {
                 _uiState.update {
                     it.copy(

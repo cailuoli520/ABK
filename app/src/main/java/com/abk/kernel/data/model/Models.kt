@@ -373,8 +373,18 @@ data class AbkRuntimeStatus(
     val schema: Int = 1,
     @SerializedName("abk_version") val abkVersion: String = "",
     @SerializedName("abk_commit") val abkCommit: String = "",
+    val manager: AbkRuntimeManagerInfo? = null,
     val build: AbkRuntimeBuildInfo? = null,
     val modules: List<AbkRuntimeModule> = emptyList()
+)
+
+data class AbkRuntimeManagerInfo(
+    @SerializedName("display_name") val displayName: String = "",
+    val variant: String = "",
+    val backend: String = "",
+    val version: String = "",
+    val active: Boolean = false,
+    val capabilities: List<String> = emptyList()
 )
 
 data class AbkRuntimeBuildInfo(
@@ -395,12 +405,19 @@ data class AbkRuntimeBuildInfo(
 data class AbkRuntimeModule(
     val id: String = "",
     val name: String = "",
+    val author: String = "",
     val version: String = "",
+    @SerializedName("version_code") val versionCode: Long = 0L,
     val description: String = "",
     @SerializedName("repo_url") val repoUrl: String = "",
     val stage: String = "",
+    val source: String = "",
     val controllable: Boolean = false,
-    val enabled: Boolean = true
+    val enabled: Boolean = true,
+    val update: Boolean = false,
+    val remove: Boolean = false,
+    @SerializedName("has_web_ui") val hasWebUi: Boolean = false,
+    @SerializedName("has_action_script") val hasActionScript: Boolean = false
 )
 
 data class BuildPlan(
