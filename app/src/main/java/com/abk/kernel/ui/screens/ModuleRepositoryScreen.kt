@@ -11,11 +11,13 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -264,24 +266,11 @@ private fun ModuleRepositoryListContent(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        OutlinedTextField(
+        CompactModuleSearchField(
             value = searchQuery,
-            onValueChange = onSearchQueryChange,
-            leadingIcon = { Icon(Icons.Default.Search, null, modifier = Modifier.size(22.dp)) },
-            placeholder = {
-                Text(
-                    text = "搜索模块",
-                    style = MaterialTheme.typography.bodyLarge
-                )
-            },
-            textStyle = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
-            singleLine = true,
-            shape = RoundedCornerShape(18.dp)
+            onValueChange = onSearchQueryChange
         )
 
         if (refreshing) {
@@ -360,120 +349,188 @@ private fun ModuleRepositoryListItem(
     onOpen: () -> Unit,
     onAdd: () -> Unit
 ) {
-    Column(
+    Card(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surfaceContainer)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Top
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp)
         ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top
             ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Text(
+                        text = module.displayName(),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    val meta = module.metaLine()
+                    if (meta.isNotBlank()) {
+                        Text(
+                            text = meta,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+                if (sources.size > 1) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Source,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = sources.size.toString(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            if (module.description.isNotBlank()) {
                 Text(
-                    text = module.displayName(),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
+                    text = module.description,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                val meta = module.metaLine()
-                if (meta.isNotBlank()) {
-                    Text(
-                        text = meta,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+            }
+
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                ModuleTagChip(label = module.repoUrl.repoName(), maxWidth = 170.dp)
+                module.supportedStages.take(2).forEach { stage ->
+                    ModuleTagChip(label = CustomExternalModuleStage.normalize(stage), secondary = true)
+                }
+                if (alreadyAdded) {
+                    ModuleTagChip(label = "已加入", secondary = true)
+                }
+                if (sources.size > 1) {
+                    ModuleTagChip(label = "来源 ${sources.size}", secondary = true)
                 }
             }
-            if (sources.size > 1) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Source,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Text(
-                        text = sources.size.toString(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CompactModuleActionButton(
+                    icon = Icons.Default.OpenInBrowser,
+                    contentDescription = "打开模块仓库",
+                    onClick = onOpen
+                )
+                Spacer(Modifier.width(6.dp))
+                CompactModuleActionButton(
+                    icon = if (alreadyAdded) Icons.Default.CheckCircle else Icons.Default.Add,
+                    contentDescription = if (alreadyAdded) "已加入" else "加入构建配置",
+                    enabled = !alreadyAdded,
+                    onClick = onAdd
+                )
             }
         }
+    }
+}
 
-        if (module.description.isNotBlank()) {
-            Text(
-                text = module.description,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-
+@Composable
+private fun CompactModuleSearchField(
+    value: String,
+    onValueChange: (String) -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(44.dp),
+        shape = RoundedCornerShape(14.dp),
+        color = Color.Transparent,
+        contentColor = colors.onSurface,
+        border = BorderStroke(1.dp, colors.outline.copy(alpha = 0.72f))
+    ) {
         Row(
             modifier = Modifier
-                .horizontalScroll(rememberScrollState())
-                .padding(top = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            ModuleTagChip(label = module.repoUrl.repoName(), maxWidth = 220.dp)
-            module.supportedStages.take(2).forEach { stage ->
-                ModuleTagChip(label = CustomExternalModuleStage.normalize(stage), secondary = true)
-            }
-            if (alreadyAdded) {
-                ModuleTagChip(label = "已加入", secondary = true)
-            }
-            if (sources.size > 1) {
-                ModuleTagChip(label = "来源 ${sources.size}", secondary = true)
-            }
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
+                .fillMaxSize()
+                .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            FilledTonalIconButton(
-                onClick = onOpen,
-                modifier = Modifier.width(56.dp).height(48.dp)
+            Icon(
+                imageVector = Icons.Default.Search,
+                contentDescription = null,
+                tint = colors.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(10.dp))
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.CenterStart
             ) {
-                Icon(
-                    Icons.Default.OpenInBrowser,
-                    contentDescription = "打开模块仓库",
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-            FilledTonalIconButton(
-                onClick = onAdd,
-                enabled = !alreadyAdded,
-                modifier = Modifier.width(56.dp).height(48.dp)
-            ) {
-                Icon(
-                    imageVector = if (alreadyAdded) Icons.Default.CheckCircle else Icons.Default.Add,
-                    contentDescription = if (alreadyAdded) "已加入" else "加入构建配置",
-                    modifier = Modifier.size(22.dp)
+                if (value.isBlank()) {
+                    Text(
+                        text = "搜索模块",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = colors.onSurfaceVariant
+                    )
+                }
+                BasicTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.onSurface),
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         }
+    }
+}
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
-        )
+@Composable
+private fun CompactModuleActionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(width = 42.dp, height = 36.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = colors.secondaryContainer.copy(alpha = if (enabled) 0.82f else 0.44f),
+        contentColor = if (enabled) colors.onSecondaryContainer else colors.onSurfaceVariant
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                modifier = Modifier.size(19.dp)
+            )
+        }
     }
 }
 
@@ -481,7 +538,7 @@ private fun ModuleRepositoryListItem(
 private fun ModuleTagChip(
     label: String,
     secondary: Boolean = false,
-    maxWidth: Dp = 160.dp
+    maxWidth: Dp = 140.dp
 ) {
     val color = if (secondary) {
         MaterialTheme.colorScheme.secondaryContainer
@@ -494,18 +551,18 @@ private fun ModuleTagChip(
         MaterialTheme.colorScheme.onPrimary
     }
     Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = color.copy(alpha = if (secondary) 0.82f else 0.9f),
+        shape = RoundedCornerShape(5.dp),
+        color = color.copy(alpha = if (secondary) 0.78f else 0.88f),
         contentColor = contentColor
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelSmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .widthIn(max = maxWidth)
-                .padding(horizontal = 7.dp, vertical = 3.dp)
+                .padding(horizontal = 6.dp, vertical = 2.dp)
         )
     }
 }
