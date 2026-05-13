@@ -523,6 +523,15 @@ class GitHubRepository(
         val defaultStage = CustomExternalModuleStage.normalize(raw.stringOrEmpty("defaultStage"))
             .takeIf { it in supportedStages }
             ?: supportedStages.first()
+        val recommendedStages = raw.stringList("recommendedStages")
+            .ifEmpty { raw.stringList("recommend") }
+            .ifEmpty { raw.csvString("recommendedStage") }
+            .ifEmpty { raw.csvString("recommend") }
+            .ifEmpty { listOf(defaultStage) }
+            .map { CustomExternalModuleStage.normalize(it) }
+            .distinct()
+            .filter { it in supportedStages }
+            .ifEmpty { listOf(defaultStage) }
 
         return ModuleCatalogItem(
             name = raw.stringOrEmpty("name").ifBlank { repoUrl.toCatalogFallbackName() },
@@ -531,6 +540,7 @@ class GitHubRepository(
             repoUrl = repoUrl,
             defaultStage = defaultStage,
             supportedStages = supportedStages,
+            recommendedStages = recommendedStages,
             author = raw.stringOrEmpty("author"),
             homepage = raw.stringOrEmpty("homepage")
         )
@@ -553,12 +563,28 @@ class GitHubRepository(
                 ?: values["ABK_MODULE_STAGE"]
                 ?: ""
         ).takeIf { it in supportedStages } ?: supportedStages.first()
+        val recommendedStages = (
+            values["ABK_MODULE_RECOMMENDED_STAGES"]
+                ?: values["ABK_MODULE_RECOMMEND_STAGES"]
+                ?: values["ABK_MODULE_RECOMMENDED_STAGE"]
+                ?: values["ABK_MODULE_RECOMMEND_STAGE"]
+                ?: values["ABK_MODULE_RECOMMEND"]
+                ?: values["ABK_MODULE_DEFAULT_STAGE"]
+                ?: values["ABK_MODULE_STAGE"]
+        )
+            ?.split(',')
+            ?.map { CustomExternalModuleStage.normalize(it) }
+            ?.distinct()
+            ?.filter { it in supportedStages }
+            .orEmpty()
+            .ifEmpty { listOf(defaultStage) }
         return ExternalModuleMetadata(
             name = name,
             version = values["ABK_MODULE_VERSION"].orEmpty().trim(),
             description = values["ABK_MODULE_DESCRIPTION"].orEmpty().trim(),
             supportedStages = supportedStages,
-            defaultStage = defaultStage
+            defaultStage = defaultStage,
+            recommendedStages = recommendedStages
         )
     }
 
@@ -603,6 +629,12 @@ class GitHubRepository(
             }
             ?.filter { it.isNotBlank() }
             .orEmpty()
+
+    private fun JsonObject.csvString(name: String): List<String> =
+        stringOrEmpty(name)
+            .split(',')
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
 
     private fun JsonObject.arrayOrEmpty(name: String): JsonArray =
         get(name)?.takeIf { !it.isJsonNull && it.isJsonArray }?.asJsonArray ?: JsonArray()

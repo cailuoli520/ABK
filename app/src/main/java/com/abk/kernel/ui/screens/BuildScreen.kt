@@ -327,6 +327,7 @@ fun BuildScreen(
 
     pendingCustomModuleMetadata?.let { metadata ->
         val selectedStages = metadata.supportedStages.filter { it in selectedCustomModuleStages }
+        val recommendedStages = metadata.recommendedStages.toSet()
         AlertDialog(
             onDismissRequest = {
                 pendingCustomModuleMetadata = null
@@ -370,7 +371,7 @@ fun BuildScreen(
                                 }
                             )
                             Text(
-                                text = if (stage == metadata.defaultStage) "$stage（推荐）" else stage,
+                                text = if (stage in recommendedStages) "$stage（推荐）" else stage,
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
@@ -752,7 +753,9 @@ fun BuildScreen(
                                         vm.checkCustomExternalModuleMetadata(cleanUrl)?.let { metadata ->
                                             pendingCustomModuleUrl = cleanUrl
                                             pendingCustomModuleMetadata = metadata
-                                            selectedCustomModuleStages = listOf(metadata.defaultStage)
+                                            selectedCustomModuleStages = metadata.recommendedStages
+                                                .filter { it in metadata.supportedStages }
+                                                .ifEmpty { listOf(metadata.defaultStage) }
                                         }
                                     }
                                 }

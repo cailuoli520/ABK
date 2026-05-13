@@ -1906,6 +1906,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val defaultStage = CustomExternalModuleStage.normalize(item.defaultStage)
             .takeIf { it in supportedStages }
             ?: supportedStages.first()
+        val recommendedStages = item.recommendedStages
+            .map { CustomExternalModuleStage.normalize(it) }
+            .distinct()
+            .filter { it in supportedStages }
+            .ifEmpty { listOf(defaultStage) }
         return item.copy(
             name = item.name.trim().ifBlank { repoUrl.moduleCatalogFallbackName() },
             version = item.version.trim(),
@@ -1913,6 +1918,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             repoUrl = repoUrl,
             defaultStage = defaultStage,
             supportedStages = supportedStages,
+            recommendedStages = recommendedStages,
             author = item.author.trim(),
             homepage = item.homepage.trim()
         )

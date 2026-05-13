@@ -71,6 +71,8 @@ fun ModuleRepositoryScreen(
     val motionScheme = MaterialTheme.motionScheme
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var showRepositorySettings by rememberSaveable { mutableStateOf(false) }
+    var pendingCatalogModule by remember { mutableStateOf<ModuleCatalogItem?>(null) }
+    var selectedCatalogModuleStages by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var repositoryBackProgress by remember { mutableFloatStateOf(0f) }
     val animatedRepositoryBackProgress by animateFloatAsState(
         targetValue = repositoryBackProgress.coerceIn(0f, 1f),
@@ -136,6 +138,110 @@ fun ModuleRepositoryScreen(
         closeRepositorySettings()
     }
 
+    pendingCatalogModule?.let { module ->
+        val supportedStages = module.normalizedSupportedStages()
+        val recommendedStages = module.normalizedRecommendedStages().toSet()
+        val addedStages = module.addedStages(selectedModules).toSet()
+        val selectedStages = supportedStages.filter {
+            it in selectedCatalogModuleStages && it !in addedStages
+        }
+        AlertDialog(
+            onDismissRequest = {
+                pendingCatalogModule = null
+                selectedCatalogModuleStages = emptyList()
+            },
+            icon = { Icon(Icons.Default.Extension, null) },
+            title = { Text("选择注入阶段") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = module.displayName(),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (module.version.isNotBlank() || module.description.isNotBlank()) {
+                        Text(
+                            text = buildString {
+                                if (module.version.isNotBlank()) append("版本: ${module.version}")
+                                if (module.version.isNotBlank() && module.description.isNotBlank()) appendLine()
+                                if (module.description.isNotBlank()) append(module.description)
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    supportedStages.forEach { stage ->
+                        val alreadyAdded = stage in addedStages
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Checkbox(
+                                checked = alreadyAdded || stage in selectedCatalogModuleStages,
+                                enabled = !alreadyAdded,
+                                onCheckedChange = { checked ->
+                                    selectedCatalogModuleStages = if (checked) {
+                                        (selectedCatalogModuleStages + stage).distinct()
+                                    } else {
+                                        selectedCatalogModuleStages - stage
+                                    }
+                                }
+                            )
+                            Text(
+                                text = buildString {
+                                    append(stage)
+                                    if (stage in recommendedStages) append("（推荐）")
+                                    if (alreadyAdded) append("（已加入）")
+                                },
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (vm.addCustomExternalModulesFromUrl(module.repoUrl, selectedStages)) {
+                            pendingCatalogModule = null
+                            selectedCatalogModuleStages = emptyList()
+                            Toast.makeText(context, "模块已加入构建配置", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    enabled = selectedStages.isNotEmpty()
+                ) {
+                    Text("添加所选")
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(
+                        onClick = {
+                            val remainingStages = supportedStages.filterNot { it in addedStages }
+                            if (vm.addCustomExternalModulesFromUrl(module.repoUrl, remainingStages)) {
+                                pendingCatalogModule = null
+                                selectedCatalogModuleStages = emptyList()
+                                Toast.makeText(context, "模块已加入构建配置", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        enabled = supportedStages.any { it !in addedStages }
+                    ) {
+                        Text("全部阶段")
+                    }
+                    TextButton(
+                        onClick = {
+                            pendingCatalogModule = null
+                            selectedCatalogModuleStages = emptyList()
+                        }
+                    ) {
+                        Text("取消")
+                    }
+                }
+            }
+        )
+    }
+
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val childPageTopInset = outerPadding.calculateTopPadding()
         val childPageBottomInset = outerPadding.calculateBottomPadding()
@@ -167,9 +273,9 @@ fun ModuleRepositoryScreen(
                 searchQuery = searchQuery,
                 onSearchQueryChange = { searchQuery = it },
                 onOpenRepositorySettings = ::openRepositorySettings,
-                onAddModule = { module, stage ->
-                    vm.addModuleFromCatalog(module, stage)
-                    Toast.makeText(context, "模块已加入构建配置", Toast.LENGTH_SHORT).show()
+                onAddModule = { module ->
+                    pendingCatalogModule = module
+                    selectedCatalogModuleStages = module.initialStageSelection(selectedModules)
                 },
                 onOpenModule = { module ->
                     val url = module.homepage.ifBlank { module.repoUrl }
@@ -256,7 +362,7 @@ private fun ModuleRepositoryListContent(
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     onOpenRepositorySettings: () -> Unit,
-    onAddModule: (ModuleCatalogItem, String) -> Unit,
+    onAddModule: (ModuleCatalogItem) -> Unit,
     onOpenModule: (ModuleCatalogItem) -> Unit,
     bottomPadding: androidx.compose.ui.unit.Dp
 ) {
@@ -287,14 +393,16 @@ private fun ModuleRepositoryListContent(
         } else {
             modules.forEach { merged ->
                 val module = merged.module
-                val stage = CustomExternalModuleStage.normalize(module.defaultStage)
-                val alreadyAdded = module.repoUrl.trim().lowercase() to stage in selectedModules
+                val supportedStages = module.normalizedSupportedStages()
+                val allStagesAdded = supportedStages.all { stage ->
+                    module.repoUrl.trim().lowercase() to stage in selectedModules
+                }
                 ModuleRepositoryListItem(
                     module = module,
                     sources = merged.sources,
-                    alreadyAdded = alreadyAdded,
+                    alreadyAdded = allStagesAdded,
                     onOpen = { onOpenModule(module) },
-                    onAdd = { onAddModule(module, stage) }
+                    onAdd = { onAddModule(module) }
                 )
             }
         }
@@ -424,8 +532,8 @@ private fun ModuleRepositoryListItem(
                 horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 ModuleTagChip(label = module.repoUrl.repoName(), maxWidth = 170.dp)
-                module.supportedStages.take(2).forEach { stage ->
-                    ModuleTagChip(label = CustomExternalModuleStage.normalize(stage), secondary = true)
+                module.normalizedSupportedStages().take(2).forEach { stage ->
+                    ModuleTagChip(label = stage, secondary = true)
                 }
                 if (alreadyAdded) {
                     ModuleTagChip(label = "已加入", secondary = true)
@@ -801,6 +909,42 @@ private fun ModuleCatalogItem.metaLine(): String =
         version.takeIf { it.isNotBlank() }?.let { "版本: $it" },
         author.takeIf { it.isNotBlank() }?.let { "作者: $it" }
     ).joinToString("\n")
+
+private fun ModuleCatalogItem.normalizedSupportedStages(): List<String> =
+    supportedStages
+        .map { CustomExternalModuleStage.normalize(it) }
+        .distinct()
+        .ifEmpty { listOf(CustomExternalModuleStage.normalize(defaultStage)) }
+
+private fun ModuleCatalogItem.normalizedRecommendedStages(): List<String> {
+    val supportedStages = normalizedSupportedStages()
+    val normalizedDefaultStage = CustomExternalModuleStage.normalize(defaultStage)
+        .takeIf { it in supportedStages }
+        ?: supportedStages.first()
+    return recommendedStages
+        .map { CustomExternalModuleStage.normalize(it) }
+        .distinct()
+        .filter { it in supportedStages }
+        .ifEmpty { listOf(normalizedDefaultStage) }
+}
+
+private fun ModuleCatalogItem.addedStages(selectedModules: Set<Pair<String, String>>): List<String> {
+    val moduleUrl = repoUrl.trim().lowercase()
+    return normalizedSupportedStages().filter { stage -> moduleUrl to stage in selectedModules }
+}
+
+private fun ModuleCatalogItem.initialStageSelection(selectedModules: Set<Pair<String, String>>): List<String> {
+    val moduleUrl = repoUrl.trim().lowercase()
+    val remainingRecommendedStages = normalizedRecommendedStages().filterNot { stage ->
+        moduleUrl to stage in selectedModules
+    }
+    val remainingSupportedStages = normalizedSupportedStages().filterNot { stage ->
+        moduleUrl to stage in selectedModules
+    }
+    return remainingRecommendedStages
+        .ifEmpty { remainingSupportedStages.take(1) }
+        .ifEmpty { normalizedRecommendedStages() }
+}
 
 private fun String.repoName(): String =
     trim()

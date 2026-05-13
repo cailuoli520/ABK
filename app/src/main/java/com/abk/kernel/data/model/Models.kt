@@ -307,7 +307,8 @@ data class ExternalModuleMetadata(
     val version: String = "",
     val description: String = "",
     val supportedStages: List<String> = CustomExternalModuleStage.options,
-    val defaultStage: String = CustomExternalModuleStage.AFTER_PATCH
+    val defaultStage: String = CustomExternalModuleStage.AFTER_PATCH,
+    val recommendedStages: List<String> = listOf(CustomExternalModuleStage.AFTER_PATCH)
 )
 
 data class ModuleCatalogItem(
@@ -317,6 +318,7 @@ data class ModuleCatalogItem(
     val repoUrl: String = "",
     val defaultStage: String = CustomExternalModuleStage.AFTER_PATCH,
     val supportedStages: List<String> = listOf(CustomExternalModuleStage.AFTER_PATCH),
+    val recommendedStages: List<String> = listOf(CustomExternalModuleStage.AFTER_PATCH),
     val author: String = "",
     val homepage: String = ""
 )
