@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -52,6 +53,7 @@ import com.abk.kernel.data.model.KernelSupport
 import com.abk.kernel.data.model.KernelBuildConfig
 import com.abk.kernel.data.model.ModuleCatalogItem
 import com.abk.kernel.data.model.ModuleCatalogRepository
+import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveListItem
 import com.abk.kernel.ui.components.ExpressiveSectionCard
@@ -95,6 +97,7 @@ fun BuildScreen(
     val config = remember(rawConfig) { KernelSupport.normalize(rawConfig) }
     val recommended = state.recommendedBuildConfig
     val motionScheme = MaterialTheme.motionScheme
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     val suggestedPlanName = remember(config) { vm.suggestedBuildPlanName(config) }
     val ksuBranchOptions = listOf("Stable(标准)", "Dev(开发)")
     val virtualizationSupportOptions = remember(config.kernelVersion) {
@@ -469,7 +472,8 @@ fun BuildScreen(
             containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
             topBar = {
                 ExpressiveTopBar(
-                    title = stringResource(R.string.build_title)
+                    title = stringResource(R.string.build_title),
+                    scrollBehavior = scrollBehavior
                 )
             }
         ) { padding ->
@@ -477,8 +481,9 @@ fun BuildScreen(
                 modifier = Modifier
                     .padding(padding)
                     .fillMaxSize()
+                    .nestedScroll(scrollBehavior.nestedScrollConnection)
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 18.dp),
+                    .padding(horizontal = AbkScreenHorizontalPadding),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
             BuildPlanHero(
@@ -1249,7 +1254,7 @@ private fun BuildPlanLibraryPage(
     Column(
         modifier = modifier
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 18.dp),
+            .padding(horizontal = AbkScreenHorizontalPadding),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         if (plans.isEmpty()) {

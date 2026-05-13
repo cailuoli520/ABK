@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -47,6 +48,7 @@ import androidx.core.graphics.ColorUtils
 import coil.compose.AsyncImage
 import com.abk.kernel.BuildConfig
 import com.abk.kernel.R
+import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveListItem
 import com.abk.kernel.ui.components.ExpressiveSectionCard
@@ -80,6 +82,7 @@ fun SettingsScreen(
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showThemeSettings by rememberSaveable { mutableStateOf(false) }
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     var themeBackProgress by remember { mutableFloatStateOf(0f) }
     val motionScheme = MaterialTheme.motionScheme
     val animatedThemeBackProgress by animateFloatAsState(
@@ -169,7 +172,8 @@ fun SettingsScreen(
             containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
             topBar = {
                 ExpressiveTopBar(
-                    title = stringResource(R.string.settings_title)
+                    title = stringResource(R.string.settings_title),
+                    scrollBehavior = scrollBehavior
                 )
             }
         ) {
@@ -177,6 +181,7 @@ fun SettingsScreen(
                 padding = it,
                 state = state,
                 vm = vm,
+                scrollBehavior = scrollBehavior,
                 onLogout = { showLogoutDialog = true },
                 onOpenThemeSettings = ::openThemeSettings,
                 onAbout = { showAboutDialog = true }
@@ -297,6 +302,7 @@ private fun SettingsMainContent(
     padding: PaddingValues,
     state: MainUiState,
     vm: MainViewModel,
+    scrollBehavior: TopAppBarScrollBehavior,
     onLogout: () -> Unit,
     onOpenThemeSettings: () -> Unit,
     onAbout: () -> Unit
@@ -305,8 +311,9 @@ private fun SettingsMainContent(
         modifier = Modifier
             .padding(padding)
             .fillMaxSize()
+            .nestedScroll(scrollBehavior.nestedScrollConnection)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 18.dp),
+            .padding(horizontal = AbkScreenHorizontalPadding),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         SettingsGroup(title = stringResource(R.string.settings_account)) {
@@ -461,7 +468,7 @@ private fun ThemeSettingsScreen(
             .padding(padding)
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 18.dp),
+            .padding(horizontal = AbkScreenHorizontalPadding),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         SettingsGroup(title = "外观模式") {

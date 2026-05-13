@@ -15,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -26,6 +27,7 @@ import com.abk.kernel.BuildConfig
 import com.abk.kernel.R
 import com.abk.kernel.data.model.BuildStatus
 import com.abk.kernel.data.model.WorkflowRun
+import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveSectionCard
 import com.abk.kernel.ui.components.ExpressiveStatusChip
@@ -43,6 +45,7 @@ fun StatusScreen(
 ) {
     val state by vm.uiState.collectAsState()
     val context = LocalContext.current
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
     LaunchedEffect(Unit) { vm.loadRecentRuns() }
 
@@ -51,6 +54,8 @@ fun StatusScreen(
         topBar = {
             ExpressiveTopBar(
                 title = stringResource(R.string.app_name),
+                compactTitle = true,
+                scrollBehavior = scrollBehavior,
                 actions = {
                     IconButton(onClick = onToggleRuntimeNavigation) {
                         Icon(
@@ -66,8 +71,9 @@ fun StatusScreen(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
+                .nestedScroll(scrollBehavior.nestedScrollConnection)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp),
+                .padding(horizontal = AbkScreenHorizontalPadding),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             val ksuVersion = remember(state.rootGranted) {

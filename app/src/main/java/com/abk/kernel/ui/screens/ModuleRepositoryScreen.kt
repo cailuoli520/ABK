@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -41,6 +42,7 @@ import coil.compose.AsyncImage
 import com.abk.kernel.data.model.CustomExternalModuleStage
 import com.abk.kernel.data.model.ModuleCatalogItem
 import com.abk.kernel.data.model.ModuleCatalogRepository
+import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ExpressiveSectionCard
 import com.abk.kernel.ui.components.ExpressiveStatusChip
 import com.abk.kernel.ui.components.ExpressiveTopBar
@@ -69,6 +71,7 @@ fun ModuleRepositoryScreen(
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     val motionScheme = MaterialTheme.motionScheme
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var showRepositorySettings by rememberSaveable { mutableStateOf(false) }
     var pendingCatalogModule by remember { mutableStateOf<ModuleCatalogItem?>(null) }
@@ -255,6 +258,7 @@ fun ModuleRepositoryScreen(
             topBar = {
                 ExpressiveTopBar(
                     title = "模块仓库",
+                    scrollBehavior = scrollBehavior,
                     actions = {
                         IconButton(onClick = ::openRepositorySettings) {
                             Icon(Icons.Default.Dns, contentDescription = "配置模块仓库")
@@ -282,6 +286,7 @@ fun ModuleRepositoryScreen(
                     runCatching { uriHandler.openUri(url) }
                         .onFailure { Toast.makeText(context, "无法打开链接", Toast.LENGTH_SHORT).show() }
                 },
+                scrollBehavior = scrollBehavior,
                 bottomPadding = outerPadding.calculateBottomPadding()
             )
         }
@@ -364,14 +369,16 @@ private fun ModuleRepositoryListContent(
     onOpenRepositorySettings: () -> Unit,
     onAddModule: (ModuleCatalogItem) -> Unit,
     onOpenModule: (ModuleCatalogItem) -> Unit,
+    scrollBehavior: TopAppBarScrollBehavior,
     bottomPadding: androidx.compose.ui.unit.Dp
 ) {
     Column(
         modifier = Modifier
             .padding(padding)
             .fillMaxSize()
+            .nestedScroll(scrollBehavior.nestedScrollConnection)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 18.dp),
+            .padding(horizontal = AbkScreenHorizontalPadding),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         CompactModuleSearchField(
@@ -691,7 +698,7 @@ private fun ModuleRepositorySettingsPage(
             .padding(padding)
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 18.dp),
+            .padding(horizontal = AbkScreenHorizontalPadding),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         ExpressiveSectionCard(

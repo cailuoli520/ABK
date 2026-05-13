@@ -92,6 +92,8 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -109,6 +111,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -135,6 +138,7 @@ import com.abk.kernel.data.model.KernelSupport
 import com.abk.kernel.data.model.PREBUILT_GKI_RUN_ID
 import com.abk.kernel.data.model.PrebuiltGkiAsset
 import com.abk.kernel.data.model.PrebuiltGkiRelease
+import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ExpressiveEmptyState
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveSectionCard
@@ -183,6 +187,7 @@ fun FlashScreen(
     var terminalRunning by remember { mutableStateOf(false) }
     var terminalLog by remember { mutableStateOf<List<String>>(emptyList()) }
     var terminalSuccess by remember { mutableStateOf<Boolean?>(null) }
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     val rootGranted = state.rootGranted
     val currentContentTab = if (state.prebuiltGkiEnabled) activeContentTab else FlashContentTab.Workflows
 
@@ -521,13 +526,19 @@ fun FlashScreen(
     fun FlashListContent() {
         Scaffold(
             containerColor = Color.Transparent,
-            topBar = { ExpressiveTopBar(title = if (rootGranted) stringResource(R.string.flash_title) else "文件") }
+            topBar = {
+                ExpressiveTopBar(
+                    title = if (rootGranted) stringResource(R.string.flash_title) else "文件",
+                    scrollBehavior = scrollBehavior
+                )
+            }
         ) { padding ->
             LazyColumn(
                 modifier = Modifier
                     .padding(padding)
                     .fillMaxSize()
-                    .padding(horizontal = 16.dp),
+                    .nestedScroll(scrollBehavior.nestedScrollConnection)
+                    .padding(horizontal = AbkScreenHorizontalPadding),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = PaddingValues(bottom = 96.dp)
             ) {
@@ -731,7 +742,7 @@ fun FlashScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .statusBarsPadding()
-                            .padding(horizontal = 16.dp),
+                            .padding(horizontal = AbkScreenHorizontalPadding),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         contentPadding = PaddingValues(bottom = 32.dp)
                     ) {
@@ -860,7 +871,7 @@ fun FlashScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .statusBarsPadding()
-                            .padding(horizontal = 16.dp),
+                            .padding(horizontal = AbkScreenHorizontalPadding),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         contentPadding = PaddingValues(bottom = 32.dp)
                     ) {

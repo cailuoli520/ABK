@@ -7,33 +7,35 @@ package com.abk.kernel.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.add
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.material3.LargeFlexibleTopAppBar
-import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import com.abk.kernel.ui.theme.uiSurfaceColor
 
 val AbkScreenHorizontalPadding: Dp = 24.dp
+private val ExpressiveTopBarActionHeight: Dp = 56.dp
+private val ExpressiveTopBarExpandedTitleHeight: Dp = 58.dp
 
 @Composable
 fun ExpressiveFlexibleTopBar(
@@ -44,42 +46,13 @@ fun ExpressiveFlexibleTopBar(
     scrollBehavior: TopAppBarScrollBehavior? = null,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
-    LargeFlexibleTopAppBar(
+    ExpressiveTopBar(
+        title = title,
         modifier = modifier,
-        title = {
-            val titleStyle = if (compactTitle) {
-                val baseStyle = LocalTextStyle.current
-                if (baseStyle.fontSize.isSpecified && baseStyle.fontSize.value > 32f) {
-                    baseStyle.copy(
-                        fontSize = 32.sp,
-                        lineHeight = 36.sp,
-                        fontWeight = FontWeight.Normal,
-                        letterSpacing = 0.sp
-                    )
-                } else {
-                    baseStyle.copy(letterSpacing = 0.sp)
-                }
-            } else {
-                LocalTextStyle.current.copy(letterSpacing = 0.sp)
-            }
-            Text(
-                text = title,
-                style = titleStyle,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Ellipsis
-            )
-        },
-        navigationIcon = {
-            navigationIcon?.invoke()
-        },
-        actions = actions,
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
-            scrolledContainerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface)
-        ),
-        windowInsets = TopAppBarDefaults.windowInsets.add(WindowInsets(left = 12.dp)),
-        scrollBehavior = scrollBehavior
+        navigationIcon = navigationIcon,
+        compactTitle = compactTitle,
+        scrollBehavior = scrollBehavior,
+        actions = actions
     )
 }
 
@@ -89,61 +62,126 @@ fun ExpressiveTopBar(
     modifier: Modifier = Modifier,
     navigationIcon: @Composable (() -> Unit)? = null,
     largeTitle: Boolean = false,
+    compactTitle: Boolean = false,
+    collapsing: Boolean = true,
+    scrollBehavior: TopAppBarScrollBehavior? = null,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
     val hasNavigation = navigationIcon != null
     val useLargeTitle = largeTitle || !hasNavigation
-    val titleStyle = if (useLargeTitle) {
+    val behavior = scrollBehavior
+    val canCollapse = collapsing && useLargeTitle && behavior != null
+    val density = LocalDensity.current
+    val collapseRange = if (canCollapse) ExpressiveTopBarExpandedTitleHeight else 0.dp
+
+    if (canCollapse && behavior != null) {
+        SideEffect {
+            behavior.state.heightOffsetLimit = -with(density) { collapseRange.toPx() }
+        }
+    }
+
+    val collapsedFraction = if (canCollapse && behavior != null) {
+        val limit = behavior.state.heightOffsetLimit
+        if (limit != 0f) {
+            (behavior.state.heightOffset / limit).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+    } else {
+        0f
+    }
+    val expandedFraction = 1f - collapsedFraction
+    val titleCollapseOffsetPx = with(density) { 16.dp.toPx() }
+
+    val largeTitleStyle = if (compactTitle) {
+        MaterialTheme.typography.headlineLarge.copy(
+            fontSize = 32.sp,
+            lineHeight = 36.sp,
+            fontWeight = FontWeight.Normal,
+            letterSpacing = 0.sp
+        )
+    } else {
         MaterialTheme.typography.headlineLarge.copy(
             fontSize = 44.sp,
             lineHeight = 50.sp,
             fontWeight = FontWeight.Normal,
             letterSpacing = 0.sp
         )
-    } else {
+    }
+    val collapsedTitleStyle =
         MaterialTheme.typography.titleLarge.copy(
             fontWeight = FontWeight.Normal,
             letterSpacing = 0.sp
         )
-    }
 
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = uiSurfaceColor(MaterialTheme.colorScheme.surface),
         contentColor = MaterialTheme.colorScheme.onSurface
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(
-                    start = if (hasNavigation) 4.dp else AbkScreenHorizontalPadding,
-                    top = if (useLargeTitle) 18.dp else 10.dp,
-                    end = AbkScreenHorizontalPadding,
-                    bottom = if (useLargeTitle) 18.dp else 10.dp
-                ),
-            verticalAlignment = Alignment.CenterVertically
         ) {
-            if (navigationIcon != null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(ExpressiveTopBarActionHeight)
+                    .padding(
+                        start = if (hasNavigation) 4.dp else AbkScreenHorizontalPadding,
+                        end = AbkScreenHorizontalPadding
+                    ),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (navigationIcon != null) {
+                    Box(
+                        modifier = Modifier.size(48.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        navigationIcon()
+                    }
+                }
+                Text(
+                    text = title,
+                    modifier = Modifier
+                        .weight(1f)
+                        .graphicsLayer {
+                            alpha = if (useLargeTitle) collapsedFraction else 1f
+                        },
+                    style = collapsedTitleStyle,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    content = actions
+                )
+            }
+            if (useLargeTitle) {
                 Box(
-                    modifier = Modifier.size(48.dp),
-                    contentAlignment = Alignment.Center
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(ExpressiveTopBarExpandedTitleHeight * expandedFraction)
+                        .padding(horizontal = AbkScreenHorizontalPadding)
+                        .clipToBounds()
+                        .graphicsLayer {
+                            alpha = expandedFraction
+                            translationY = -titleCollapseOffsetPx * collapsedFraction
+                        },
+                    contentAlignment = Alignment.BottomStart
                 ) {
-                    navigationIcon()
+                    Text(
+                        text = title,
+                        style = largeTitleStyle,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
-            Text(
-                text = title,
-                modifier = Modifier.weight(1f),
-                style = titleStyle,
-                maxLines = if (useLargeTitle) 2 else 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                content = actions
-            )
         }
     }
 }

@@ -46,10 +46,10 @@ import com.abk.kernel.data.model.AbkRuntimeModule
 import com.abk.kernel.data.model.AbkRuntimeStatus
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ExpressiveSwitch
-import com.abk.kernel.ui.components.ExpressiveFlexibleTopBar
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveSectionCard
 import com.abk.kernel.ui.components.ExpressiveStatusChip
+import com.abk.kernel.ui.components.ExpressiveTopBar
 import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.ui.webui.ModuleWebUiActivity
 import com.abk.kernel.utils.RootUtils
@@ -74,7 +74,7 @@ fun RuntimeHomeScreen(
     Scaffold(
         containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
         topBar = {
-            ExpressiveFlexibleTopBar(
+            ExpressiveTopBar(
                 title = "AnyBase Kernel",
                 compactTitle = true,
                 scrollBehavior = scrollBehavior,
@@ -201,7 +201,7 @@ fun InstalledModulesScreen(vm: MainViewModel) {
     Scaffold(
         containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
         topBar = {
-            ExpressiveFlexibleTopBar(
+            ExpressiveTopBar(
                 title = "已安装模块",
                 scrollBehavior = scrollBehavior,
                 actions = {
