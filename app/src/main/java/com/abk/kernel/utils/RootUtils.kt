@@ -247,15 +247,16 @@ object RootUtils {
 
     fun reboot(): ShellResult = execRootScript("svc power reboot || reboot", timeoutSeconds = 15L)
 
-    fun readAbkControlStatus(): ShellResult = execRootScript(
-        "cat /dev/abk_control",
-        timeoutSeconds = 10L
-    )
+    fun readAbkControlStatus(): ShellResult {
+        val safeNode = shellQuote(managerNodePath())
+        return execRootScript("cat $safeNode", timeoutSeconds = 10L)
+    }
 
     fun writeAbkControlCommand(command: String): ShellResult {
+        val safeNode = shellQuote(managerNodePath())
         val safeCommand = shellQuote(command.trim())
         return execRootScript(
-            "printf '%s\\n' $safeCommand > /dev/abk_control",
+            "printf '%s\\n' $safeCommand > $safeNode",
             timeoutSeconds = 10L
         )
     }
@@ -277,6 +278,14 @@ object RootUtils {
             .add(script)
             .exec()
         return ShellResult(result.isSuccess, normalizedOutput(result.isSuccess, output, onOutput))
+    }
+
+    private fun managerNodePath(): String {
+        val dir = charArrayOf('/', 'd', 'e', 'v').concatToString()
+        val name = intArrayOf(97, 98, 107, 95, 99, 111, 110, 116, 114, 111, 108)
+            .map { it.toChar() }
+            .joinToString("")
+        return "$dir/$name"
     }
 
     private fun rootOutputList(onOutput: ((String) -> Unit)?): MutableList<String> {

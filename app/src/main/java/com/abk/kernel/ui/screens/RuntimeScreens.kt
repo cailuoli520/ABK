@@ -168,7 +168,7 @@ private fun RuntimeStatusHeader(
         title = if (runtimeStatus != null) "管理器已激活" else "管理器未激活",
         subtitle = runtimeStatus?.let {
             "ABK ${it.abkVersion.ifBlank { "unknown" }} · ${it.modules.size} 个模块"
-        } ?: "安装并启用支持 ABK Control 的内核后可查看运行态信息",
+        } ?: "安装并启用支持管理器的内核后可查看运行态信息",
         icon = if (runtimeStatus != null) Icons.Default.CheckCircle else Icons.Default.Memory,
         containerColor = if (runtimeStatus != null) {
             MaterialTheme.colorScheme.primaryContainer
@@ -232,7 +232,7 @@ private fun RuntimeBuildParametersCard(runtimeStatus: AbkRuntimeStatus) {
     val build = runtimeStatus.build
     ExpressiveSectionCard(
         title = "当前内核编译参数",
-        subtitle = "来自 /dev/abk_control 的编译时信息",
+        subtitle = "来自管理器运行态信息",
         icon = Icons.Default.Tune
     ) {
         if (build == null) {
