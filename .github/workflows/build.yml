@@ -776,7 +776,7 @@ jobs:
           fi
 
       - name: 注入 SukiSU SUSFS Kconfig
-        if: inputs.ksu_variant == 'SukiSU' && inputs.enable_susfs
+        if: inputs.ksu_variant == 'SukiSU' && inputs.enable_susfs && inputs.android_version == 'android14' && inputs.kernel_version == '6.1'
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           set -euo pipefail
@@ -1134,7 +1134,7 @@ jobs:
               echo "Next/ReSukiSU 使用内置 SUSFS 支持"
               ;;
             "SukiSU")
-              echo "SukiSU 使用 ABK 注入的 SUSFS Kconfig 支持"
+              echo "SukiSU 使用按版本收窄的 ABK SUSFS 兼容处理"
               ;;
           esac
 
@@ -1363,6 +1363,9 @@ jobs:
               if [[ "$CURRENT_SUB" -le 43 ]]; then
                 cp $KERNEL_PATCHES/wild/susfs_fix_patches/v${SUSFS_VERSION}/a12-5.10/base.c.patch ./
                 patch -p1 < base.c.patch || true
+                if [[ "${{ inputs.ksu_variant }}" == "SukiSU" && "${{ inputs.use_bbg }}" == "true" ]]; then
+                  fix_proc_base_missing_vma_decl
+                fi
                 if [[ "${{ inputs.ksu_variant }}" == "ReSukiSU" && "$CURRENT_SUB" -eq 43 ]]; then
                   fix_proc_base_missing_vma_decl
                 fi
@@ -2301,6 +2304,11 @@ jobs:
         if: inputs.enable_susfs && inputs.ksu_variant != 'None'
         run: |
           if [ "${{ inputs.ksu_variant }}" == "SukiSU" ]; then
+            if ! { [ "${{ inputs.android_version }}" == "android14" ] && [ "${{ inputs.kernel_version }}" == "6.1" ]; }; then
+              echo "::warning::SukiSU 固定源码缺少完整 SUSFS 导出符号，跳过 ${{ inputs.android_version }}-${{ inputs.kernel_version }} 的 CONFIG_KSU_SUSFS* 写入"
+              exit 0
+            fi
+
             if ! grep -ERq '^[[:space:]]*(menu)?config[[:space:]]+KSU_SUSFS([[:space:]]|$)' \
               "$KERNEL_ROOT/KernelSU/kernel/Kconfig" \
               "$KERNEL_ROOT/common/drivers/kernelsu/Kconfig" \
