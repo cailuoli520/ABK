@@ -45,6 +45,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -56,6 +58,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -66,10 +69,10 @@ import coil.compose.AsyncImage
 import com.abk.kernel.data.model.RootGrantApp
 import com.abk.kernel.data.model.RootGrantProfile
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
+import com.abk.kernel.ui.components.ExpressiveFlexibleTopBar
 import com.abk.kernel.ui.components.ExpressiveSectionCard
 import com.abk.kernel.ui.components.ExpressiveStatusChip
 import com.abk.kernel.ui.components.ExpressiveSwitch
-import com.abk.kernel.ui.components.ExpressiveTopBar
 import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.viewmodel.MainViewModel
 
@@ -96,6 +99,7 @@ fun RootAuthorizationScreen(vm: MainViewModel) {
         }
     }
     val canLeaveDetail = state.rootGrantSavingPackage == null
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
     LaunchedEffect(state.runtimeNavigationEnabled, state.abkRuntimeStatus?.runtimeBackend?.backend) {
         if (state.runtimeNavigationEnabled) vm.refreshRootGrantApps()
@@ -109,8 +113,9 @@ fun RootAuthorizationScreen(vm: MainViewModel) {
         containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
         topBar = {
             if (selectedApp == null) {
-                ExpressiveTopBar(
+                ExpressiveFlexibleTopBar(
                     title = "超级用户",
+                    scrollBehavior = scrollBehavior,
                     actions = {
                         IconButton(onClick = vm::refreshRootGrantApps) {
                             Icon(Icons.Default.Refresh, contentDescription = "刷新授权列表")
@@ -118,8 +123,9 @@ fun RootAuthorizationScreen(vm: MainViewModel) {
                     }
                 )
             } else {
-                ExpressiveTopBar(
+                ExpressiveFlexibleTopBar(
                     title = selectedApp.label.ifBlank { selectedApp.packageName },
+                    scrollBehavior = scrollBehavior,
                     navigationIcon = {
                         IconButton(
                             enabled = canLeaveDetail,
@@ -127,8 +133,7 @@ fun RootAuthorizationScreen(vm: MainViewModel) {
                         ) {
                             Icon(Icons.Default.ArrowBack, contentDescription = "返回授权列表")
                         }
-                    },
-                    largeTitle = true
+                    }
                 )
             }
         }
@@ -137,6 +142,7 @@ fun RootAuthorizationScreen(vm: MainViewModel) {
             RootGrantProfilePage(
                 app = selectedApp,
                 padding = padding,
+                scrollBehavior = scrollBehavior,
                 saving = state.rootGrantSavingPackage == selectedApp.packageName,
                 onSave = { profile ->
                     vm.saveRootGrantProfile(profile)
@@ -147,6 +153,7 @@ fun RootAuthorizationScreen(vm: MainViewModel) {
                 modifier = Modifier
                     .padding(padding)
                     .fillMaxSize()
+                    .nestedScroll(scrollBehavior.nestedScrollConnection)
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = AbkScreenHorizontalPadding),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -334,6 +341,7 @@ private fun AppIcon(
 private fun RootGrantProfilePage(
     app: RootGrantApp,
     padding: androidx.compose.foundation.layout.PaddingValues,
+    scrollBehavior: androidx.compose.material3.TopAppBarScrollBehavior,
     saving: Boolean,
     onSave: (RootGrantProfile) -> Unit
 ) {
@@ -376,6 +384,7 @@ private fun RootGrantProfilePage(
         modifier = Modifier
             .padding(padding)
             .fillMaxSize()
+            .nestedScroll(scrollBehavior.nestedScrollConnection)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = AbkScreenHorizontalPadding),
         verticalArrangement = Arrangement.spacedBy(14.dp)

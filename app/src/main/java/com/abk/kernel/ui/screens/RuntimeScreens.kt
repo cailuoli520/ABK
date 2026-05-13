@@ -1,4 +1,7 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+@file:OptIn(
+    androidx.compose.material3.ExperimentalMaterial3Api::class,
+    androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class
+)
 
 package com.abk.kernel.ui.screens
 
@@ -32,6 +35,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -42,10 +46,10 @@ import com.abk.kernel.data.model.AbkRuntimeModule
 import com.abk.kernel.data.model.AbkRuntimeStatus
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ExpressiveSwitch
+import com.abk.kernel.ui.components.ExpressiveFlexibleTopBar
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveSectionCard
 import com.abk.kernel.ui.components.ExpressiveStatusChip
-import com.abk.kernel.ui.components.ExpressiveTopBar
 import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.ui.webui.ModuleWebUiActivity
 import com.abk.kernel.utils.RootUtils
@@ -61,6 +65,7 @@ fun RuntimeHomeScreen(
     onSwitchToClassic: () -> Unit
 ) {
     val state by vm.uiState.collectAsState()
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
     LaunchedEffect(state.runtimeNavigationEnabled, state.rootGranted) {
         if (state.runtimeNavigationEnabled) vm.refreshAbkRuntimeStatus()
@@ -69,8 +74,10 @@ fun RuntimeHomeScreen(
     Scaffold(
         containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
         topBar = {
-            ExpressiveTopBar(
-                title = "首页",
+            ExpressiveFlexibleTopBar(
+                title = "AnyBase Kernel",
+                compactTitle = true,
+                scrollBehavior = scrollBehavior,
                 actions = {
                     IconButton(onClick = { vm.refreshAbkRuntimeStatus() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "刷新运行态信息")
@@ -86,6 +93,7 @@ fun RuntimeHomeScreen(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
+                .nestedScroll(scrollBehavior.nestedScrollConnection)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = AbkScreenHorizontalPadding),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -116,6 +124,7 @@ fun InstalledModulesScreen(vm: MainViewModel) {
     var installRunning by remember { mutableStateOf(false) }
     var installSuccess by remember { mutableStateOf<Boolean?>(null) }
     var installLog by remember { mutableStateOf<List<String>>(emptyList()) }
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     val modules = remember(state.abkRuntimeStatus?.modules, query) {
         state.abkRuntimeStatus?.modules.orEmpty()
             .filter { it.matchesRuntimeModuleQuery(query) }
@@ -192,8 +201,9 @@ fun InstalledModulesScreen(vm: MainViewModel) {
     Scaffold(
         containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
         topBar = {
-            ExpressiveTopBar(
+            ExpressiveFlexibleTopBar(
                 title = "已安装模块",
+                scrollBehavior = scrollBehavior,
                 actions = {
                     IconButton(onClick = { vm.refreshAbkRuntimeStatus() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "刷新已安装模块")
@@ -217,6 +227,7 @@ fun InstalledModulesScreen(vm: MainViewModel) {
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
+                .nestedScroll(scrollBehavior.nestedScrollConnection)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = AbkScreenHorizontalPadding),
             verticalArrangement = Arrangement.spacedBy(10.dp)
