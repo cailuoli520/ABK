@@ -914,63 +914,62 @@ jobs:
                   ) + text
 
               helper_anchor = "// IOCTL handlers mapping table"
-              helpers = r'''
-#if IS_ENABLED(CONFIG_ABK_CONTROL)
-static int do_abk_control_get_status(void __user *arg)
-{
-    struct abk_control_status_cmd cmd;
-    char *status = NULL;
-    size_t status_len = 0;
-    int ret;
+              helpers = r'''#if IS_ENABLED(CONFIG_ABK_CONTROL)
+          static int do_abk_control_get_status(void __user *arg)
+          {
+              struct abk_control_status_cmd cmd;
+              char *status = NULL;
+              size_t status_len = 0;
+              int ret;
 
-    if (copy_from_user(&cmd, arg, sizeof(cmd))) {
-        return -EFAULT;
-    }
+              if (copy_from_user(&cmd, arg, sizeof(cmd))) {
+                  return -EFAULT;
+              }
 
-    ret = abk_control_get_status_json(&status, &status_len);
-    if (ret) {
-        return ret;
-    }
+              ret = abk_control_get_status_json(&status, &status_len);
+              if (ret) {
+                  return ret;
+              }
 
-    if (!cmd.data || cmd.data_len < status_len + 1) {
-        cmd.data_len = status_len + 1;
-        ret = copy_to_user(arg, &cmd, sizeof(cmd)) ? -EFAULT : -ENOSPC;
-        kfree(status);
-        return ret;
-    }
+              if (!cmd.data || cmd.data_len < status_len + 1) {
+                  cmd.data_len = status_len + 1;
+                  ret = copy_to_user(arg, &cmd, sizeof(cmd)) ? -EFAULT : -ENOSPC;
+                  kfree(status);
+                  return ret;
+              }
 
-    if (copy_to_user((void __user *)(unsigned long)cmd.data, status, status_len + 1)) {
-        kfree(status);
-        return -EFAULT;
-    }
+              if (copy_to_user((void __user *)(unsigned long)cmd.data, status, status_len + 1)) {
+                  kfree(status);
+                  return -EFAULT;
+              }
 
-    cmd.data_len = status_len;
-    ret = copy_to_user(arg, &cmd, sizeof(cmd)) ? -EFAULT : 0;
-    kfree(status);
-    return ret;
-}
+              cmd.data_len = status_len;
+              ret = copy_to_user(arg, &cmd, sizeof(cmd)) ? -EFAULT : 0;
+              kfree(status);
+              return ret;
+          }
 
-static int do_abk_control_run_command(void __user *arg)
-{
-    struct abk_control_command_cmd cmd;
-    char command[ABK_CONTROL_MAX_COMMAND + 1];
+          static int do_abk_control_run_command(void __user *arg)
+          {
+              struct abk_control_command_cmd cmd;
+              char command[ABK_CONTROL_MAX_COMMAND + 1];
 
-    if (copy_from_user(&cmd, arg, sizeof(cmd))) {
-        return -EFAULT;
-    }
-    if (!cmd.command || cmd.command_len == 0 || cmd.command_len > ABK_CONTROL_MAX_COMMAND) {
-        return -EINVAL;
-    }
-    if (copy_from_user(command, (void __user *)(unsigned long)cmd.command, cmd.command_len)) {
-        return -EFAULT;
-    }
-    command[cmd.command_len] = '\0';
+              if (copy_from_user(&cmd, arg, sizeof(cmd))) {
+                  return -EFAULT;
+              }
+              if (!cmd.command || cmd.command_len == 0 || cmd.command_len > ABK_CONTROL_MAX_COMMAND) {
+                  return -EINVAL;
+              }
+              if (copy_from_user(command, (void __user *)(unsigned long)cmd.command, cmd.command_len)) {
+                  return -EFAULT;
+              }
+              command[cmd.command_len] = '\0';
 
-    return abk_control_run_command(command, cmd.command_len);
-}
-#endif
+              return abk_control_run_command(command, cmd.command_len);
+          }
+          #endif
 
-'''
+          '''
               if helper_anchor in text:
                   text = text.replace(helper_anchor, helpers + helper_anchor, 1)
               else:
@@ -978,20 +977,20 @@ static int do_abk_control_run_command(void __user *arg)
 
               table_anchor = "static const struct ksu_ioctl_cmd_map ksu_ioctl_handlers[] = {\n"
               entries = r'''#if IS_ENABLED(CONFIG_ABK_CONTROL)
-    {
-        .cmd = ABK_CONTROL_IOCTL_GET_STATUS,
-        .name = "ABK_CONTROL_GET_STATUS",
-        .handler = do_abk_control_get_status,
-        .perm_check = only_manager
-    },
-    {
-        .cmd = ABK_CONTROL_IOCTL_RUN_COMMAND,
-        .name = "ABK_CONTROL_RUN_COMMAND",
-        .handler = do_abk_control_run_command,
-        .perm_check = only_manager
-    },
-#endif
-'''
+              {
+                  .cmd = ABK_CONTROL_IOCTL_GET_STATUS,
+                  .name = "ABK_CONTROL_GET_STATUS",
+                  .handler = do_abk_control_get_status,
+                  .perm_check = only_manager
+              },
+              {
+                  .cmd = ABK_CONTROL_IOCTL_RUN_COMMAND,
+                  .name = "ABK_CONTROL_RUN_COMMAND",
+                  .handler = do_abk_control_run_command,
+                  .perm_check = only_manager
+              },
+          #endif
+          '''
               text = text.replace(table_anchor, table_anchor + entries, 1)
               path.write_text(text)
               return True
