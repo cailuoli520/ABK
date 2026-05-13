@@ -37,6 +37,7 @@ val AbkScreenHorizontalPadding: Dp = 24.dp
 private val ExpressiveTopBarActionHeight: Dp = 40.dp
 private val ExpressiveTopBarCompactTitleHeight: Dp = 62.dp
 private val ExpressiveTopBarExpandedTitleHeight: Dp = 60.dp
+private val ExpressiveTopBarLift: Dp = 8.dp
 
 @Composable
 fun ExpressiveFlexibleTopBar(
@@ -101,7 +102,7 @@ fun ExpressiveTopBar(
     }
     val expandedFraction = 1f - collapsedFraction
     val titleCollapseOffsetPx = with(density) { 16.dp.toPx() }
-    val actionLiftPx = with(density) { 4.dp.toPx() }
+    val topBarLiftPx = with(density) { ExpressiveTopBarLift.toPx() }
 
     val largeTitleStyle = if (compactTitle) {
         MaterialTheme.typography.headlineLarge.copy(
@@ -133,14 +134,14 @@ fun ExpressiveTopBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
+                .graphicsLayer {
+                    translationY = -topBarLiftPx
+                }
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(ExpressiveTopBarActionHeight)
-                    .graphicsLayer {
-                        translationY = -actionLiftPx
-                    }
                     .padding(
                         start = if (hasNavigation) 4.dp else AbkScreenHorizontalPadding,
                         end = AbkScreenHorizontalPadding
