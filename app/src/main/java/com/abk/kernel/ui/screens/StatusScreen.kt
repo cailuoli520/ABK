@@ -88,7 +88,11 @@ fun StatusScreen(
             ExpressiveHeroCard(
                 title = if (state.rootGranted) "工作中" else "部分激活",
                 subtitle = if (state.rootGranted) {
-                    state.currentRun?.let { "构建：#${it.runNumber}" } ?: "版本：${BuildConfig.VERSION_NAME}"
+                    when {
+                        state.activeBuildRuns.size > 1 -> "构建：${state.activeBuildRuns.size} 个工作流并行"
+                        state.currentRun != null -> state.currentRun?.let { "构建：#${it.runNumber}" }.orEmpty()
+                        else -> "版本：${BuildConfig.VERSION_NAME}"
+                    }
                 } else {
                     "版本：${BuildConfig.VERSION_NAME} · 构建和下载可用"
                 },
@@ -140,7 +144,15 @@ fun StatusScreen(
             ) {
                 when (state.buildStatus) {
                     BuildStatus.IDLE -> StatusRow(Icons.Default.HourglassEmpty, "暂无进行中的构建", false)
-                    BuildStatus.QUEUED -> StatusRow(Icons.Default.Queue, "构建已排队，等待 Runner…", false)
+                    BuildStatus.QUEUED -> StatusRow(
+                        Icons.Default.Queue,
+                        if (state.activeBuildRuns.size > 1) {
+                            "${state.activeBuildRuns.size} 个工作流已排队，合并进度等待 Runner…"
+                        } else {
+                            "构建已排队，等待 Runner…"
+                        },
+                        false
+                    )
                     BuildStatus.IN_PROGRESS -> Row(verticalAlignment = Alignment.CenterVertically) {
                         LoadingIndicator(Modifier.size(24.dp))
                         Spacer(Modifier.width(8.dp))
@@ -167,7 +179,8 @@ fun StatusScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                state.currentRun?.let { run ->
+                val showSingleRunAction = state.activeBuildRuns.size <= 1
+                state.currentRun?.takeIf { showSingleRunAction }?.let { run ->
                     Spacer(Modifier.height(4.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -204,6 +217,13 @@ fun StatusScreen(
                             }
                         }
                     }
+                }
+                if (state.activeBuildRuns.size > 1) {
+                    Text(
+                        "${state.activeBuildRuns.size} 个工作流正在并行，最近构建记录和队列页可分别查看或取消。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
 

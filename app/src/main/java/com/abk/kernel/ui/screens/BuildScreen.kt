@@ -620,6 +620,7 @@ fun BuildScreen(
                         status = state.buildStatus,
                         progress = state.buildProgress,
                         runId = state.currentRun?.id ?: 0L,
+                        activeRunCount = state.activeBuildRuns.size,
                         cancelling = state.currentRun?.id in state.cancellingWorkflowRunIds,
                         onCancel = { runId -> vm.cancelWorkflowRun(runId) }
                     )
@@ -1005,16 +1006,18 @@ fun BuildScreen(
             // Submit button
             Button(
                 onClick = { showConfirmDialog = true },
-                enabled = !state.buildQueueProcessing,
+                enabled = true,
                 modifier = Modifier.fillMaxWidth().height(52.dp)
             ) {
-                if (state.buildQueueProcessing && !activeBuild) {
-                    LoadingIndicator(Modifier.size(24.dp))
-                } else {
-                    Icon(Icons.Default.RocketLaunch, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (activeBuild || activeQueueCount > 0) "加入队列" else stringResource(R.string.build_submit))
-                }
+                Icon(Icons.Default.RocketLaunch, null)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (activeBuild || activeQueueCount > 0 || state.buildQueueProcessing) {
+                        "加入队列"
+                    } else {
+                        stringResource(R.string.build_submit)
+                    }
+                )
             }
 
             // Error
@@ -1898,12 +1901,21 @@ private fun BuildStatusBanner(
     status: BuildStatus,
     progress: BuildProgress,
     runId: Long,
+    activeRunCount: Int,
     cancelling: Boolean,
     onCancel: (Long) -> Unit
 ) {
     val (icon, text, color) = when (status) {
-        BuildStatus.QUEUED -> Triple(Icons.Default.Queue, "构建已排队，等待运行…", MaterialTheme.colorScheme.tertiary)
-        BuildStatus.IN_PROGRESS -> Triple(Icons.Default.RunCircle, "构建进行中…", MaterialTheme.colorScheme.secondary)
+        BuildStatus.QUEUED -> Triple(
+            Icons.Default.Queue,
+            if (activeRunCount > 1) "$activeRunCount 个构建已排队" else "构建已排队，等待运行…",
+            MaterialTheme.colorScheme.tertiary
+        )
+        BuildStatus.IN_PROGRESS -> Triple(
+            Icons.Default.RunCircle,
+            if (activeRunCount > 1) "$activeRunCount 个构建并行中…" else "构建进行中…",
+            MaterialTheme.colorScheme.secondary
+        )
         BuildStatus.SUCCESS -> Triple(Icons.Default.CheckCircle, "构建成功！", MaterialTheme.colorScheme.primary)
         BuildStatus.FAILURE -> Triple(Icons.Default.Error, "构建失败", MaterialTheme.colorScheme.error)
         BuildStatus.CANCELLED -> Triple(Icons.Default.Cancel, "构建已取消", MaterialTheme.colorScheme.outline)
@@ -1936,7 +1948,7 @@ private fun BuildStatusBanner(
                     )
                 }
             }
-            if (status in listOf(BuildStatus.QUEUED, BuildStatus.IN_PROGRESS) && runId > 0L) {
+            if (status in listOf(BuildStatus.QUEUED, BuildStatus.IN_PROGRESS) && runId > 0L && activeRunCount <= 1) {
                 TextButton(
                     onClick = { onCancel(runId) },
                     enabled = !cancelling,
