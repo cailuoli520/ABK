@@ -19,6 +19,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
@@ -44,6 +45,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.abk.kernel.R
 import com.abk.kernel.data.model.BuildPlan
+import com.abk.kernel.data.model.BuildQueueItem
+import com.abk.kernel.data.model.BuildQueueItemStatus
 import com.abk.kernel.data.model.BuildProgress
 import com.abk.kernel.data.model.BuildStepProgress
 import com.abk.kernel.data.model.BuildStatus
@@ -120,6 +123,7 @@ fun BuildScreen(
     var showSavePlanDialog by remember { mutableStateOf(false) }
     var showImportPlanDialog by remember { mutableStateOf(false) }
     var showPlanLibraryPage by rememberSaveable { mutableStateOf(false) }
+    var showBuildQueuePage by rememberSaveable { mutableStateOf(false) }
     var planToolsExpanded by rememberSaveable { mutableStateOf(false) }
     var planBackProgress by remember { mutableFloatStateOf(0f) }
     val animatedPlanBackProgress by animateFloatAsState(
@@ -158,6 +162,16 @@ fun BuildScreen(
     val customModuleGroups = remember(config.customExternalModules, catalogModuleByUrl) {
         groupBuildCustomExternalModules(config.customExternalModules, catalogModuleByUrl)
     }
+    val childPageVisible = showPlanLibraryPage || showBuildQueuePage
+    val activeBuild = state.buildStatus in listOf(BuildStatus.QUEUED, BuildStatus.IN_PROGRESS)
+    val pendingQueueCount = state.buildQueue.count { it.status == BuildQueueItemStatus.PENDING }
+    val activeQueueCount = state.buildQueue.count {
+        it.status in listOf(
+            BuildQueueItemStatus.PENDING,
+            BuildQueueItemStatus.DISPATCHING,
+            BuildQueueItemStatus.RUNNING
+        )
+    }
 
     LaunchedEffect(config, rawConfig) {
         if (config != rawConfig) vm.updateBuildConfig(config)
@@ -166,15 +180,24 @@ fun BuildScreen(
     fun openPlanLibraryPage() {
         planBackProgress = 0f
         onPlanPageVisibleChange(true)
+        showBuildQueuePage = false
         showPlanLibraryPage = true
     }
 
-    fun closePlanLibraryPage() {
+    fun openBuildQueuePage() {
+        planBackProgress = 0f
+        onPlanPageVisibleChange(true)
         showPlanLibraryPage = false
+        showBuildQueuePage = true
     }
 
-    LaunchedEffect(showPlanLibraryPage) {
-        if (showPlanLibraryPage) {
+    fun closeChildPage() {
+        showPlanLibraryPage = false
+        showBuildQueuePage = false
+    }
+
+    LaunchedEffect(childPageVisible) {
+        if (childPageVisible) {
             onPlanPageVisibleChange(true)
         } else {
             delay(BUILD_PLAN_PAGE_EXIT_DELAY_MS)
@@ -187,19 +210,19 @@ fun BuildScreen(
         onDispose { onPlanPageVisibleChange(false) }
     }
 
-    PredictiveBackHandler(enabled = showPlanLibraryPage && state.predictiveBackEnabled) { progress ->
+    PredictiveBackHandler(enabled = childPageVisible && state.predictiveBackEnabled) { progress ->
         try {
             progress.collect { backEvent ->
                 planBackProgress = backEvent.progress.coerceIn(0f, 1f)
             }
-            closePlanLibraryPage()
+            closeChildPage()
         } catch (_: CancellationException) {
             planBackProgress = 0f
         }
     }
 
-    BackHandler(enabled = showPlanLibraryPage && !state.predictiveBackEnabled) {
-        closePlanLibraryPage()
+    BackHandler(enabled = childPageVisible && !state.predictiveBackEnabled) {
+        closeChildPage()
     }
 
     if (showConfirmDialog) {
@@ -222,6 +245,13 @@ fun BuildScreen(
                             if (config.useCustomExternalModules) "${config.customExternalModules.size} 个" else "未启用"
                         }"
                     )
+                    if (activeBuild || activeQueueCount > 0) {
+                        Text(
+                            text = "当前有构建活动，此配置会加入本地队列并按顺序派发。",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
             },
             confirmButton = {
@@ -558,6 +588,8 @@ fun BuildScreen(
 
             BuildPlanToolsCard(
                 plansCount = state.buildPlans.size,
+                pendingQueueCount = pendingQueueCount,
+                activeQueueCount = activeQueueCount,
                 expanded = planToolsExpanded,
                 currentSummary = buildPlanSummary(config),
                 onExpandedChange = { planToolsExpanded = it },
@@ -566,6 +598,7 @@ fun BuildScreen(
                     showSavePlanDialog = true
                 },
                 onLibrary = ::openPlanLibraryPage,
+                onQueue = ::openBuildQueuePage,
                 onShare = {
                     sharePlanTarget = BuildPlan(name = suggestedPlanName, config = config)
                 },
@@ -583,7 +616,13 @@ fun BuildScreen(
                 exit = fadeOut() + shrinkVertically()
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    BuildStatusBanner(state.buildStatus, state.buildProgress)
+                    BuildStatusBanner(
+                        status = state.buildStatus,
+                        progress = state.buildProgress,
+                        runId = state.currentRun?.id ?: 0L,
+                        cancelling = state.currentRun?.id in state.cancellingWorkflowRunIds,
+                        onCancel = { runId -> vm.cancelWorkflowRun(runId) }
+                    )
                     BuildProgressCard(state.buildProgress)
                 }
             }
@@ -966,17 +1005,15 @@ fun BuildScreen(
             // Submit button
             Button(
                 onClick = { showConfirmDialog = true },
-                enabled = !state.isLoading && state.buildStatus !in listOf(
-                    BuildStatus.QUEUED, BuildStatus.IN_PROGRESS
-                ),
+                enabled = !state.buildQueueProcessing,
                 modifier = Modifier.fillMaxWidth().height(52.dp)
             ) {
-                if (state.isLoading) {
+                if (state.buildQueueProcessing && !activeBuild) {
                     LoadingIndicator(Modifier.size(24.dp))
                 } else {
                     Icon(Icons.Default.RocketLaunch, null)
                     Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.build_submit))
+                    Text(if (activeBuild || activeQueueCount > 0) "加入队列" else stringResource(R.string.build_submit))
                 }
             }
 
@@ -1001,7 +1038,7 @@ fun BuildScreen(
         }
 
         AnimatedVisibility(
-            visible = showPlanLibraryPage,
+            visible = childPageVisible,
             enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()),
             exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()),
             modifier = childPageModifier
@@ -1014,7 +1051,7 @@ fun BuildScreen(
         }
 
         AnimatedVisibility(
-            visible = showPlanLibraryPage,
+            visible = childPageVisible,
             enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
                 slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
             exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
@@ -1041,32 +1078,51 @@ fun BuildScreen(
                     containerColor = Color.Transparent,
                     topBar = {
                         ExpressiveTopBar(
-                            title = "方案库",
+                            title = if (showBuildQueuePage) "构建队列" else "方案库",
                             navigationIcon = {
-                                IconButton(onClick = ::closePlanLibraryPage) {
+                                IconButton(onClick = ::closeChildPage) {
                                     Icon(Icons.Default.ArrowBack, contentDescription = "返回构建配置")
                                 }
                             }
                         )
                     }
                 ) { padding ->
-                    BuildPlanLibraryPage(
-                        plans = state.buildPlans,
-                        onApply = {
-                            vm.applyBuildPlan(it)
-                            closePlanLibraryPage()
-                            Toast.makeText(context, "方案已应用，可继续修改", Toast.LENGTH_SHORT).show()
-                        },
-                        onShare = { sharePlanTarget = it },
-                        onRename = {
-                            renamePlanTarget = it
-                            renamePlanName = it.name
-                        },
-                        onDelete = { deletePlanTarget = it },
-                        modifier = Modifier
-                            .padding(padding)
-                            .fillMaxSize()
-                    )
+                    if (showBuildQueuePage) {
+                        BuildQueuePage(
+                            queue = state.buildQueue,
+                            cancellingRunIds = state.cancellingWorkflowRunIds,
+                            onApply = {
+                                vm.updateBuildConfig(it.config)
+                                closeChildPage()
+                                Toast.makeText(context, "队列配置已应用，可继续修改", Toast.LENGTH_SHORT).show()
+                            },
+                            onRemove = { vm.removeBuildQueueItem(it.id) },
+                            onRetry = { vm.retryBuildQueueItem(it.id) },
+                            onCancelRun = { runId -> vm.cancelWorkflowRun(runId) },
+                            onClearCompleted = vm::clearCompletedBuildQueueItems,
+                            modifier = Modifier
+                                .padding(padding)
+                                .fillMaxSize()
+                        )
+                    } else {
+                        BuildPlanLibraryPage(
+                            plans = state.buildPlans,
+                            onApply = {
+                                vm.applyBuildPlan(it)
+                                closeChildPage()
+                                Toast.makeText(context, "方案已应用，可继续修改", Toast.LENGTH_SHORT).show()
+                            },
+                            onShare = { sharePlanTarget = it },
+                            onRename = {
+                                renamePlanTarget = it
+                                renamePlanName = it.name
+                            },
+                            onDelete = { deletePlanTarget = it },
+                            modifier = Modifier
+                                .padding(padding)
+                                .fillMaxSize()
+                        )
+                    }
                 }
             }
         }
@@ -1109,11 +1165,14 @@ private fun BuildPlanPageBackground(
 @Composable
 private fun BuildPlanToolsCard(
     plansCount: Int,
+    pendingQueueCount: Int,
+    activeQueueCount: Int,
     expanded: Boolean,
     currentSummary: String,
     onExpandedChange: (Boolean) -> Unit,
     onSave: () -> Unit,
     onLibrary: () -> Unit,
+    onQueue: () -> Unit,
     onShare: () -> Unit,
     onImport: () -> Unit
 ) {
@@ -1171,6 +1230,14 @@ private fun BuildPlanToolsCard(
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = onQueue,
+                            modifier = Modifier.weight(1f).height(44.dp)
+                        ) {
+                            Icon(Icons.Default.Queue, null, modifier = Modifier.size(17.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("队列")
+                        }
                         Button(
                             onClick = onShare,
                             modifier = Modifier.weight(1f).height(44.dp)
@@ -1179,9 +1246,11 @@ private fun BuildPlanToolsCard(
                             Spacer(Modifier.width(6.dp))
                             Text("分享")
                         }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
                             onClick = onImport,
-                            modifier = Modifier.weight(1f).height(44.dp)
+                            modifier = Modifier.fillMaxWidth().height(44.dp)
                         ) {
                             Icon(Icons.Default.Download, null, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(6.dp))
@@ -1189,7 +1258,11 @@ private fun BuildPlanToolsCard(
                         }
                     }
                     Text(
-                        text = if (plansCount > 0) "已保存 $plansCount 个方案" else "暂无已保存方案",
+                        text = buildString {
+                            append(if (plansCount > 0) "已保存 $plansCount 个方案" else "暂无已保存方案")
+                            append(" · ")
+                            append(if (activeQueueCount > 0) "队列 $activeQueueCount 项，待派发 $pendingQueueCount 项" else "队列为空")
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1435,6 +1508,199 @@ private fun BuildPlanLibraryItem(
 }
 
 @Composable
+private fun BuildQueuePage(
+    queue: List<BuildQueueItem>,
+    cancellingRunIds: Set<Long>,
+    onApply: (BuildQueueItem) -> Unit,
+    onRemove: (BuildQueueItem) -> Unit,
+    onRetry: (BuildQueueItem) -> Unit,
+    onCancelRun: (Long) -> Unit,
+    onClearCompleted: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val terminalItems = queue.filter { it.status.isTerminalQueueStatus() }
+    Column(
+        modifier = modifier
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = AbkScreenHorizontalPadding),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        ExpressiveSectionCard(
+            title = "队列状态",
+            subtitle = if (queue.isEmpty()) {
+                "提交构建时会自动进入队列。"
+            } else {
+                "共 ${queue.size} 项 · 待派发 ${queue.count { it.status == BuildQueueItemStatus.PENDING }} 项"
+            },
+            icon = Icons.Default.Queue
+        ) {
+            if (terminalItems.isNotEmpty()) {
+                OutlinedButton(
+                    onClick = onClearCompleted,
+                    modifier = Modifier.fillMaxWidth().height(42.dp)
+                ) {
+                    Icon(Icons.Default.Delete, null, modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("清理已结束项")
+                }
+            } else {
+                Text(
+                    text = if (queue.isEmpty()) "队列为空。" else "正在按顺序派发构建。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        if (queue.isEmpty()) {
+            ExpressiveSectionCard(
+                title = "暂无队列项",
+                subtitle = "当前构建进行中时再次提交，会自动排到这里。",
+                icon = Icons.Default.Inbox
+            ) {
+                Text(
+                    text = "队列项保存完整构建配置，后续修改当前页面不会影响已排队项。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            queue.forEachIndexed { index, item ->
+                BuildQueueItemCard(
+                    index = index,
+                    item = item,
+                    cancelling = item.runId > 0L && item.runId in cancellingRunIds,
+                    onApply = { onApply(item) },
+                    onRemove = { onRemove(item) },
+                    onRetry = { onRetry(item) },
+                    onCancelRun = { if (item.runId > 0L) onCancelRun(item.runId) }
+                )
+            }
+        }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun BuildQueueItemCard(
+    index: Int,
+    item: BuildQueueItem,
+    cancelling: Boolean,
+    onApply: () -> Unit,
+    onRemove: () -> Unit,
+    onRetry: () -> Unit,
+    onCancelRun: () -> Unit
+) {
+    ExpressiveSectionCard(
+        title = "${index + 1}. ${item.name.ifBlank { "构建队列项" }}",
+        subtitle = buildPlanSummary(item.config),
+        icon = when (item.status) {
+            BuildQueueItemStatus.PENDING -> Icons.Default.Schedule
+            BuildQueueItemStatus.DISPATCHING -> Icons.Default.CloudUpload
+            BuildQueueItemStatus.RUNNING -> Icons.Default.RunCircle
+            BuildQueueItemStatus.DONE -> Icons.Default.CheckCircle
+            BuildQueueItemStatus.FAILED -> Icons.Default.Error
+            BuildQueueItemStatus.CANCELLED -> Icons.Default.Cancel
+        }
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            ExpressiveStatusChip(label = item.status.queueStatusLabel(), color = item.status.queueStatusColor())
+            if (item.runNumber > 0) {
+                ExpressiveStatusChip(label = "#${item.runNumber}", color = MaterialTheme.colorScheme.secondary)
+            }
+            if (item.runId > 0L) {
+                ExpressiveStatusChip(label = "run ${item.runId}", color = MaterialTheme.colorScheme.outline)
+            }
+        }
+        item.error?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = onApply,
+                modifier = Modifier.weight(1f).height(42.dp)
+            ) {
+                Icon(Icons.Default.Edit, null, modifier = Modifier.size(17.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("应用")
+            }
+            when (item.status) {
+                BuildQueueItemStatus.PENDING -> OutlinedButton(
+                    onClick = onRemove,
+                    modifier = Modifier.weight(1f).height(42.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Icon(Icons.Default.Delete, null, modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("移除")
+                }
+                BuildQueueItemStatus.DISPATCHING,
+                BuildQueueItemStatus.RUNNING -> Button(
+                    onClick = onCancelRun,
+                    enabled = item.runId > 0L && !cancelling,
+                    modifier = Modifier.weight(1f).height(42.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    if (cancelling) {
+                        LoadingIndicator(Modifier.size(17.dp))
+                    } else {
+                        Icon(Icons.Default.Cancel, null, modifier = Modifier.size(17.dp))
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (cancelling) "取消中" else "取消")
+                }
+                BuildQueueItemStatus.FAILED,
+                BuildQueueItemStatus.CANCELLED -> Button(
+                    onClick = onRetry,
+                    modifier = Modifier.weight(1f).height(42.dp)
+                ) {
+                    Icon(Icons.Default.Replay, null, modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("重试")
+                }
+                BuildQueueItemStatus.DONE -> OutlinedButton(
+                    onClick = onRemove,
+                    modifier = Modifier.weight(1f).height(42.dp)
+                ) {
+                    Icon(Icons.Default.Delete, null, modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("清除")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BuildQueueItemStatus.queueStatusColor(): Color = when (this) {
+    BuildQueueItemStatus.PENDING -> MaterialTheme.colorScheme.tertiary
+    BuildQueueItemStatus.DISPATCHING,
+    BuildQueueItemStatus.RUNNING -> MaterialTheme.colorScheme.secondary
+    BuildQueueItemStatus.DONE -> MaterialTheme.colorScheme.primary
+    BuildQueueItemStatus.FAILED -> MaterialTheme.colorScheme.error
+    BuildQueueItemStatus.CANCELLED -> MaterialTheme.colorScheme.outline
+}
+
+private fun BuildQueueItemStatus.queueStatusLabel(): String = when (this) {
+    BuildQueueItemStatus.PENDING -> "待派发"
+    BuildQueueItemStatus.DISPATCHING -> "派发中"
+    BuildQueueItemStatus.RUNNING -> "运行中"
+    BuildQueueItemStatus.DONE -> "已完成"
+    BuildQueueItemStatus.FAILED -> "失败"
+    BuildQueueItemStatus.CANCELLED -> "已取消"
+}
+
+private fun BuildQueueItemStatus.isTerminalQueueStatus(): Boolean =
+    this in setOf(BuildQueueItemStatus.DONE, BuildQueueItemStatus.FAILED, BuildQueueItemStatus.CANCELLED)
+
+@Composable
 private fun RenameBuildPlanDialog(
     name: String,
     onNameChange: (String) -> Unit,
@@ -1628,7 +1894,13 @@ private val BUILD_TIME_FORMATTER: DateTimeFormatter =
     DateTimeFormatter.ofPattern("EEE MMM dd HH:mm:ss z yyyy", Locale.US)
 
 @Composable
-private fun BuildStatusBanner(status: BuildStatus, progress: BuildProgress) {
+private fun BuildStatusBanner(
+    status: BuildStatus,
+    progress: BuildProgress,
+    runId: Long,
+    cancelling: Boolean,
+    onCancel: (Long) -> Unit
+) {
     val (icon, text, color) = when (status) {
         BuildStatus.QUEUED -> Triple(Icons.Default.Queue, "构建已排队，等待运行…", MaterialTheme.colorScheme.tertiary)
         BuildStatus.IN_PROGRESS -> Triple(Icons.Default.RunCircle, "构建进行中…", MaterialTheme.colorScheme.secondary)
@@ -1662,6 +1934,21 @@ private fun BuildStatusBanner(status: BuildStatus, progress: BuildProgress) {
                         style = MaterialTheme.typography.labelSmall,
                         maxLines = 1
                     )
+                }
+            }
+            if (status in listOf(BuildStatus.QUEUED, BuildStatus.IN_PROGRESS) && runId > 0L) {
+                TextButton(
+                    onClick = { onCancel(runId) },
+                    enabled = !cancelling,
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    if (cancelling) {
+                        LoadingIndicator(Modifier.size(18.dp))
+                    } else {
+                        Icon(Icons.Default.Cancel, null, modifier = Modifier.size(17.dp))
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    Text(if (cancelling) "取消中" else "取消")
                 }
             }
         }

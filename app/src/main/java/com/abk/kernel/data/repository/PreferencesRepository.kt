@@ -31,6 +31,7 @@ class PreferencesRepository(private val context: Context) {
         val KEY_UI_SURFACE_ALPHA = floatPreferencesKey("ui_surface_alpha")
         val KEY_BUILD_CONFIG = stringPreferencesKey("build_config_json")
         val KEY_BUILD_PLANS = stringPreferencesKey("build_plans_json")
+        val KEY_BUILD_QUEUE = stringPreferencesKey("build_queue_json")
         val KEY_MODULE_CATALOG_REPOSITORIES = stringPreferencesKey("module_catalog_repositories_json")
         val KEY_DOWNLOADED_ARTIFACTS = stringPreferencesKey("downloaded_artifacts_json")
         val KEY_REMOTE_ARTIFACTS = stringPreferencesKey("remote_artifacts_json")
@@ -59,6 +60,7 @@ class PreferencesRepository(private val context: Context) {
     val uiSurfaceAlpha: Flow<Float> = context.dataStore.data.map { it[KEY_UI_SURFACE_ALPHA] ?: 1f }
     val buildConfigJson: Flow<String?> = context.dataStore.data.map { it[KEY_BUILD_CONFIG] }
     val buildPlansJson: Flow<String?> = context.dataStore.data.map { it[KEY_BUILD_PLANS] }
+    val buildQueueJson: Flow<String?> = context.dataStore.data.map { it[KEY_BUILD_QUEUE] }
     val moduleCatalogRepositoriesJson: Flow<String?> = context.dataStore.data.map {
         it[KEY_MODULE_CATALOG_REPOSITORIES]
     }
@@ -115,6 +117,7 @@ class PreferencesRepository(private val context: Context) {
     }
     suspend fun saveBuildConfigJson(json: String) = context.dataStore.edit { it[KEY_BUILD_CONFIG] = json }
     suspend fun saveBuildPlansJson(json: String) = context.dataStore.edit { it[KEY_BUILD_PLANS] = json }
+    suspend fun saveBuildQueueJson(json: String) = context.dataStore.edit { it[KEY_BUILD_QUEUE] = json }
     suspend fun saveModuleCatalogRepositoriesJson(json: String) = context.dataStore.edit {
         it[KEY_MODULE_CATALOG_REPOSITORIES] = json
     }
@@ -141,6 +144,7 @@ class PreferencesRepository(private val context: Context) {
         it.remove(KEY_AVATAR_URL)
         it.remove(KEY_FORK_REPO_NAME)
         it.remove(KEY_LAST_RUN_ID)
+        it.remove(KEY_BUILD_QUEUE)
         it.remove(KEY_REMOTE_ARTIFACTS)
         it.remove(KEY_BUILD_PARAMETER_SUMMARIES)
         it.remove(KEY_PENDING_AUTO_DOWNLOAD_RUN_ID)

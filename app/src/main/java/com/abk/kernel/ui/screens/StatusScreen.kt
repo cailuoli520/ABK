@@ -167,19 +167,40 @@ fun StatusScreen(
                 }
                 state.currentRun?.let { run ->
                     Spacer(Modifier.height(4.dp))
-                    TextButton(
-                        onClick = {
-                            runCatching {
-                                context.startActivity(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse(run.htmlUrl))
-                                )
-                            }
-                        },
-                        contentPadding = PaddingValues(0.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.OpenInBrowser, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("查看详情 #${run.runNumber}", style = MaterialTheme.typography.labelMedium)
+                        TextButton(
+                            onClick = {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW, Uri.parse(run.htmlUrl))
+                                    )
+                                }
+                            },
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Icon(Icons.Default.OpenInBrowser, null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("查看详情 #${run.runNumber}", style = MaterialTheme.typography.labelMedium)
+                        }
+                        if (run.isActiveStatusRun()) {
+                            TextButton(
+                                onClick = { vm.cancelWorkflowRun(run.id) },
+                                enabled = run.id !in state.cancellingWorkflowRunIds,
+                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                            ) {
+                                if (run.id in state.cancellingWorkflowRunIds) {
+                                    LoadingIndicator(Modifier.size(16.dp))
+                                } else {
+                                    Icon(Icons.Default.Cancel, null, modifier = Modifier.size(16.dp))
+                                }
+                                Spacer(Modifier.width(4.dp))
+                                Text(if (run.id in state.cancellingWorkflowRunIds) "取消中" else "取消")
+                            }
+                        }
                     }
                 }
             }
@@ -227,8 +248,12 @@ fun StatusScreen(
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         val visibleRuns = state.recentRuns.take(5)
-                        visibleRuns.forEachIndexed { index, run ->
-                            RunListItem(run)
+                        visibleRuns.forEach { run ->
+                            RunListItem(
+                                run = run,
+                                cancelling = run.id in state.cancellingWorkflowRunIds,
+                                onCancel = { vm.cancelWorkflowRun(run.id) }
+                            )
                         }
                     }
                 }
@@ -402,7 +427,11 @@ private fun StatusRow(icon: androidx.compose.ui.graphics.vector.ImageVector, tex
 }
 
 @Composable
-private fun RunListItem(run: WorkflowRun) {
+private fun RunListItem(
+    run: WorkflowRun,
+    cancelling: Boolean,
+    onCancel: () -> Unit
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -424,6 +453,8 @@ private fun RunListItem(run: WorkflowRun) {
         val (color, label) = when {
             run.status == "completed" && run.conclusion == "success" ->
                 MaterialTheme.colorScheme.primary to "成功"
+            run.status == "completed" && run.conclusion == "cancelled" ->
+                MaterialTheme.colorScheme.outline to "已取消"
             run.status == "completed" ->
                 MaterialTheme.colorScheme.error to "失败"
             run.status == "in_progress" ->
@@ -433,8 +464,24 @@ private fun RunListItem(run: WorkflowRun) {
         Badge(containerColor = color.copy(alpha = 0.15f)) {
             Text(label, color = color, style = MaterialTheme.typography.labelSmall)
         }
+        if (run.isActiveStatusRun()) {
+            IconButton(onClick = onCancel, enabled = !cancelling) {
+                if (cancelling) {
+                    LoadingIndicator(Modifier.size(18.dp))
+                } else {
+                    Icon(
+                        Icons.Default.Cancel,
+                        contentDescription = "取消工作流",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
     }
 }
+
+private fun WorkflowRun.isActiveStatusRun(): Boolean =
+    status in setOf("queued", "waiting", "requested", "pending", "in_progress")
 
 private fun buildStatusDisplay(status: BuildStatus): String = when (status) {
     BuildStatus.IDLE -> "空闲"

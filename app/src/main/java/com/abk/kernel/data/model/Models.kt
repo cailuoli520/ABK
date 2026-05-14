@@ -462,6 +462,26 @@ data class BuildPlan(
     val updatedAt: Long = 0L
 )
 
+data class BuildQueueItem(
+    val id: String = "",
+    val name: String = "",
+    val config: KernelBuildConfig = KernelBuildConfig(),
+    val createdAt: Long = 0L,
+    val status: BuildQueueItemStatus = BuildQueueItemStatus.PENDING,
+    val runId: Long = 0L,
+    val runNumber: Int = 0,
+    val error: String? = null
+)
+
+enum class BuildQueueItemStatus {
+    PENDING,
+    DISPATCHING,
+    RUNNING,
+    DONE,
+    FAILED,
+    CANCELLED
+}
+
 data class DownloadedArtifact(
     val id: Long,
     val name: String,

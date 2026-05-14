@@ -45,6 +45,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.ContentCopy
@@ -138,6 +139,7 @@ import com.abk.kernel.data.model.KernelSupport
 import com.abk.kernel.data.model.PREBUILT_GKI_RUN_ID
 import com.abk.kernel.data.model.PrebuiltGkiAsset
 import com.abk.kernel.data.model.PrebuiltGkiRelease
+import com.abk.kernel.data.model.WorkflowRun
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ExpressiveEmptyState
 import com.abk.kernel.ui.components.ExpressiveHeroCard
@@ -206,6 +208,7 @@ fun FlashScreen(
     val workflowGroups = remember(remoteArtifacts, workflowDownloadedArtifacts) {
         buildWorkflowGroups(remoteArtifacts, workflowDownloadedArtifacts)
     }
+    val recentRunById = remember(state.recentRuns) { state.recentRuns.associateBy { it.id } }
     val selectedGroup = selectedRunId?.let { id -> workflowGroups.firstOrNull { it.runId == id } }
     val selectedPrebuiltRelease = selectedPrebuiltReleaseId?.let { id ->
         state.prebuiltGkiReleases.firstOrNull { it.id == id }
@@ -575,8 +578,11 @@ fun FlashScreen(
 
                         if (workflowGroups.isNotEmpty()) {
                             items(workflowGroups, key = { "workflow-${it.runId}" }) { group ->
+                                val run = recentRunById[group.runId]
                                 WorkflowRunCard(
                                     group = group,
+                                    active = run?.isActiveFlashRun() == true,
+                                    cancelling = group.runId in state.cancellingWorkflowRunIds,
                                     onClick = {
                                         selectedRunId = group.runId
                                         selectedPrebuiltReleaseId = null
@@ -586,7 +592,8 @@ fun FlashScreen(
                                     onDelete = {
                                         deleteWorkflowTarget = group
                                         deleteRemoteWorkflowRun = false
-                                    }
+                                    },
+                                    onCancel = { vm.cancelWorkflowRun(group.runId) }
                                 )
                             }
                         } else {
@@ -1828,9 +1835,12 @@ private fun prebuiltArtifactType(asset: PrebuiltGkiAsset): ArtifactType {
 @Composable
 private fun WorkflowRunCard(
     group: WorkflowArtifactGroup,
+    active: Boolean,
+    cancelling: Boolean,
     onClick: () -> Unit,
     onShowParameters: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onCancel: () -> Unit
 ) {
     val sourceCount = group.remote.size
     val downloadedCount = group.local.size
@@ -1875,6 +1885,19 @@ private fun WorkflowRunCard(
                 }
                 IconButton(onClick = onShowParameters) {
                     Icon(Icons.Default.Tune, contentDescription = "参数详情")
+                }
+                if (active) {
+                    IconButton(onClick = onCancel, enabled = !cancelling) {
+                        if (cancelling) {
+                            LoadingIndicator(Modifier.size(20.dp))
+                        } else {
+                            Icon(
+                                Icons.Default.Cancel,
+                                contentDescription = "取消工作流",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
                 }
                 IconButton(onClick = onDelete) {
                     Icon(Icons.Default.Delete, contentDescription = "删除工作流")
@@ -2285,6 +2308,9 @@ private data class WorkflowArtifactGroup(
     val remote: List<BuildArtifact>,
     val local: List<DownloadedArtifact>
 )
+
+private fun WorkflowRun.isActiveFlashRun(): Boolean =
+    status in setOf("queued", "waiting", "requested", "pending", "in_progress")
 
 private fun artifactIcon(type: ArtifactType) = when (type) {
     ArtifactType.KERNEL_PACKAGE -> Icons.Default.Inventory2
