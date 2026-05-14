@@ -188,6 +188,7 @@ object KernelSupport {
                         )
                     }
                 }
+                .distinctBy { it.url.lowercase() to CustomExternalModuleStage.normalize(it.stage) }
         )
     }
 

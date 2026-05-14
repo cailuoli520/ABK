@@ -47,6 +47,7 @@ import com.abk.kernel.data.model.BuildPlan
 import com.abk.kernel.data.model.BuildProgress
 import com.abk.kernel.data.model.BuildStepProgress
 import com.abk.kernel.data.model.BuildStatus
+import com.abk.kernel.data.model.CustomExternalModule
 import com.abk.kernel.data.model.CustomExternalModuleStage
 import com.abk.kernel.data.model.ExternalModuleMetadata
 import com.abk.kernel.data.model.KernelSupport
@@ -144,7 +145,9 @@ fun BuildScreen(
     var pendingCustomModuleUrl by remember { mutableStateOf("") }
     var pendingCustomModuleMetadata by remember { mutableStateOf<ExternalModuleMetadata?>(null) }
     var selectedCustomModuleStages by rememberSaveable { mutableStateOf(emptyList<String>()) }
-    var removingCatalogModuleKeys by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var editingCustomModuleGroup by remember { mutableStateOf<BuildCustomModuleGroup?>(null) }
+    var editingCustomModuleStages by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var removingCustomModuleKeys by rememberSaveable { mutableStateOf(emptyList<String>()) }
     val coroutineScope = rememberCoroutineScope()
     val catalogModules = remember(state.moduleCatalogRepositories) {
         mergeBuildCatalogModules(state.moduleCatalogRepositories)
@@ -152,14 +155,8 @@ fun BuildScreen(
     val catalogModuleByUrl = remember(catalogModules) {
         catalogModules.associateBy { it.module.repoUrl.trim().lowercase() }
     }
-    val catalogSelections = remember(config.customExternalModules, catalogModuleByUrl) {
-        config.customExternalModules.mapNotNull { customModule ->
-            val catalogModule = catalogModuleByUrl[customModule.url.trim().lowercase()] ?: return@mapNotNull null
-            BuildCatalogSelection(
-                catalogModule = catalogModule,
-                stage = CustomExternalModuleStage.normalize(customModule.stage)
-            )
-        }.distinctBy { it.key }
+    val customModuleGroups = remember(config.customExternalModules, catalogModuleByUrl) {
+        groupBuildCustomExternalModules(config.customExternalModules, catalogModuleByUrl)
     }
 
     LaunchedEffect(config, rawConfig) {
@@ -419,6 +416,73 @@ fun BuildScreen(
                     ) {
                         Text(stringResource(R.string.cancel))
                     }
+                }
+            }
+        )
+    }
+
+    editingCustomModuleGroup?.let { group ->
+        AlertDialog(
+            onDismissRequest = {
+                editingCustomModuleGroup = null
+                editingCustomModuleStages = emptyList()
+            },
+            icon = { Icon(Icons.Default.Edit, null) },
+            title = { Text("编辑注入阶段") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = group.displayName(),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = group.url,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    CustomExternalModuleStage.options.forEach { stage ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Checkbox(
+                                checked = stage in editingCustomModuleStages,
+                                onCheckedChange = { checked ->
+                                    editingCustomModuleStages = if (checked) {
+                                        (editingCustomModuleStages + stage).distinct()
+                                    } else {
+                                        editingCustomModuleStages - stage
+                                    }
+                                }
+                            )
+                            Text(stage, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        vm.setCustomExternalModuleStages(group.url, editingCustomModuleStages)
+                        editingCustomModuleGroup = null
+                        editingCustomModuleStages = emptyList()
+                    }
+                ) {
+                    Text(if (editingCustomModuleStages.isEmpty()) "移除模块" else "保存")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        editingCustomModuleGroup = null
+                        editingCustomModuleStages = emptyList()
+                    }
+                ) {
+                    Text(stringResource(R.string.cancel))
                 }
             }
         )
@@ -693,53 +757,114 @@ fun BuildScreen(
                 }
                 AnimatedVisibility(config.useCustomExternalModules) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        if (catalogSelections.isNotEmpty()) {
+                        val catalogGroups = customModuleGroups.filter { it.catalogModule != null }
+                        val manualGroups = customModuleGroups.filter { it.catalogModule == null }
+                        if (catalogGroups.isNotEmpty()) {
                             Text(
                                 text = "从模块仓库添加",
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
-                            catalogSelections.forEach { selection ->
-                                val merged = selection.catalogModule
-                                val module = merged.module
-                                key(selection.key) {
+                            catalogGroups.forEach { group ->
+                                key(group.key) {
                                     AnimatedVisibility(
-                                        visible = selection.key !in removingCatalogModuleKeys,
+                                        visible = group.key !in removingCustomModuleKeys,
                                         enter = fadeIn() + expandVertically(),
                                         exit = fadeOut() + shrinkVertically()
                                     ) {
                                         ExpressiveListItem(
-                                            title = module.catalogModuleTitle(),
-                                            subtitle = buildString {
-                                                append("${selection.stage} · 来源 ${merged.sources.joinToString(", ")}")
-                                                if (module.version.isNotBlank()) append(" · v${module.version}")
-                                                appendLine()
-                                                append(module.description.ifBlank { module.repoUrl })
-                                            },
+                                            title = group.displayName(),
+                                            subtitle = group.subtitle(),
                                             leadingIcon = Icons.Default.CheckCircle,
                                             trailingContent = {
-                                                TextButton(
-                                                    onClick = {
-                                                        if (selection.key in removingCatalogModuleKeys) return@TextButton
-                                                        removingCatalogModuleKeys =
-                                                            (removingCatalogModuleKeys + selection.key).distinct()
-                                                        coroutineScope.launch {
-                                                            delay(CATALOG_MODULE_REMOVE_DELAY_MS)
-                                                            vm.removeCustomExternalModule(module.repoUrl, selection.stage)
-                                                            removingCatalogModuleKeys =
-                                                                removingCatalogModuleKeys - selection.key
+                                                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                    IconButton(
+                                                        onClick = {
+                                                            editingCustomModuleGroup = group
+                                                            editingCustomModuleStages = group.stages
                                                         }
-                                                    },
-                                                    enabled = selection.key !in removingCatalogModuleKeys
-                                                ) {
-                                                    Text("移除")
+                                                    ) {
+                                                        Icon(Icons.Default.Edit, contentDescription = "编辑模块阶段")
+                                                    }
+                                                    IconButton(
+                                                        onClick = {
+                                                            if (group.key in removingCustomModuleKeys) return@IconButton
+                                                            removingCustomModuleKeys =
+                                                                (removingCustomModuleKeys + group.key).distinct()
+                                                            coroutineScope.launch {
+                                                                delay(CATALOG_MODULE_REMOVE_DELAY_MS)
+                                                                vm.setCustomExternalModuleStages(group.url, emptyList())
+                                                                removingCustomModuleKeys =
+                                                                    removingCustomModuleKeys - group.key
+                                                            }
+                                                        },
+                                                        enabled = group.key !in removingCustomModuleKeys
+                                                    ) {
+                                                        Icon(Icons.Default.Delete, contentDescription = "删除模块")
+                                                    }
                                                 }
                                             }
                                         )
                                     }
                                 }
                             }
+                        }
+
+                        if (manualGroups.isNotEmpty()) {
+                            Text(
+                                text = "手动添加",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            manualGroups.forEach { group ->
+                                key(group.key) {
+                                    AnimatedVisibility(
+                                        visible = group.key !in removingCustomModuleKeys,
+                                        enter = fadeIn() + expandVertically(),
+                                        exit = fadeOut() + shrinkVertically()
+                                    ) {
+                                        ExpressiveListItem(
+                                            title = group.displayName(),
+                                            subtitle = group.subtitle(),
+                                            leadingIcon = Icons.Default.Extension,
+                                            trailingContent = {
+                                                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                    IconButton(
+                                                        onClick = {
+                                                            editingCustomModuleGroup = group
+                                                            editingCustomModuleStages = group.stages
+                                                        }
+                                                    ) {
+                                                        Icon(Icons.Default.Edit, contentDescription = "编辑模块阶段")
+                                                    }
+                                                    IconButton(
+                                                        onClick = {
+                                                            if (group.key in removingCustomModuleKeys) return@IconButton
+                                                            removingCustomModuleKeys =
+                                                                (removingCustomModuleKeys + group.key).distinct()
+                                                            coroutineScope.launch {
+                                                                delay(CATALOG_MODULE_REMOVE_DELAY_MS)
+                                                                vm.setCustomExternalModuleStages(group.url, emptyList())
+                                                                removingCustomModuleKeys =
+                                                                    removingCustomModuleKeys - group.key
+                                                            }
+                                                        },
+                                                        enabled = group.key !in removingCustomModuleKeys
+                                                    ) {
+                                                        Icon(Icons.Default.Delete, contentDescription = "删除模块")
+                                                    }
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if (customModuleGroups.isNotEmpty()) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         }
 
                         OutlinedTextField(
@@ -813,34 +938,6 @@ fun BuildScreen(
                             }
                         }
 
-                        val manualModules = config.customExternalModules.filter {
-                            catalogModuleByUrl[it.url.trim().lowercase()] == null
-                        }
-                        manualModules.forEach { module ->
-                            val catalogModule = catalogModuleByUrl[module.url.trim().lowercase()]
-                            ExpressiveListItem(
-                                title = catalogModule?.module?.catalogModuleTitle()
-                                    ?: CustomExternalModuleStage.normalize(module.stage),
-                                subtitle = buildString {
-                                    append(CustomExternalModuleStage.normalize(module.stage))
-                                    catalogModule?.sources?.takeIf { it.isNotEmpty() }?.let {
-                                        append(" · ${it.joinToString(", ")}")
-                                    }
-                                    appendLine()
-                                    append(module.url)
-                                },
-                                leadingIcon = Icons.Default.Extension,
-                                trailingContent = {
-                                    IconButton(
-                                        onClick = {
-                                            vm.removeCustomExternalModule(module.url, module.stage)
-                                        }
-                                    ) {
-                                        Icon(Icons.Default.Delete, contentDescription = "删除模块")
-                                    }
-                                }
-                            )
-                        }
                     }
                 }
             }
@@ -1644,11 +1741,12 @@ private data class BuildCatalogModule(
     val sources: List<String>
 )
 
-private data class BuildCatalogSelection(
-    val catalogModule: BuildCatalogModule,
-    val stage: String
+private data class BuildCustomModuleGroup(
+    val url: String,
+    val stages: List<String>,
+    val catalogModule: BuildCatalogModule?
 ) {
-    val key: String = "${catalogModule.module.repoUrl.trim().lowercase()}|${CustomExternalModuleStage.normalize(stage)}"
+    val key: String = url.trim().lowercase()
 }
 
 private fun mergeBuildCatalogModules(repositories: List<ModuleCatalogRepository>): List<BuildCatalogModule> =
@@ -1668,6 +1766,57 @@ private fun mergeBuildCatalogModules(repositories: List<ModuleCatalogRepository>
 
 private fun ModuleCatalogItem.catalogModuleTitle(): String =
     name.ifBlank { repoUrl.trim().trimEnd('/').substringAfterLast('/').removeSuffix(".git") }
+
+private fun groupBuildCustomExternalModules(
+    modules: List<CustomExternalModule>,
+    catalogModuleByUrl: Map<String, BuildCatalogModule>
+): List<BuildCustomModuleGroup> =
+    modules
+        .mapNotNull { module ->
+            val url = module.url.trim()
+            if (url.isBlank()) {
+                null
+            } else {
+                url to CustomExternalModuleStage.normalize(module.stage)
+            }
+        }
+        .groupBy { (url, _) -> url.lowercase() }
+        .values
+        .map { entries ->
+            val url = entries.first().first
+            val stages = CustomExternalModuleStage.options.filter { stage ->
+                entries.any { (_, entryStage) -> entryStage == stage }
+            }
+            BuildCustomModuleGroup(
+                url = url,
+                stages = stages,
+                catalogModule = catalogModuleByUrl[url.lowercase()]
+            )
+        }
+        .sortedWith(
+            compareBy<BuildCustomModuleGroup> { it.catalogModule == null }
+                .thenBy { it.displayName().lowercase(Locale.ROOT) }
+        )
+
+private fun BuildCustomModuleGroup.displayName(): String =
+    catalogModule?.module?.catalogModuleTitle()
+        ?: url.trim().trimEnd('/').removeSuffix(".git").substringAfterLast('/').ifBlank { "外部模块" }
+
+private fun BuildCustomModuleGroup.subtitle(): String {
+    val stageLabel = stages.joinToString(" + ").ifBlank { "未选择阶段" }
+    val catalog = catalogModule
+    return if (catalog != null) {
+        buildString {
+            append(stageLabel)
+            append(" · 来源 ${catalog.sources.joinToString(", ")}")
+            if (catalog.module.version.isNotBlank()) append(" · v${catalog.module.version}")
+            appendLine()
+            append(catalog.module.description.ifBlank { catalog.module.repoUrl })
+        }
+    } else {
+        "$stageLabel\n$url"
+    }
+}
 
 @Composable
 fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {

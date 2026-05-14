@@ -2172,6 +2172,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    fun setCustomExternalModuleStages(url: String, stages: List<String>) {
+        val cleanUrl = url.trim()
+        if (cleanUrl.isBlank()) return
+        val normalizedStages = stages
+            .map { CustomExternalModuleStage.normalize(it) }
+            .filter { it in CustomExternalModuleStage.options }
+            .distinct()
+        val currentConfig = KernelSupport.normalize(_uiState.value.buildConfig)
+        val remainingModules = currentConfig.customExternalModules.filterNot {
+            it.url.equals(cleanUrl, ignoreCase = true)
+        }
+        val updatedModules = remainingModules + normalizedStages.map { stage ->
+            CustomExternalModule(url = cleanUrl, stage = stage)
+        }
+        updateBuildConfig(
+            currentConfig.copy(
+                customExternalModules = updatedModules
+            )
+        )
+    }
+
     suspend fun checkCustomExternalModuleMetadata(url: String): ExternalModuleMetadata? {
         val cleanUrl = url.trim()
         if (cleanUrl.isBlank()) {
