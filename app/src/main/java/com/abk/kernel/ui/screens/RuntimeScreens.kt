@@ -8,7 +8,10 @@ package com.abk.kernel.ui.screens
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import android.provider.OpenableColumns
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -21,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -131,6 +135,8 @@ fun InstalledModulesScreen(
     var installRunning by remember { mutableStateOf(false) }
     var installSuccess by remember { mutableStateOf<Boolean?>(null) }
     var installLog by remember { mutableStateOf<List<String>>(emptyList()) }
+    var showAllFilesAccessPrompt by remember { mutableStateOf(false) }
+    var resumeModulePickerAfterPermission by remember { mutableStateOf(false) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     val modules = remember(state.abkRuntimeStatus?.modules, query) {
         state.abkRuntimeStatus?.modules.orEmpty()
@@ -200,6 +206,48 @@ fun InstalledModulesScreen(
     ) { uri ->
         if (uri != null) pendingInstallUri = uri
     }
+    val allFilesAccessLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        if (resumeModulePickerAfterPermission) {
+            if (hasRuntimeModuleFileAccess()) {
+                resumeModulePickerAfterPermission = false
+                modulePicker.launch(MODULE_INSTALL_MIME_TYPES)
+            } else {
+                showAllFilesAccessPrompt = true
+            }
+        }
+    }
+
+    fun launchModulePickerWithPermissionCheck() {
+        if (installRunning) return
+        if (hasRuntimeModuleFileAccess()) {
+            modulePicker.launch(MODULE_INSTALL_MIME_TYPES)
+        } else {
+            resumeModulePickerAfterPermission = true
+            showAllFilesAccessPrompt = true
+        }
+    }
+
+    fun openAllFilesAccessSettings() {
+        showAllFilesAccessPrompt = false
+        resumeModulePickerAfterPermission = true
+        val packageUri = Uri.parse("package:${context.packageName}")
+        val appSettings = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, packageUri)
+        val allFilesSettings = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+        runCatching {
+            allFilesAccessLauncher.launch(appSettings)
+        }.getOrElse {
+            runCatching { allFilesAccessLauncher.launch(allFilesSettings) }
+                .onFailure { showAllFilesAccessPrompt = true }
+        }
+    }
+
+    fun launchModulePickerFallback() {
+        showAllFilesAccessPrompt = false
+        resumeModulePickerAfterPermission = false
+        if (!installRunning) modulePicker.launch(MODULE_INSTALL_MIME_TYPES)
+    }
 
     LaunchedEffect(pendingModuleInstallUri) {
         if (!pendingModuleInstallUri.isNullOrBlank()) {
@@ -230,7 +278,7 @@ fun InstalledModulesScreen(
         floatingActionButton = {
             SmallFloatingActionButton(
                 onClick = {
-                    if (!installRunning) modulePicker.launch(MODULE_INSTALL_MIME_TYPES)
+                    launchModulePickerWithPermissionCheck()
                 },
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -311,6 +359,17 @@ fun InstalledModulesScreen(
                     )
                 }
             }
+        )
+    }
+
+    if (showAllFilesAccessPrompt) {
+        RuntimeModuleFileAccessDialog(
+            onDismiss = {
+                showAllFilesAccessPrompt = false
+                resumeModulePickerAfterPermission = false
+            },
+            onGrantAccess = ::openAllFilesAccessSettings,
+            onUseSystemPicker = ::launchModulePickerFallback
         )
     }
 
@@ -701,6 +760,39 @@ private fun InstalledRuntimeModuleCard(
 }
 
 @Composable
+private fun RuntimeModuleFileAccessDialog(
+    onDismiss: () -> Unit,
+    onGrantAccess: () -> Unit,
+    onUseSystemPicker: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.FolderOpen, null) },
+        title = { Text("需要文件访问权限") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("部分机型会把模块 zip 选择导向厂商安全选择器，可能无法返回真实文件。")
+                Text(
+                    text = "授予所有文件访问权限后，ABK 会继续打开模块选择器；如果不想授权，也可以继续使用系统文件选择器。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = onGrantAccess) {
+                Text("授予权限")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onUseSystemPicker) {
+                Text("系统选择器")
+            }
+        }
+    )
+}
+
+@Composable
 private fun RuntimeModuleInstallConfirmDialog(
     uri: Uri,
     displayName: String,
@@ -973,6 +1065,9 @@ private val MODULE_INSTALL_MIME_TYPES = arrayOf(
     "application/x-zip-compressed",
     "*/*"
 )
+
+private fun hasRuntimeModuleFileAccess(): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
 
 private fun runtimeModuleUriDisplayName(context: Context, uri: Uri): String {
     context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->

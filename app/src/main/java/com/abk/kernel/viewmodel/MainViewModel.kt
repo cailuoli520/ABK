@@ -114,6 +114,7 @@ data class MainUiState(
     val abkRuntimeModuleActionTitle: String? = null,
     val abkRuntimeModuleActionOutput: List<String> = emptyList(),
     val rootGrantApps: List<RootGrantApp> = emptyList(),
+    val rootGrantRuntimeBackend: String? = null,
     val rootGrantLoading: Boolean = false,
     val rootGrantError: String? = null,
     val rootGrantSavingPackage: String? = null
@@ -435,8 +436,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun refreshRootGrantApps() {
+    fun refreshRootGrantApps(force: Boolean = false) {
+        val current = _uiState.value
+        val currentBackend = current.abkRuntimeStatus?.runtimeBackend?.backend
+        if (!force && current.rootGrantLoading) return
+        if (
+            !force &&
+            current.rootGrantApps.isNotEmpty() &&
+            current.rootGrantRuntimeBackend == currentBackend &&
+            current.rootGrantError == null
+        ) {
+            return
+        }
+
         viewModelScope.launch {
+            val backendAtRequest = _uiState.value.abkRuntimeStatus?.runtimeBackend?.backend
             _uiState.update {
                 it.copy(rootGrantLoading = true, rootGrantError = null)
             }
@@ -459,12 +473,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (!active) {
                     it.copy(
                         rootGrantApps = emptyList(),
+                        rootGrantRuntimeBackend = backendAtRequest,
                         rootGrantLoading = false,
                         rootGrantError = diagnostic ?: "管理器未激活"
                     )
                 } else {
                     it.copy(
                         rootGrantApps = apps,
+                        rootGrantRuntimeBackend = backendAtRequest,
                         rootGrantLoading = false,
                         rootGrantError = null
                     )
@@ -516,7 +532,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
             }
-            if (result) refreshRootGrantApps()
+            if (result) refreshRootGrantApps(force = true)
         }
     }
 

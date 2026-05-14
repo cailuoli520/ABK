@@ -30,6 +30,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -51,7 +53,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -96,8 +98,10 @@ import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.viewmodel.MainViewModel
 import kotlin.math.pow
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.withContext
 
 private const val ROOT_AUTH_BACK_VISUAL_EXPONENT = 1.8f
 private const val ROOT_AUTH_BACK_SCALE_DELTA = 0.09f
@@ -202,69 +206,98 @@ fun RootAuthorizationScreen(
                     title = "超级用户",
                     scrollBehavior = scrollBehavior,
                     actions = {
-                        IconButton(onClick = vm::refreshRootGrantApps) {
-                            Icon(Icons.Default.Refresh, contentDescription = "刷新授权列表")
+                        IconButton(
+                            onClick = { vm.refreshRootGrantApps(force = true) },
+                            enabled = !state.rootGrantLoading
+                        ) {
+                            if (state.rootGrantLoading) {
+                                LoadingIndicator(Modifier.size(22.dp))
+                            } else {
+                                Icon(Icons.Default.Refresh, contentDescription = "刷新授权列表")
+                            }
                         }
                     }
                 )
             }
         ) { padding ->
-            Column(
+            LazyColumn(
                 modifier = Modifier
                     .padding(padding)
                     .fillMaxSize()
-                    .nestedScroll(scrollBehavior.nestedScrollConnection)
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = AbkScreenHorizontalPadding),
+                    .nestedScroll(scrollBehavior.nestedScrollConnection),
+                contentPadding = PaddingValues(
+                    start = AbkScreenHorizontalPadding,
+                    end = AbkScreenHorizontalPadding,
+                    bottom = 80.dp
+                ),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    leadingIcon = { Icon(Icons.Default.Search, null) },
-                    placeholder = { Text("搜索应用") },
-                    singleLine = true,
-                    shape = RoundedCornerShape(14.dp)
-                )
-
-                ExpressiveSectionCard(
-                    title = "Root 授权",
-                    subtitle = "管理其他应用的内核权限配置",
-                    icon = Icons.Default.AdminPanelSettings
-                ) {
-                    Row(
+                item(key = "search") {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "显示系统应用",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Switch(checked = showSystemApps, onCheckedChange = { showSystemApps = it })
-                    }
-                }
-
-                if (state.rootGrantLoading) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
-
-                state.rootGrantError?.let {
-                    RootGrantMessageCard(it, vm::refreshRootGrantApps)
-                }
-
-                if (!state.rootGrantLoading && apps.isEmpty()) {
-                    Text(
-                        text = if (query.isBlank()) "没有可显示的应用" else "没有匹配的应用",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 24.dp)
+                        leadingIcon = { Icon(Icons.Default.Search, null) },
+                        placeholder = { Text("搜索应用") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp)
                     )
                 }
 
-                apps.forEach { app ->
+                item(key = "controls") {
+                    ExpressiveSectionCard(
+                        title = "Root 授权",
+                        subtitle = "管理其他应用的内核权限配置",
+                        icon = Icons.Default.AdminPanelSettings
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "显示系统应用",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Switch(checked = showSystemApps, onCheckedChange = { showSystemApps = it })
+                        }
+                    }
+                }
+
+                if (state.rootGrantLoading && state.rootGrantApps.isEmpty()) {
+                    item(key = "initial-loading") {
+                        RootGrantInitialLoading()
+                    }
+                }
+
+                if (state.rootGrantLoading && state.rootGrantApps.isNotEmpty()) {
+                    item(key = "refreshing") {
+                        RootGrantRefreshingRow()
+                    }
+                }
+
+                state.rootGrantError?.let {
+                    item(key = "error") {
+                        RootGrantMessageCard(it) { vm.refreshRootGrantApps(force = true) }
+                    }
+                }
+
+                if (!state.rootGrantLoading && apps.isEmpty()) {
+                    item(key = "empty") {
+                        Text(
+                            text = if (query.isBlank()) "没有可显示的应用" else "没有匹配的应用",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 24.dp)
+                        )
+                    }
+                }
+
+                items(
+                    items = apps,
+                    key = { app -> "${app.uid}:${app.packageName}" }
+                ) { app ->
                     RootGrantAppCard(
                         app = app,
                         saving = state.rootGrantSavingPackage == app.packageName,
@@ -273,8 +306,6 @@ fun RootAuthorizationScreen(
                         onOpen = { selectedPackage = app.packageName }
                     )
                 }
-
-                Spacer(Modifier.height(80.dp))
             }
         }
 
@@ -344,6 +375,46 @@ fun RootAuthorizationScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun RootGrantInitialLoading() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 48.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            LoadingIndicator(Modifier.size(42.dp))
+            Text(
+                text = "正在构建授权列表",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun RootGrantRefreshingRow() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        LoadingIndicator(Modifier.size(24.dp))
+        Text(
+            text = "正在刷新授权列表",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -471,8 +542,11 @@ private fun AppIcon(
     cornerSize: Dp = 14.dp
 ) {
     val context = LocalContext.current
-    val drawable: Drawable? = remember(packageName) {
-        runCatching { context.packageManager.getApplicationIcon(packageName) }.getOrNull()
+    var drawable by remember(packageName) { mutableStateOf<Drawable?>(null) }
+    LaunchedEffect(packageName) {
+        drawable = withContext(Dispatchers.IO) {
+            runCatching { context.packageManager.getApplicationIcon(packageName) }.getOrNull()
+        }
     }
     val iconModifier = modifier.clip(RoundedCornerShape(cornerSize))
     if (drawable != null) {
