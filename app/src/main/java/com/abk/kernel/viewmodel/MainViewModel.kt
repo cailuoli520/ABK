@@ -118,6 +118,18 @@ data class MainUiState(
     val abkRuntimeModuleActionId: String? = null,
     val abkRuntimeModuleActionTitle: String? = null,
     val abkRuntimeModuleActionOutput: List<String> = emptyList(),
+    val managerSettingsBackend: String? = null,
+    val managerSettingsTitle: String = "",
+    val managerSettingsItems: List<ManagerSettingItem> = emptyList(),
+    val managerSettingsLoading: Boolean = false,
+    val managerSettingsError: String? = null,
+    val managerSettingActionId: String? = null,
+    val appProfileTemplates: List<AppProfileTemplateItem> = emptyList(),
+    val appProfileTemplatesLoading: Boolean = false,
+    val appProfileTemplatesError: String? = null,
+    val selectedAppProfileTemplateId: String? = null,
+    val selectedAppProfileTemplateContent: String = "",
+    val appProfileTemplateSaving: Boolean = false,
     val rootGrantApps: List<RootGrantApp> = emptyList(),
     val rootGrantRuntimeBackend: String? = null,
     val rootGrantLoading: Boolean = false,
@@ -2170,6 +2182,312 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         prefs.setPrebuiltGkiEnabled(v)
     }
+
+    fun refreshManagerSettings(force: Boolean = false) {
+        if (!force && _uiState.value.managerSettingsLoading) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(managerSettingsLoading = true, managerSettingsError = null) }
+            val loaded = withContext(Dispatchers.IO) {
+                loadManagerSettings()
+            }
+            _uiState.update {
+                it.copy(
+                    managerSettingsBackend = loaded.backend,
+                    managerSettingsTitle = loaded.title,
+                    managerSettingsItems = loaded.items,
+                    managerSettingsLoading = false,
+                    managerSettingsError = loaded.error,
+                    managerSettingActionId = null
+                )
+            }
+        }
+    }
+
+    fun setManagerSettingChecked(settingId: String, checked: Boolean) {
+        if (_uiState.value.managerSettingActionId != null) return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(managerSettingActionId = settingId, managerSettingsError = null)
+            }
+            val result = withContext(Dispatchers.IO) {
+                when (settingId) {
+                    MANAGER_SETTING_KERNEL_UMOUNT -> RootUtils.setReSukiSuFeatureEnabled("kernel_umount", checked)
+                    MANAGER_SETTING_SULOG -> RootUtils.setReSukiSuFeatureEnabled("sulog", checked)
+                    MANAGER_SETTING_ADB_ROOT -> RootUtils.setReSukiSuFeatureEnabled("adb_root", checked)
+                    MANAGER_SETTING_DEFAULT_UMOUNT -> {
+                        val ok = RootUtils.setDefaultUmountModules(checked)
+                        RootUtils.ShellResult(ok, if (ok) emptyList() else listOf("保存失败"))
+                    }
+                    else -> RootUtils.ShellResult(false, listOf("不支持的设置项"))
+                }
+            }
+            if (result.success) {
+                refreshManagerSettings(force = true)
+            } else {
+                _uiState.update {
+                    it.copy(
+                        managerSettingActionId = null,
+                        managerSettingsError = result.output.lastOrNull()?.takeIf { line -> line.isNotBlank() }
+                            ?: "操作未完成"
+                    )
+                }
+            }
+        }
+    }
+
+    fun setManagerSettingMode(settingId: String, selectedIndex: Int) {
+        if (_uiState.value.managerSettingActionId != null) return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(managerSettingActionId = settingId, managerSettingsError = null)
+            }
+            val result = withContext(Dispatchers.IO) {
+                when (settingId) {
+                    MANAGER_SETTING_SU_COMPAT -> RootUtils.setSuCompatMode(selectedIndex)
+                    else -> RootUtils.ShellResult(false, listOf("不支持的设置项"))
+                }
+            }
+            if (result.success) {
+                refreshManagerSettings(force = true)
+            } else {
+                _uiState.update {
+                    it.copy(
+                        managerSettingActionId = null,
+                        managerSettingsError = result.output.lastOrNull()?.takeIf { line -> line.isNotBlank() }
+                            ?: "操作未完成"
+                    )
+                }
+            }
+        }
+    }
+
+    fun refreshAppProfileTemplates() {
+        if (_uiState.value.appProfileTemplatesLoading) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(appProfileTemplatesLoading = true, appProfileTemplatesError = null) }
+            val result = withContext(Dispatchers.IO) {
+                RootUtils.listAppProfileTemplates()
+            }
+            _uiState.update {
+                if (result.success) {
+                    it.copy(
+                        appProfileTemplates = result.output
+                            .map { id -> id.trim() }
+                            .filter { id -> id.isNotBlank() }
+                            .distinct()
+                            .sorted()
+                            .map { id -> AppProfileTemplateItem(id = id) },
+                        appProfileTemplatesLoading = false,
+                        appProfileTemplatesError = null
+                    )
+                } else {
+                    it.copy(
+                        appProfileTemplatesLoading = false,
+                        appProfileTemplatesError = result.output.lastOrNull() ?: "模板列表读取失败"
+                    )
+                }
+            }
+        }
+    }
+
+    fun selectAppProfileTemplate(id: String?) {
+        val cleanId = id?.trim().orEmpty()
+        if (cleanId.isBlank()) {
+            _uiState.update {
+                it.copy(
+                    selectedAppProfileTemplateId = null,
+                    selectedAppProfileTemplateContent = "",
+                    appProfileTemplatesError = null
+                )
+            }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    selectedAppProfileTemplateId = cleanId,
+                    selectedAppProfileTemplateContent = "",
+                    appProfileTemplatesError = null
+                )
+            }
+            val result = withContext(Dispatchers.IO) {
+                RootUtils.readAppProfileTemplate(cleanId)
+            }
+            _uiState.update {
+                if (result.success) {
+                    it.copy(
+                        selectedAppProfileTemplateContent = result.output.joinToString("\n"),
+                        appProfileTemplatesError = null
+                    )
+                } else {
+                    it.copy(appProfileTemplatesError = result.output.lastOrNull() ?: "模板读取失败")
+                }
+            }
+        }
+    }
+
+    fun saveAppProfileTemplate(id: String, content: String) {
+        val cleanId = id.trim()
+        if (cleanId.isBlank()) {
+            _uiState.update { it.copy(appProfileTemplatesError = "模板名称不能为空") }
+            return
+        }
+        if (_uiState.value.appProfileTemplateSaving) return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(appProfileTemplateSaving = true, appProfileTemplatesError = null)
+            }
+            val result = withContext(Dispatchers.IO) {
+                RootUtils.writeAppProfileTemplate(cleanId, content)
+            }
+            _uiState.update {
+                it.copy(
+                    appProfileTemplateSaving = false,
+                    selectedAppProfileTemplateId = if (result.success) cleanId else it.selectedAppProfileTemplateId,
+                    selectedAppProfileTemplateContent = if (result.success) content else it.selectedAppProfileTemplateContent,
+                    appProfileTemplatesError = if (result.success) null else result.output.lastOrNull() ?: "模板保存失败"
+                )
+            }
+            if (result.success) refreshAppProfileTemplates()
+        }
+    }
+
+    fun deleteAppProfileTemplate(id: String) {
+        val cleanId = id.trim()
+        if (cleanId.isBlank() || _uiState.value.appProfileTemplateSaving) return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(appProfileTemplateSaving = true, appProfileTemplatesError = null)
+            }
+            val result = withContext(Dispatchers.IO) {
+                RootUtils.deleteAppProfileTemplate(cleanId)
+            }
+            _uiState.update {
+                it.copy(
+                    appProfileTemplateSaving = false,
+                    selectedAppProfileTemplateId = if (result.success) null else it.selectedAppProfileTemplateId,
+                    selectedAppProfileTemplateContent = if (result.success) "" else it.selectedAppProfileTemplateContent,
+                    appProfileTemplatesError = if (result.success) null else result.output.lastOrNull() ?: "模板删除失败"
+                )
+            }
+            if (result.success) refreshAppProfileTemplates()
+        }
+    }
+
+    private fun loadManagerSettings(): ManagerSettingsLoad {
+        val snapshot = RootUtils.readManagerRuntimeSnapshot()
+        val manager = snapshot.manager
+        if (!manager.active || !manager.isReSukiSu()) {
+            return ManagerSettingsLoad()
+        }
+        val items = buildReSukiSuSettings()
+        return ManagerSettingsLoad(
+            backend = "resukisu",
+            title = "ReSukiSU",
+            items = items
+        )
+    }
+
+    private fun buildReSukiSuSettings(): List<ManagerSettingItem> {
+        val suCompat = RootUtils.readKsuFeature("su_compat")
+        val kernelUmount = RootUtils.readKsuFeature("kernel_umount")
+        val sulog = RootUtils.readKsuFeature("sulog")
+        val adbRoot = RootUtils.readKsuFeature("adb_root")
+        val nativeProfileAvailable = RootUtils.isNativeManagerActive()
+        val suCurrentEnabled = suCompat.value != 0L
+        val suCompatMode = when {
+            suCompat.configValue == 0L -> 2
+            !suCurrentEnabled -> 1
+            else -> 0
+        }
+        return buildList {
+            add(
+                ManagerSettingItem(
+                    id = MANAGER_SETTING_APP_PROFILE_TEMPLATES,
+                    title = "App Profile 模板",
+                    subtitle = "管理本地 App Profile 模板",
+                    kind = ManagerSettingKind.NAVIGATION
+                )
+            )
+            add(
+                ManagerSettingItem(
+                    id = MANAGER_SETTING_SU_COMPAT,
+                    title = "传统 su 命令支持",
+                    subtitle = featureSubtitle(suCompat, "允许通过 /system/bin/su 获取 Root 权限"),
+                    kind = ManagerSettingKind.MODE,
+                    selectedIndex = suCompatMode,
+                    options = listOf("默认", "临时关闭", "永久关闭"),
+                    enabled = suCompat.support == RootUtils.KsuFeatureSupport.SUPPORTED,
+                    status = suCompat.toManagerSettingStatus()
+                )
+            )
+            add(
+                ManagerSettingItem(
+                    id = MANAGER_SETTING_KERNEL_UMOUNT,
+                    title = "内核处理卸载模块",
+                    subtitle = featureSubtitle(kernelUmount, "在内核给需要的应用卸载模块"),
+                    checked = kernelUmount.value != 0L,
+                    enabled = kernelUmount.support == RootUtils.KsuFeatureSupport.SUPPORTED,
+                    status = kernelUmount.toManagerSettingStatus()
+                )
+            )
+            if (Build.VERSION.SDK_INT > Build.VERSION_CODES.Q) {
+                add(
+                    ManagerSettingItem(
+                        id = MANAGER_SETTING_ADB_ROOT,
+                        title = "ADB Root",
+                        subtitle = featureSubtitle(adbRoot, "以 root 权限运行 adbd 守护进程"),
+                        checked = (adbRoot.configValue ?: adbRoot.value ?: 0L) != 0L,
+                        enabled = adbRoot.support == RootUtils.KsuFeatureSupport.SUPPORTED,
+                        status = adbRoot.toManagerSettingStatus()
+                    )
+                )
+            }
+            add(
+                ManagerSettingItem(
+                    id = MANAGER_SETTING_SULOG,
+                    title = "超级用户访问日志",
+                    subtitle = featureSubtitle(sulog, "记录与 Root 有关的事件到 KernelSU 超级用户访问日志文件"),
+                    checked = sulog.value != 0L,
+                    enabled = sulog.support == RootUtils.KsuFeatureSupport.SUPPORTED,
+                    status = sulog.toManagerSettingStatus()
+                )
+            )
+            add(
+                ManagerSettingItem(
+                    id = MANAGER_SETTING_DEFAULT_UMOUNT,
+                    title = "默认卸载模块",
+                    subtitle = if (nativeProfileAvailable) {
+                        "App Profile 中卸载模块的全局默认值"
+                    } else {
+                        "ABK 被识别为原生管理器后可用"
+                    },
+                    checked = nativeProfileAvailable && RootUtils.isDefaultUmountModules(),
+                    enabled = nativeProfileAvailable
+                )
+            )
+        }
+    }
+
+    private fun RootUtils.ManagerRuntimeProbe.isReSukiSu(): Boolean {
+        val text = listOf(displayName, variant, version).joinToString(" ").lowercase()
+        return "resukisu" in text
+    }
+
+    private fun featureSubtitle(feature: RootUtils.KsuFeatureState, normal: String): String =
+        when (feature.support) {
+            RootUtils.KsuFeatureSupport.UNSUPPORTED -> "当前 ReSukiSU 后端不支持此功能"
+            RootUtils.KsuFeatureSupport.MANAGED -> "此功能已由模块接管，不能在管理器中直接修改"
+            RootUtils.KsuFeatureSupport.SUPPORTED -> normal
+        }
+
+    private fun RootUtils.KsuFeatureState.toManagerSettingStatus(): ManagerSettingStatus =
+        when (support) {
+            RootUtils.KsuFeatureSupport.SUPPORTED -> ManagerSettingStatus.SUPPORTED
+            RootUtils.KsuFeatureSupport.UNSUPPORTED -> ManagerSettingStatus.UNSUPPORTED
+            RootUtils.KsuFeatureSupport.MANAGED -> ManagerSettingStatus.MANAGED
+        }
+
     fun updateBuildConfig(config: KernelBuildConfig) {
         val normalized = KernelSupport.normalize(config)
         hasSavedBuildConfig = true
@@ -3475,6 +3793,19 @@ private const val MAX_PERSISTED_REMOTE_ARTIFACTS = 240
 private const val KERNEL_WORKFLOW_FILE = "kernel-custom.yml"
 private const val MIRROR_WORKFLOW_FILE = "mirror-custom-artifacts.yml"
 private val ACTIVE_BUILD_STATUSES = setOf(BuildStatus.QUEUED, BuildStatus.IN_PROGRESS)
+private const val MANAGER_SETTING_APP_PROFILE_TEMPLATES = "app_profile_templates"
+private const val MANAGER_SETTING_SU_COMPAT = "su_compat"
+private const val MANAGER_SETTING_KERNEL_UMOUNT = "kernel_umount"
+private const val MANAGER_SETTING_ADB_ROOT = "adb_root"
+private const val MANAGER_SETTING_SULOG = "sulog"
+private const val MANAGER_SETTING_DEFAULT_UMOUNT = "default_umount_modules"
+
+private data class ManagerSettingsLoad(
+    val backend: String? = null,
+    val title: String = "",
+    val items: List<ManagerSettingItem> = emptyList(),
+    val error: String? = null
+)
 
 private fun workflowActionsUrl(owner: String, repoName: String): String =
     "https://github.com/$owner/$repoName/actions/workflows/$KERNEL_WORKFLOW_FILE"

@@ -118,6 +118,30 @@ uint32_t get_version() {
     return info.version;
 }
 
+void get_full_version(char *buff, size_t size) {
+    if (!buff || size == 0) {
+        return;
+    }
+    buff[0] = '\0';
+    struct ksu_get_full_version_cmd cmd = {};
+    if (ksuctl(KSU_IOCTL_GET_FULL_VERSION, &cmd) == 0) {
+        strncpy(buff, cmd.version_full, size - 1);
+        buff[size - 1] = '\0';
+    }
+}
+
+void get_hook_type(char *buff, size_t size) {
+    if (!buff || size == 0) {
+        return;
+    }
+    buff[0] = '\0';
+    struct ksu_hook_type_cmd cmd = {};
+    if (ksuctl(KSU_IOCTL_HOOK_TYPE, &cmd) == 0) {
+        strncpy(buff, cmd.hook_type, size - 1);
+        buff[size - 1] = '\0';
+    }
+}
+
 bool get_allow_list(struct ksu_new_get_allow_list_cmd *cmd) {
     return ksuctl(KSU_IOCTL_NEW_GET_ALLOW_LIST, cmd) == 0;
 }
@@ -231,6 +255,26 @@ bool is_kernel_umount_enabled() {
         return false;
     }
     return value != 0;
+}
+
+bool is_sulog_enabled() {
+    uint64_t value = 0;
+    bool supported = false;
+    if (!get_feature(KSU_FEATURE_SULOG, &value, &supported)) {
+        return false;
+    }
+    if (!supported) {
+        return false;
+    }
+    return value != 0;
+}
+
+bool set_sulog_enabled(bool enabled) {
+    return set_feature(KSU_FEATURE_SULOG, enabled ? 1 : 0);
+}
+
+bool get_feature_state(uint32_t feature_id, uint64_t *out_value, bool *out_supported) {
+    return get_feature(feature_id, out_value, out_supported);
 }
 
 int set_selinux_hide_enabled(bool enabled) {

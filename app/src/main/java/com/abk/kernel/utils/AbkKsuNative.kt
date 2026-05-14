@@ -7,6 +7,8 @@ object AbkKsuNative {
     const val KERNEL_SU_DOMAIN = "u:r:ksu:s0"
     const val ROOT_UID = 0
     const val ROOT_GID = 0
+    private const val NON_ROOT_DEFAULT_PROFILE_KEY = "$"
+    private const val NOBODY_UID = 9999
 
     private val libraryLoaded = runCatching {
         System.loadLibrary("abkksu")
@@ -31,6 +33,9 @@ object AbkKsuNative {
     external fun setSuEnabled(enabled: Boolean): Boolean
     external fun isKernelUmountEnabled(): Boolean
     external fun setKernelUmountEnabled(enabled: Boolean): Boolean
+    external fun isSuLogEnabled(): Boolean
+    external fun setSuLogEnabled(enabled: Boolean): Boolean
+    external fun getFeature(featureId: Int): Feature?
     external fun isSelinuxHideEnabled(): Boolean
     external fun setSelinuxHideEnabled(enabled: Boolean): Int
     external fun getUserName(uid: Int): String?
@@ -87,6 +92,32 @@ object AbkKsuNative {
         return runCatching { runControlCommand(cleanCommand) }.getOrDefault(false)
     }
 
+    fun feature(featureId: Int): Feature? {
+        if (!libraryLoaded) return null
+        return runCatching { getFeature(featureId) }.getOrNull()
+    }
+
+    fun setDefaultUmountModules(umountModules: Boolean): Boolean {
+        if (!libraryLoaded) return false
+        return runCatching {
+            setAppProfile(
+                Profile(
+                    name = NON_ROOT_DEFAULT_PROFILE_KEY,
+                    currentUid = NOBODY_UID,
+                    allowSu = false,
+                    umountModules = umountModules
+                )
+            )
+        }.getOrDefault(false)
+    }
+
+    fun isDefaultUmountModules(): Boolean? {
+        if (!libraryLoaded) return null
+        return runCatching {
+            getAppProfile(NON_ROOT_DEFAULT_PROFILE_KEY, NOBODY_UID)?.umountModules
+        }.getOrNull()
+    }
+
     data class NativeStatus(
         val version: Int,
         val fullVersion: String,
@@ -97,6 +128,12 @@ object AbkKsuNative {
         val isLateLoadMode: Boolean,
         val isPrBuild: Boolean,
         val superuserCount: Int
+    )
+
+    @Keep
+    data class Feature(
+        val value: Long = 0,
+        val supported: Boolean = false
     )
 
     @Keep

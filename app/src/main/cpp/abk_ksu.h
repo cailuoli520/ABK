@@ -5,6 +5,7 @@
 #ifndef KERNELSU_KSU_H
 #define KERNELSU_KSU_H
 
+#include <cstddef>
 #include <cstdint>
 #include <sys/ioctl.h>
 #include <sys/prctl.h>
@@ -15,6 +16,10 @@
 #include "uapi/ksu.h"
 
 uint32_t get_version();
+
+void get_full_version(char *buff, size_t size);
+
+void get_hook_type(char *buff, size_t size);
 
 bool uid_should_umount(int uid);
 
@@ -43,6 +48,13 @@ bool is_su_enabled();
 bool set_kernel_umount_enabled(bool enabled);
 
 bool is_kernel_umount_enabled();
+
+// SU log
+bool set_sulog_enabled(bool enabled);
+
+bool is_sulog_enabled();
+
+bool get_feature_state(uint32_t feature_id, uint64_t *out_value, bool *out_supported);
 
 // SELinux hide
 int set_selinux_hide_enabled(bool enabled);

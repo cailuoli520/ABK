@@ -17,6 +17,11 @@ import java.util.Collections
 object RootUtils {
 
     private const val TAG = "RootUtils"
+    private const val FEATURE_SU_COMPAT = "su_compat"
+    private const val FEATURE_KERNEL_UMOUNT = "kernel_umount"
+    private const val FEATURE_SULOG = "sulog"
+    private const val FEATURE_ADB_ROOT = "adb_root"
+    private val KSU_FEATURE_NAME_REGEX = Regex("^[a-z0-9_]+$")
     private var appContext: Context? = null
 
     fun init(context: Context) {
@@ -345,6 +350,96 @@ object RootUtils {
         return AbkKsuNative.writeProfile(profile)
     }
 
+    fun readKsuFeature(featureName: String): KsuFeatureState {
+        val feature = normalizeKsuFeatureName(featureName)
+            ?: return KsuFeatureState(featureName, KsuFeatureSupport.UNSUPPORTED)
+        val nativeState = readNativeFeature(feature)
+        val status = getKsuFeatureSupport(feature)
+        val value = getKsuFeatureValue(feature) ?: nativeState?.value
+        val configValue = getKsuFeatureConfigValue(feature)
+        return KsuFeatureState(
+            name = feature,
+            support = status ?: nativeState?.support ?: KsuFeatureSupport.UNSUPPORTED,
+            value = value,
+            configValue = configValue
+        )
+    }
+
+    fun setSuCompatMode(mode: Int): ShellResult {
+        return when (mode) {
+            0 -> setKsuFeatureValue(FEATURE_SU_COMPAT, 1L, persist = true)
+            1 -> {
+                val persistedEnabled = setKsuFeatureValue(FEATURE_SU_COMPAT, 1L, persist = true)
+                if (!persistedEnabled.success) {
+                    persistedEnabled
+                } else {
+                    mergeShellResults(
+                        persistedEnabled,
+                        setKsuFeatureValue(FEATURE_SU_COMPAT, 0L, persist = false)
+                    )
+                }
+            }
+            2 -> setKsuFeatureValue(FEATURE_SU_COMPAT, 0L, persist = true)
+            else -> ShellResult(false, listOf("未知 su 兼容模式"))
+        }
+    }
+
+    fun setReSukiSuFeatureEnabled(featureName: String, enabled: Boolean): ShellResult {
+        val feature = normalizeKsuFeatureName(featureName)
+            ?: return ShellResult(false, listOf("未知 Feature"))
+        val value = if (enabled) 1L else 0L
+        return if (feature == FEATURE_ADB_ROOT) {
+            val setResult = setKsuFeatureValue(feature, value, persist = false)
+            if (!setResult.success) {
+                setResult
+            } else {
+                mergeShellResults(
+                    setResult,
+                    execRootScript("setprop ctl.restart adbd", timeoutSeconds = 15L),
+                    saveKsuFeatureConfig()
+                )
+            }
+        } else {
+            setKsuFeatureValue(feature, value, persist = true)
+        }
+    }
+
+    fun isDefaultUmountModules(): Boolean {
+        return AbkKsuNative.isDefaultUmountModules() ?: false
+    }
+
+    fun setDefaultUmountModules(enabled: Boolean): Boolean {
+        return AbkKsuNative.setDefaultUmountModules(enabled)
+    }
+
+    fun listAppProfileTemplates(): ShellResult {
+        return runKsudCommand("profile list-templates", timeoutSeconds = 30L)
+    }
+
+    fun readAppProfileTemplate(id: String): ShellResult {
+        if (!isSafeTemplateId(id)) {
+            return ShellResult(false, listOf("模板名称无效"))
+        }
+        return runKsudCommand("profile get-template ${shellQuote(id)}", timeoutSeconds = 30L)
+    }
+
+    fun writeAppProfileTemplate(id: String, content: String): ShellResult {
+        if (!isSafeTemplateId(id)) {
+            return ShellResult(false, listOf("模板名称无效"))
+        }
+        return runKsudCommand(
+            "profile set-template ${shellQuote(id)} ${shellQuote(content)}",
+            timeoutSeconds = 30L
+        )
+    }
+
+    fun deleteAppProfileTemplate(id: String): ShellResult {
+        if (!isSafeTemplateId(id)) {
+            return ShellResult(false, listOf("模板名称无效"))
+        }
+        return runKsudCommand("profile delete-template ${shellQuote(id)}", timeoutSeconds = 30L)
+    }
+
     fun listKsuModules(): ShellResult {
         val script = """
             set -e
@@ -487,6 +582,19 @@ object RootUtils {
 
     data class ShellResult(val success: Boolean, val output: List<String>)
 
+    enum class KsuFeatureSupport {
+        SUPPORTED,
+        UNSUPPORTED,
+        MANAGED
+    }
+
+    data class KsuFeatureState(
+        val name: String,
+        val support: KsuFeatureSupport,
+        val value: Long? = null,
+        val configValue: Long? = null
+    )
+
     data class ManagerRuntimeSnapshot(
         val manager: ManagerRuntimeProbe,
         val controlStatusJson: String? = null,
@@ -502,6 +610,103 @@ object RootUtils {
         val capabilities: List<String> = emptyList(),
         val diagnostics: List<String> = emptyList()
     )
+
+    private fun runKsudCommand(args: String, timeoutSeconds: Long): ShellResult {
+        val cleanArgs = args.trim()
+        if (cleanArgs.isBlank()) return ShellResult(false, listOf("ksud 参数为空"))
+        val script = """
+            set -e
+            ksud_path=${'$'}(abk_find_ksud)
+            [ -n "${'$'}ksud_path" ] || exit 127
+            "${'$'}ksud_path" $cleanArgs
+        """.trimIndent()
+        return execRootScript(withManagerShellHelpers(script), timeoutSeconds = timeoutSeconds)
+    }
+
+    private fun getKsuFeatureSupport(featureName: String): KsuFeatureSupport? {
+        val result = runKsudCommand("feature check ${shellQuote(featureName)}", timeoutSeconds = 15L)
+        val status = result.output
+            .asReversed()
+            .firstOrNull { it.isNotBlank() }
+            ?.trim()
+            ?.lowercase()
+        return when (status) {
+            "supported" -> KsuFeatureSupport.SUPPORTED
+            "unsupported" -> KsuFeatureSupport.UNSUPPORTED
+            "managed" -> KsuFeatureSupport.MANAGED
+            else -> null
+        }
+    }
+
+    private fun getKsuFeatureValue(featureName: String): Long? {
+        val result = runKsudCommand("feature get ${shellQuote(featureName)}", timeoutSeconds = 15L)
+        if (!result.success) return null
+        return parseKsuFeatureValue(result.output)
+    }
+
+    private fun getKsuFeatureConfigValue(featureName: String): Long? {
+        val result = runKsudCommand("feature get ${shellQuote(featureName)} --config", timeoutSeconds = 15L)
+        if (!result.success) return null
+        return parseKsuFeatureValue(result.output)
+    }
+
+    private fun setKsuFeatureValue(featureName: String, value: Long, persist: Boolean): ShellResult {
+        val setResult = runKsudCommand(
+            "feature set ${shellQuote(featureName)} $value",
+            timeoutSeconds = 30L
+        )
+        if (!setResult.success || !persist) return setResult
+        return mergeShellResults(setResult, saveKsuFeatureConfig())
+    }
+
+    private fun saveKsuFeatureConfig(): ShellResult =
+        runKsudCommand("feature save", timeoutSeconds = 30L)
+
+    private fun readNativeFeature(featureName: String): KsuFeatureState? {
+        val featureId = when (featureName) {
+            FEATURE_SU_COMPAT -> 0
+            FEATURE_KERNEL_UMOUNT -> 1
+            FEATURE_SULOG -> 2
+            FEATURE_ADB_ROOT -> 3
+            else -> return null
+        }
+        val feature = AbkKsuNative.feature(featureId) ?: return null
+        return KsuFeatureState(
+            name = featureName,
+            support = if (feature.supported) KsuFeatureSupport.SUPPORTED else KsuFeatureSupport.UNSUPPORTED,
+            value = feature.value
+        )
+    }
+
+    private fun parseKsuFeatureValue(output: List<String>): Long? {
+        output.forEach { line ->
+            val valueText = line.substringAfter("Value:", missingDelimiterValue = "")
+                .trim()
+                .takeIf { it.isNotBlank() }
+            valueText?.toLongOrNull()?.let { return it }
+        }
+        return null
+    }
+
+    private fun normalizeKsuFeatureName(featureName: String): String? {
+        val clean = featureName.trim().lowercase()
+        return clean.takeIf { it.matches(KSU_FEATURE_NAME_REGEX) }
+    }
+
+    private fun isSafeTemplateId(id: String): Boolean {
+        val clean = id.trim()
+        return clean.isNotBlank() &&
+            clean != "." &&
+            clean != ".." &&
+            '/' !in clean &&
+            '\\' !in clean
+    }
+
+    private fun mergeShellResults(vararg results: ShellResult): ShellResult =
+        ShellResult(
+            success = results.all { it.success },
+            output = results.flatMap { it.output }
+        )
 
     private fun execRootScript(
         script: String,
@@ -569,7 +774,7 @@ object RootUtils {
                         $safeKsud module list >/dev/null 2>&1 && caps="${'$'}caps module_control"
                         $safeKsud susfs status >/dev/null 2>&1 && caps="${'$'}caps susfs"
                         $safeKsud kpm version >/dev/null 2>&1 && caps="${'$'}caps kpm"
-                        $safeKsud feature get --config sucompat >/dev/null 2>&1 && caps="${'$'}caps features"
+                        $safeKsud feature check su_compat >/dev/null 2>&1 && caps="${'$'}caps features"
                         printf '%s\n' "${'$'}caps"
                         """.trimIndent(),
                         normalizeOutput = false

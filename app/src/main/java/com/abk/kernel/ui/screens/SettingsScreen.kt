@@ -56,6 +56,8 @@ import com.abk.kernel.ui.components.ExpressiveStatusChip
 import com.abk.kernel.ui.components.ExpressiveSwitchItem
 import com.abk.kernel.ui.components.ExpressiveTopBar
 import com.abk.kernel.ui.theme.uiSurfaceColor
+import com.abk.kernel.data.model.ManagerSettingItem
+import com.abk.kernel.data.model.ManagerSettingKind
 import com.abk.kernel.viewmodel.MainUiState
 import com.abk.kernel.viewmodel.MainViewModel
 import kotlin.math.pow
@@ -82,8 +84,10 @@ fun SettingsScreen(
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showThemeSettings by rememberSaveable { mutableStateOf(false) }
+    var showAppProfileTemplates by rememberSaveable { mutableStateOf(false) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     var themeBackProgress by remember { mutableFloatStateOf(0f) }
+    val showChildPage = showThemeSettings || showAppProfileTemplates
     val motionScheme = MaterialTheme.motionScheme
     val animatedThemeBackProgress by animateFloatAsState(
         targetValue = themeBackProgress.coerceIn(0f, 1f),
@@ -97,8 +101,12 @@ fun SettingsScreen(
     val themeBackOffsetPx = with(density) { THEME_BACK_MAX_OFFSET.toPx() }
     val themeBackCorner = with(density) { (THEME_BACK_MAX_CORNER.toPx() * visualThemeBackProgress).toDp() }
 
-    LaunchedEffect(showThemeSettings) {
-        if (showThemeSettings) {
+    LaunchedEffect(Unit) {
+        vm.refreshManagerSettings(force = true)
+    }
+
+    LaunchedEffect(showChildPage) {
+        if (showChildPage) {
             onThemePageVisibleChange(true)
         } else {
             delay(THEME_PAGE_EXIT_DELAY_MS)
@@ -114,6 +122,7 @@ fun SettingsScreen(
     fun openThemeSettings() {
         themeBackProgress = 0f
         onThemePageVisibleChange(true)
+        showAppProfileTemplates = false
         showThemeSettings = true
     }
 
@@ -121,19 +130,32 @@ fun SettingsScreen(
         showThemeSettings = false
     }
 
-    PredictiveBackHandler(enabled = showThemeSettings && state.predictiveBackEnabled) { progress ->
+    fun openAppProfileTemplates() {
+        themeBackProgress = 0f
+        onThemePageVisibleChange(true)
+        showThemeSettings = false
+        showAppProfileTemplates = true
+        vm.refreshAppProfileTemplates()
+    }
+
+    fun closeChildPage() {
+        showThemeSettings = false
+        showAppProfileTemplates = false
+    }
+
+    PredictiveBackHandler(enabled = showChildPage && state.predictiveBackEnabled) { progress ->
         try {
             progress.collect { backEvent ->
                 themeBackProgress = backEvent.progress.coerceIn(0f, 1f)
             }
-            closeThemeSettings()
+            closeChildPage()
         } catch (_: CancellationException) {
             themeBackProgress = 0f
         }
     }
 
-    BackHandler(enabled = showThemeSettings && !state.predictiveBackEnabled) {
-        closeThemeSettings()
+    BackHandler(enabled = showChildPage && !state.predictiveBackEnabled) {
+        closeChildPage()
     }
 
     if (showLogoutDialog) {
@@ -184,12 +206,13 @@ fun SettingsScreen(
                 scrollBehavior = scrollBehavior,
                 onLogout = { showLogoutDialog = true },
                 onOpenThemeSettings = ::openThemeSettings,
+                onOpenAppProfileTemplates = ::openAppProfileTemplates,
                 onAbout = { showAboutDialog = true }
             )
         }
 
         AnimatedVisibility(
-            visible = showThemeSettings,
+            visible = showChildPage,
             enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()),
             exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()),
             modifier = childPageModifier
@@ -261,6 +284,60 @@ fun SettingsScreen(
                 }
             }
         }
+
+        AnimatedVisibility(
+            visible = showAppProfileTemplates,
+            enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
+                slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
+            exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
+                slideOutHorizontally(animationSpec = motionScheme.fastSpatialSpec()) { width -> width },
+            modifier = childPageModifier
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        translationX = themeBackOffsetPx * visualThemeBackProgress
+                        scaleX = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
+                        scaleY = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
+                        alpha = 1f - 0.06f * visualThemeBackProgress
+                        shape = RoundedCornerShape(themeBackCorner)
+                        clip = visualThemeBackProgress > 0.01f
+                    }
+            ) {
+                SettingsPageBackground(
+                    backgroundUri = state.customBackgroundUri,
+                    backgroundImageEnabled = state.backgroundImageEnabled
+                )
+                Scaffold(
+                    containerColor = Color.Transparent,
+                    topBar = {
+                        ExpressiveTopBar(
+                            title = "App Profile 模板",
+                            navigationIcon = {
+                                IconButton(onClick = ::closeChildPage) {
+                                    Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                                }
+                            },
+                            actions = {
+                                IconButton(onClick = { vm.refreshAppProfileTemplates() }) {
+                                    Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                                }
+                            }
+                        )
+                    }
+                ) {
+                    AppProfileTemplateSettingsScreen(
+                        padding = it,
+                        state = state,
+                        onRefresh = vm::refreshAppProfileTemplates,
+                        onSelect = vm::selectAppProfileTemplate,
+                        onSave = vm::saveAppProfileTemplate,
+                        onDelete = vm::deleteAppProfileTemplate
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -305,6 +382,7 @@ private fun SettingsMainContent(
     scrollBehavior: TopAppBarScrollBehavior,
     onLogout: () -> Unit,
     onOpenThemeSettings: () -> Unit,
+    onOpenAppProfileTemplates: () -> Unit,
     onAbout: () -> Unit
 ) {
     Column(
@@ -372,6 +450,12 @@ private fun SettingsMainContent(
             )
         }
 
+        ManagerInjectedSettingsGroup(
+            state = state,
+            vm = vm,
+            onOpenAppProfileTemplates = onOpenAppProfileTemplates
+        )
+
         SettingsGroup(title = stringResource(R.string.settings_notification)) {
             SwitchSettingsItem(
                 icon = Icons.Default.Notifications,
@@ -420,6 +504,276 @@ private fun SettingsMainContent(
         Spacer(Modifier.height(80.dp))
     }
 }
+
+@Composable
+private fun ManagerInjectedSettingsGroup(
+    state: MainUiState,
+    vm: MainViewModel,
+    onOpenAppProfileTemplates: () -> Unit
+) {
+    val hasInjectedSettings = state.managerSettingsItems.isNotEmpty()
+    if (!hasInjectedSettings && !state.managerSettingsLoading && state.managerSettingsError == null) return
+
+    SettingsGroup(title = state.managerSettingsTitle.ifBlank { "管理器设置" }) {
+        when {
+            state.managerSettingsLoading && !hasInjectedSettings -> {
+                ExpressiveListItem(
+                    title = "正在读取后端设置",
+                    subtitle = "从当前 KSU 后端加载可用功能",
+                    leadingContent = { LoadingIndicator(Modifier.size(24.dp)) }
+                )
+            }
+            state.managerSettingsError != null -> {
+                ExpressiveListItem(
+                    title = "后端设置读取失败",
+                    subtitle = state.managerSettingsError,
+                    leadingIcon = Icons.Default.Error,
+                    trailingContent = {
+                        IconButton(onClick = { vm.refreshManagerSettings(force = true) }) {
+                            Icon(Icons.Default.Refresh, contentDescription = "重试")
+                        }
+                    }
+                )
+            }
+        }
+
+        state.managerSettingsItems.forEach { item ->
+            val actionInFlight = state.managerSettingActionId == item.id
+            when (item.kind) {
+                ManagerSettingKind.NAVIGATION -> ExpressiveListItem(
+                    title = item.title,
+                    subtitle = item.subtitle,
+                    leadingIcon = managerSettingIcon(item.id),
+                    enabled = item.enabled && !actionInFlight,
+                    trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = "进入") },
+                    onClick = {
+                        if (item.id == "app_profile_templates") {
+                            onOpenAppProfileTemplates()
+                        }
+                    }
+                )
+                ManagerSettingKind.MODE -> ManagerModeSettingItem(
+                    item = item,
+                    actionInFlight = actionInFlight,
+                    onSelected = { index -> vm.setManagerSettingMode(item.id, index) }
+                )
+                ManagerSettingKind.SWITCH -> SwitchSettingsItem(
+                    icon = managerSettingIcon(item.id),
+                    title = item.title,
+                    subtitle = item.subtitle,
+                    checked = item.checked,
+                    enabled = item.enabled && !actionInFlight,
+                    onCheckedChange = { checked -> vm.setManagerSettingChecked(item.id, checked) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ManagerModeSettingItem(
+    item: ManagerSettingItem,
+    actionInFlight: Boolean,
+    onSelected: (Int) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val enabled = item.enabled && !actionInFlight
+    ExpressiveListItem(
+        title = item.title,
+        subtitle = item.subtitle,
+        leadingIcon = managerSettingIcon(item.id),
+        enabled = enabled,
+        trailingContent = {
+            Box {
+                TextButton(
+                    onClick = { expanded = true },
+                    enabled = enabled
+                ) {
+                    if (actionInFlight) {
+                        LoadingIndicator(Modifier.size(18.dp))
+                    } else {
+                        Text(item.options.getOrElse(item.selectedIndex) { "选择" })
+                        Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                    }
+                }
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    item.options.forEachIndexed { index, option ->
+                        DropdownMenuItem(
+                            text = { Text(option) },
+                            leadingIcon = {
+                                if (index == item.selectedIndex) {
+                                    Icon(Icons.Default.Check, contentDescription = null)
+                                }
+                            },
+                            onClick = {
+                                expanded = false
+                                if (index != item.selectedIndex) onSelected(index)
+                            }
+                        )
+                    }
+                }
+            }
+        },
+        onClick = { if (enabled) expanded = true }
+    )
+}
+
+@Composable
+private fun AppProfileTemplateSettingsScreen(
+    padding: PaddingValues,
+    state: MainUiState,
+    onRefresh: () -> Unit,
+    onSelect: (String?) -> Unit,
+    onSave: (String, String) -> Unit,
+    onDelete: (String) -> Unit
+) {
+    var editingId by rememberSaveable { mutableStateOf("") }
+    var editingContent by rememberSaveable { mutableStateOf("") }
+    var creating by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(state.selectedAppProfileTemplateId, state.selectedAppProfileTemplateContent) {
+        if (!state.selectedAppProfileTemplateId.isNullOrBlank()) {
+            creating = false
+            editingId = state.selectedAppProfileTemplateId
+            editingContent = state.selectedAppProfileTemplateContent
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .padding(padding)
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = AbkScreenHorizontalPadding),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        SettingsGroup(title = "本地模板") {
+            when {
+                state.appProfileTemplatesLoading -> ExpressiveListItem(
+                    title = "正在读取模板",
+                    subtitle = "从 ReSukiSU profile 存储加载",
+                    leadingContent = { LoadingIndicator(Modifier.size(24.dp)) }
+                )
+                state.appProfileTemplates.isEmpty() -> ExpressiveListItem(
+                    title = "暂无模板",
+                    subtitle = "保存后会出现在这里",
+                    leadingIcon = Icons.Default.Description
+                )
+            }
+            state.appProfileTemplates.forEach { template ->
+                ExpressiveListItem(
+                    title = template.id,
+                    subtitle = if (state.selectedAppProfileTemplateId == template.id) "正在编辑" else "App Profile 模板",
+                    leadingIcon = Icons.Default.Description,
+                    selected = state.selectedAppProfileTemplateId == template.id,
+                    trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = "编辑") },
+                    onClick = { onSelect(template.id) }
+                )
+            }
+            ExpressiveListItem(
+                title = "新建模板",
+                subtitle = "创建新的 App Profile 模板 JSON",
+                leadingIcon = Icons.Default.Add,
+                onClick = {
+                    creating = true
+                    editingId = ""
+                    editingContent = defaultAppProfileTemplateJson()
+                    onSelect(null)
+                }
+            )
+        }
+
+        if (state.appProfileTemplatesError != null) {
+            SettingsGroup(title = "状态") {
+                ExpressiveListItem(
+                    title = "操作未完成",
+                    subtitle = state.appProfileTemplatesError,
+                    leadingIcon = Icons.Default.Error,
+                    trailingContent = {
+                        IconButton(onClick = onRefresh) {
+                            Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                        }
+                    }
+                )
+            }
+        }
+
+        val hasEditor = creating || !state.selectedAppProfileTemplateId.isNullOrBlank()
+        if (hasEditor) {
+            SettingsGroup(title = "编辑模板") {
+                OutlinedTextField(
+                    value = editingId,
+                    onValueChange = { editingId = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("模板名称") },
+                    singleLine = true,
+                    enabled = state.selectedAppProfileTemplateId.isNullOrBlank()
+                )
+                OutlinedTextField(
+                    value = editingContent,
+                    onValueChange = { editingContent = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 220.dp),
+                    label = { Text("模板 JSON") },
+                    minLines = 10
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (state.appProfileTemplateSaving) {
+                        LoadingIndicator(Modifier.size(22.dp))
+                    }
+                    if (!state.selectedAppProfileTemplateId.isNullOrBlank()) {
+                        TextButton(
+                            onClick = { onDelete(state.selectedAppProfileTemplateId.orEmpty()) },
+                            enabled = !state.appProfileTemplateSaving,
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Text("删除")
+                        }
+                    }
+                    Button(
+                        onClick = { onSave(editingId, editingContent) },
+                        enabled = !state.appProfileTemplateSaving && editingId.isNotBlank()
+                    ) {
+                        Text("保存")
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(80.dp))
+    }
+}
+
+private fun managerSettingIcon(id: String) = when (id) {
+    "app_profile_templates" -> Icons.Default.Apps
+    "su_compat" -> Icons.Default.RemoveModerator
+    "kernel_umount" -> Icons.Default.RemoveCircle
+    "adb_root" -> Icons.Default.Adb
+    "sulog" -> Icons.Default.Article
+    "default_umount_modules" -> Icons.Default.FolderDelete
+    else -> Icons.Default.Settings
+}
+
+private fun defaultAppProfileTemplateJson(): String =
+    """
+    {
+      "uid": 0,
+      "gid": 0,
+      "groups": [],
+      "capabilities": [],
+      "context": "u:r:ksu:s0",
+      "namespace": 0,
+      "rules": ""
+    }
+    """.trimIndent()
 
 @Composable
 private fun ThemeSettingsScreen(
@@ -890,6 +1244,11 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
             stringResource(R.string.settings_notification) -> "同步工作流状态到系统通知。"
             "导航" -> "控制返回手势和页面切换体验。"
             stringResource(R.string.settings_theme) -> "Material 3 Expressive 主题显示模式。"
+            "ReSukiSU" -> "按当前 ReSukiSU 后端能力动态加载。"
+            "管理器设置" -> "按当前 KSU 后端能力动态加载。"
+            "本地模板" -> "管理保存在 ReSukiSU profile 存储中的模板。"
+            "状态" -> "最近一次模板操作的执行结果。"
+            "编辑模板" -> "直接编辑 App Profile 模板 JSON。"
             "外观模式" -> "控制应用明暗显示方式。"
             "颜色来源" -> "选择系统动态颜色或自定义色板。"
             "自定义颜色" -> "莫奈关闭时使用的主题色和强调色。"
@@ -902,6 +1261,10 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
             stringResource(R.string.settings_notification) -> Icons.Default.Notifications
             "导航" -> Icons.Default.ArrowBack
             stringResource(R.string.settings_theme) -> Icons.Default.Palette
+            "ReSukiSU", "管理器设置" -> Icons.Default.AdminPanelSettings
+            "本地模板" -> Icons.Default.Apps
+            "状态" -> Icons.Default.Info
+            "编辑模板" -> Icons.Default.Edit
             "外观模式" -> Icons.Default.BrightnessMedium
             "颜色来源" -> Icons.Default.AutoAwesome
             "自定义颜色" -> Icons.Default.Palette

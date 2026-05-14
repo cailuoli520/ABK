@@ -337,6 +337,32 @@ Java_com_abk_kernel_utils_AbkKsuNative_setKernelUmountEnabled(JNIEnv *env, jobje
 
 extern "C"
 JNIEXPORT jboolean JNICALL
+Java_com_abk_kernel_utils_AbkKsuNative_isSuLogEnabled(JNIEnv *env, jobject thiz) {
+    return is_sulog_enabled();
+}
+
+extern "C"
+JNIEXPORT jboolean JNICALL
+Java_com_abk_kernel_utils_AbkKsuNative_setSuLogEnabled(JNIEnv *env, jobject thiz, jboolean enabled) {
+    return set_sulog_enabled(enabled);
+}
+
+extern "C"
+JNIEXPORT jobject JNICALL
+Java_com_abk_kernel_utils_AbkKsuNative_getFeature(JNIEnv *env, jobject thiz, jint featureId) {
+    uint64_t value = 0;
+    bool supported = false;
+    if (!get_feature_state((uint32_t) featureId, &value, &supported)) {
+        return nullptr;
+    }
+
+    auto cls = env->FindClass("com/abk/kernel/utils/AbkKsuNative$Feature");
+    auto constructor = env->GetMethodID(cls, "<init>", "(JZ)V");
+    return env->NewObject(cls, constructor, (jlong) value, (jboolean) supported);
+}
+
+extern "C"
+JNIEXPORT jboolean JNICALL
 Java_com_abk_kernel_utils_AbkKsuNative_isSelinuxHideEnabled(JNIEnv *env, jobject thiz) {
     return is_selinux_hide_enabled();
 }
@@ -385,11 +411,15 @@ Java_com_abk_kernel_utils_AbkKsuNative_runControlCommand(JNIEnv *env, jobject th
 extern "C"
 JNIEXPORT jstring JNICALL
 Java_com_abk_kernel_utils_AbkKsuNative_getFullVersion(JNIEnv *env, jobject thiz) {
-    return env->NewStringUTF("");
+    char buff[KSU_FULL_VERSION_STRING] = {};
+    get_full_version(buff, sizeof(buff));
+    return env->NewStringUTF(buff);
 }
 
 extern "C"
 JNIEXPORT jstring JNICALL
 Java_com_abk_kernel_utils_AbkKsuNative_getHookType(JNIEnv *env, jobject thiz) {
-    return env->NewStringUTF("");
+    char buff[32] = {};
+    get_hook_type(buff, sizeof(buff));
+    return env->NewStringUTF(buff);
 }

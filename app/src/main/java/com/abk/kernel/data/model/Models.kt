@@ -428,6 +428,35 @@ data class AbkRuntimeModule(
     @SerializedName("kpm_args") val kpmArgs: String = ""
 )
 
+enum class ManagerSettingKind {
+    SWITCH,
+    MODE,
+    NAVIGATION
+}
+
+enum class ManagerSettingStatus {
+    SUPPORTED,
+    UNSUPPORTED,
+    MANAGED
+}
+
+data class ManagerSettingItem(
+    val id: String = "",
+    val title: String = "",
+    val subtitle: String = "",
+    val kind: ManagerSettingKind = ManagerSettingKind.SWITCH,
+    val checked: Boolean = false,
+    val selectedIndex: Int = 0,
+    val options: List<String> = emptyList(),
+    val enabled: Boolean = true,
+    val status: ManagerSettingStatus = ManagerSettingStatus.SUPPORTED
+)
+
+data class AppProfileTemplateItem(
+    val id: String = "",
+    val content: String = ""
+)
+
 data class RootGrantApp(
     val packageName: String = "",
     val label: String = "",
