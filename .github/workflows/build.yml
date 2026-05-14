@@ -2957,8 +2957,9 @@ jobs:
               "${ABK_MANAGER_CERT_SIZE:-1407}" \
               "ABK_MANAGER_CERT_SHA256" \
               "${ABK_MANAGER_CERT_SHA256:-34e5e843952277759603cd0f949770b24c868530d80d7baeff08776a7e132b16}" \
+              "ABK_MANAGER_CERT_MAX_LENGTH" \
               "ABK_MANAGER_OFFICIAL_CERT"
-            require_marker "$ksu_dir/manager/apk_sign.c" "ABK_MANAGER_CERT_SHA256"
+            require_marker "$ksu_dir/manager/apk_sign.c" "ABK_MANAGER_CERT_SHA256" "ABK_MANAGER_CERT_MAX_LENGTH"
             require_marker "$ksu_dir/manager/throne_tracker.h" "abk_try_register_manager"
             require_marker "$ksu_dir/manager/throne_tracker.c" "abk_try_register_manager"
             require_marker "$ksu_dir/supercall/dispatch.c" \
