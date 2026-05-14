@@ -2942,6 +2942,12 @@ jobs:
           found_ksu=false
           for ksu_dir in common/drivers/kernelsu drivers/kernelsu KernelSU/kernel kernel; do
             [ -d "$ksu_dir" ] || continue
+            if [ ! -f "$ksu_dir/Kbuild" ] \
+              || [ ! -f "$ksu_dir/manager/apk_sign.c" ] \
+              || [ ! -f "$ksu_dir/supercall/dispatch.c" ]; then
+              echo "跳过非 KernelSU 源码目录: $ksu_dir"
+              continue
+            fi
             found_ksu=true
             echo "检查 KSU 源码目录: $ksu_dir"
             require_marker "$ksu_dir/Kbuild" \
