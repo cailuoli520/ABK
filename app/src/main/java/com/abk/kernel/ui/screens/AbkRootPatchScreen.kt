@@ -73,6 +73,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -92,6 +93,7 @@ import androidx.compose.ui.unit.dp
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ExpressiveListItem
 import com.abk.kernel.ui.components.ExpressiveTopBar
+import com.abk.kernel.ui.theme.LocalUiSurfaceAlpha
 import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.utils.RootUtils
 import java.io.File
@@ -389,31 +391,32 @@ fun AbkRootPatchScreen(
         }
     }
 
-    Scaffold(
-        containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
-        topBar = {
-            ExpressiveTopBar(
-                title = "安装",
-                compactTitle = true,
-                scrollBehavior = scrollBehavior,
-                navigationIcon = {
-                    IconButton(onClick = onBack, enabled = !running) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+    CompositionLocalProvider(LocalUiSurfaceAlpha provides 1f) {
+        Scaffold(
+            containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
+            topBar = {
+                ExpressiveTopBar(
+                    title = "安装",
+                    compactTitle = true,
+                    scrollBehavior = scrollBehavior,
+                    navigationIcon = {
+                        IconButton(onClick = onBack, enabled = !running) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                        }
                     }
-                }
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
-                .nestedScroll(scrollBehavior.nestedScrollConnection)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = AbkScreenHorizontalPadding)
-                .padding(top = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+                )
+            }
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .padding(padding)
+                    .fillMaxSize()
+                    .nestedScroll(scrollBehavior.nestedScrollConnection)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = AbkScreenHorizontalPadding)
+                    .padding(top = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
             PatchGroupCard {
                 PatchModeRow(
                     title = "选择一个文件",
@@ -672,7 +675,8 @@ fun AbkRootPatchScreen(
                 )
             }
 
-            Spacer(Modifier.height(80.dp))
+                Spacer(Modifier.height(80.dp))
+            }
         }
     }
 }
