@@ -293,75 +293,125 @@ object RootUtils {
 
     fun patchAbkLkmBootImage(
         context: Context,
-        bootImagePath: String,
+        bootImagePath: String?,
         variantId: String,
         kmi: String,
         allowRootFallback: Boolean,
+        flash: Boolean = false,
+        ota: Boolean = false,
+        partition: String? = null,
+        allowShell: Boolean = false,
+        enableAdb: Boolean = false,
+        localModulePath: String? = null,
         onOutput: ((String) -> Unit)? = null
     ): BootPatchResult {
-        val sourceBoot = File(bootImagePath)
-        if (!sourceBoot.isFile) {
+        val sourceBoot = bootImagePath
+            ?.takeIf { it.isNotBlank() }
+            ?.let { File(it) }
+        if (sourceBoot != null && !sourceBoot.isFile) {
             return BootPatchResult(false, listOf("boot 镜像不存在: $bootImagePath"), null)
         }
-        val asset = listBundledAbkLkmAssets(context).firstOrNull {
-            it.variantId == variantId && it.kmi == kmi
-        } ?: return BootPatchResult(false, listOf("未内置 $variantId / $kmi 的 LKM 模块"), null)
+
+        val localModule = localModulePath
+            ?.takeIf { it.isNotBlank() }
+            ?.let { File(it) }
+        if (localModule != null && !localModule.isFile) {
+            return BootPatchResult(false, listOf("LKM 文件不存在: $localModulePath"), null)
+        }
+
+        val asset = if (localModule == null) {
+            listBundledAbkLkmAssets(context).firstOrNull {
+                it.variantId == variantId && it.kmi == kmi
+            } ?: return BootPatchResult(false, listOf("未内置 $variantId / $kmi 的 LKM 模块"), null)
+        } else {
+            null
+        }
 
         val workDir = File(context.filesDir, "abk-lkm-patch").apply { mkdirs() }
-        val moduleFile = File(workDir, "${asset.variantId}_${asset.kmi}_kernelsu.ko")
         return runCatching {
-            context.assets.open(asset.assetPath).use { input ->
-                moduleFile.outputStream().use { output -> input.copyTo(output) }
+            val moduleFile = if (localModule != null) {
+                localModule
+            } else {
+                val bundled = checkNotNull(asset)
+                File(workDir, "${bundled.variantId}_${bundled.kmi}_kernelsu.ko").also { target ->
+                    context.assets.open(bundled.assetPath).use { input ->
+                        target.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    target.setReadable(true, false)
+                }
             }
-            moduleFile.setReadable(true, false)
+
             val outputDir = File(
                 context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir,
                 "abk-patched"
             ).apply { mkdirs() }
-            val outputName = "abk-${asset.variantId}-${asset.kmi}-patched-${System.currentTimeMillis()}.img"
+            val moduleName = (asset?.let { "${it.variantId}-${it.kmi}" } ?: moduleFile.nameWithoutExtension)
+                .replace(Regex("""[^A-Za-z0-9._-]"""), "_")
+            val outputName = "abk-${moduleName}-patched-${System.currentTimeMillis()}.img"
             val outputImage = File(outputDir, outputName)
-            val args = listOf(
-                "boot-patch",
-                "--boot",
-                sourceBoot.absolutePath,
-                "--module",
-                moduleFile.absolutePath,
-                "--out",
-                outputDir.absolutePath,
-                "--out-name",
-                outputName,
-                "--kmi",
-                asset.kmi
-            )
+            val args = buildList {
+                add("boot-patch")
+                if (sourceBoot != null) {
+                    add("--boot")
+                    add(sourceBoot.absolutePath)
+                }
+                add("--module")
+                add(moduleFile.absolutePath)
+                if (flash) add("--flash")
+                if (ota) add("--ota")
+                partition?.takeIf { it.isNotBlank() }?.let {
+                    add("--partition")
+                    add(it)
+                }
+                add("--out")
+                add(outputDir.absolutePath)
+                add("--out-name")
+                add(outputName)
+                kmi.takeIf { it.isNotBlank() }?.let {
+                    add("--kmi")
+                    add(it)
+                }
+                if (allowShell) add("--allow-shell")
+                if (enableAdb) add("--enable-adbd")
+            }
+            val requiresRootShell = flash || sourceBoot == null
             val userlandKsud = resolveUserlandKsudPath(context)
-            val result = if (userlandKsud != null) {
-                onOutput?.invoke("[ABK] 使用用户态 ksud: $userlandKsud")
-                runLocalCommand(listOf(userlandKsud) + args, timeoutSeconds = 300L, onOutput = onOutput)
-            } else if (allowRootFallback) {
-                onOutput?.invoke("[ABK] 未找到用户态 ksud，尝试通过 Root shell 使用系统 ksud")
-                val command = args.joinToString(" ") { shellQuote(it) }
-                execRootScript(
-                    withManagerShellHelpers(
-                        """
-                            set -e
-                            ksud_path=${'$'}(abk_find_ksud)
-                            [ -n "${'$'}ksud_path" ] || { echo "未找到 ksud"; exit 127; }
-                            "${'$'}ksud_path" $command
-                        """.trimIndent()
-                    ),
-                    timeoutSeconds = 300L,
-                    onOutput = onOutput
-                )
-            } else {
-                ShellResult(
+            val result = when {
+                !requiresRootShell && userlandKsud != null -> {
+                    onOutput?.invoke("[ABK] 使用用户态 ksud: $userlandKsud")
+                    runLocalCommand(listOf(userlandKsud) + args, timeoutSeconds = 300L, onOutput = onOutput)
+                }
+                allowRootFallback -> {
+                    if (requiresRootShell) {
+                        onOutput?.invoke("[ABK] 通过 Root shell 执行 ksud boot-patch")
+                    } else {
+                        onOutput?.invoke("[ABK] 未找到用户态 ksud，尝试通过 Root shell 使用系统 ksud")
+                    }
+                    val command = args.joinToString(" ") { shellQuote(it) }
+                    execRootScript(
+                        withManagerShellHelpers(
+                            """
+                                set -e
+                                ksud_path=${'$'}(abk_find_ksud)
+                                [ -n "${'$'}ksud_path" ] || { echo "未找到 ksud"; exit 127; }
+                                "${'$'}ksud_path" $command
+                            """.trimIndent()
+                        ),
+                        timeoutSeconds = 300L,
+                        onOutput = onOutput
+                    )
+                }
+                requiresRootShell -> ShellResult(false, listOf("该安装方式需要 Root 权限。"))
+                else -> ShellResult(
                     false,
                     listOf("未找到可执行 ksud；无 Root 时需要 APK 内置或系统可直接执行的 ksud 才能仅修补 boot。")
                 )
             }
+            val outputPath = outputImage.takeIf { result.success && it.isFile }?.absolutePath
             BootPatchResult(
-                success = result.success && outputImage.isFile,
+                success = result.success && (flash || outputPath != null),
                 output = result.output,
-                patchedImagePath = outputImage.takeIf { result.success && it.isFile }?.absolutePath
+                patchedImagePath = outputPath
             )
         }.getOrElse { error ->
             val line = error.message ?: error::class.java.simpleName
