@@ -633,6 +633,9 @@ private fun RuntimeManagerCard(runtimeStatus: AbkRuntimeStatus) {
             RuntimeInfoRow("类型", manager.displayName.ifBlank { manager.variant })
             RuntimeInfoRow("版本", manager.version)
             RuntimeInfoRow("来源", runtimeBackendLabel(manager.backend))
+            runtimeStatus.workMode.takeIf { it.isNotBlank() }?.let { workMode ->
+                RuntimeInfoRow("工作模式", runtimeWorkModeLabel(workMode))
+            }
             if (backend != null && backend != manager) {
                 Spacer(Modifier.height(2.dp))
                 RuntimeInfoRow("运行后端", backend.displayName.ifBlank { backend.variant })
@@ -1262,6 +1265,12 @@ private fun runtimeBackendLabel(backend: String): String = when (backend) {
     "su" -> "通用 su"
     "kernel" -> "内核运行态"
     else -> backend
+}
+
+private fun runtimeWorkModeLabel(workMode: String): String = when (workMode) {
+    "lkm" -> "LKM"
+    "built-in" -> "Built-in"
+    else -> workMode
 }
 
 private fun runtimeModuleSourceLabel(source: String): String {

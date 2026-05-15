@@ -627,10 +627,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return (controlStatus ?: AbkRuntimeStatus()).copy(
             schema = maxOf(controlStatus?.schema ?: 0, 3),
             abkVersion = controlStatus?.abkVersion?.ifBlank { BuildConfig.VERSION_NAME } ?: BuildConfig.VERSION_NAME,
+            workMode = resolveRuntimeWorkMode(controlStatus?.workMode, manager),
             manager = managerInfo,
             runtimeBackend = runtimeBackendInfo,
             modules = mergedModules
         )
+    }
+
+    private fun resolveRuntimeWorkMode(
+        controlWorkMode: String?,
+        manager: RootUtils.ManagerRuntimeProbe
+    ): String {
+        normalizeRuntimeWorkMode(controlWorkMode)?.let { return it }
+        normalizeRuntimeWorkMode(manager.workMode)?.let { return it }
+        return when {
+            manager.capabilities.any { it.equals("lkm", ignoreCase = true) } -> "lkm"
+            manager.backend == "native" -> "built-in"
+            else -> ""
+        }
+    }
+
+    private fun normalizeRuntimeWorkMode(value: String?): String? {
+        return when (value?.trim()?.lowercase()) {
+            "lkm" -> "lkm"
+            "builtin", "built-in", "built_in" -> "built-in"
+            else -> null
+        }
     }
 
     private fun RootUtils.ManagerRuntimeProbe.toRuntimeInfo(): AbkRuntimeManagerInfo =

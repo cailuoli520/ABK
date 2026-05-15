@@ -380,6 +380,7 @@ data class AbkRuntimeStatus(
     val schema: Int = 1,
     @SerializedName("abk_version") val abkVersion: String = "",
     @SerializedName("abk_commit") val abkCommit: String = "",
+    @SerializedName("work_mode") val workMode: String = "",
     val manager: AbkRuntimeManagerInfo? = null,
     @SerializedName("runtime_backend") val runtimeBackend: AbkRuntimeManagerInfo? = null,
     val build: AbkRuntimeBuildInfo? = null,

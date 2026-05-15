@@ -471,11 +471,15 @@ object RootUtils {
             return ManagerRuntimeSnapshot(manager = manager)
         }
 
-        val control = readAbkControlStatus().takeIf { it.success }
-            ?.output
-            ?.joinToString("\n")
-            ?.trim()
-            ?.takeIf { it.isNotBlank() && it.startsWith("{") }
+        val control = if (manager.workMode == "lkm") {
+            null
+        } else {
+            readAbkControlStatus().takeIf { it.success }
+                ?.output
+                ?.joinToString("\n")
+                ?.trim()
+                ?.takeIf { it.isNotBlank() && it.startsWith("{") }
+        }
 
         val modules = listKsuModules().takeIf { it.success }
             ?.output
@@ -851,6 +855,7 @@ object RootUtils {
         val variant: String = "",
         val backend: String = "",
         val version: String = "",
+        val workMode: String = "",
         val capabilities: List<String> = emptyList(),
         val diagnostics: List<String> = emptyList()
     )
@@ -1087,6 +1092,7 @@ object RootUtils {
                         variant = nativeRuntime?.variant?.takeIf { it.isNotBlank() } ?: variant,
                         backend = "ksud",
                         version = version.ifBlank { nativeRuntime?.version.orEmpty() },
+                        workMode = nativeRuntime?.workMode.orEmpty(),
                         capabilities = capabilities.ifEmpty { listOf("root_shell", "modules") },
                         diagnostics = (
                             nativeRuntime?.diagnostics.orEmpty() +
@@ -1099,6 +1105,7 @@ object RootUtils {
                         displayName = "Root",
                         variant = "Generic",
                         backend = "su",
+                        workMode = nativeRuntime?.workMode.orEmpty(),
                         capabilities = listOf("root_shell"),
                         diagnostics = (
                             nativeRuntime?.diagnostics.orEmpty() +
@@ -1129,13 +1136,15 @@ object RootUtils {
                 variant = nativeVariant,
                 backend = "native",
                 version = versionText,
+                workMode = if (status.isLkmMode) "lkm" else "built-in",
                 capabilities = listOf("native_kernel"),
                 diagnostics = listOf(
                     "KernelSU/ReSukiSU native 接口可访问，但当前 ABK APK 未被识别为管理器。请确认安装的是与内核构建时 ABK_MANAGER_CERT_SHA256 匹配的 com.abk.kernel 正式签名 APK。"
                 )
             )
         }
-        val controlJson = AbkKsuNative.controlStatus()
+        val workMode = if (status.isLkmMode) "lkm" else "built-in"
+        val controlJson = if (status.isLkmMode) null else AbkKsuNative.controlStatus()
         val controlVariant = controlJson
             ?.let { json ->
                 runCatching {
@@ -1149,7 +1158,7 @@ object RootUtils {
             .orEmpty()
         val displayVariant = controlVariant.ifBlank { nativeVariant }
         val diagnostics = buildList {
-            if (controlJson == null) {
+            if (controlJson == null && !status.isLkmMode) {
                 add("ABK control 未响应；内核可能没有启用 CONFIG_ABK_CONTROL，或 ABK Control 外部模块缺少 before_build 阶段。")
             }
         }
@@ -1168,6 +1177,7 @@ object RootUtils {
             variant = displayVariant,
             backend = "native",
             version = versionText,
+            workMode = workMode,
             capabilities = capabilities,
             diagnostics = diagnostics
         )
