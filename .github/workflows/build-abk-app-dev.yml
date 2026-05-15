@@ -142,7 +142,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Patch for Dev APK
-      - run: |
+        run: |
           cp -rvf "app_dev/build.gradle.kts" "app/build.gradle.kts"
           cp -rvf "app_dev/strings.xml" "app/src/main/res/values/strings.xml"
 
