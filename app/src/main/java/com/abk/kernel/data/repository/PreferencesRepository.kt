@@ -41,6 +41,7 @@ class PreferencesRepository(private val context: Context) {
         val KEY_PREBUILT_GKI_ENABLED = booleanPreferencesKey("prebuilt_gki_enabled")
         val KEY_PREDICTIVE_BACK_ENABLED = booleanPreferencesKey("predictive_back_enabled")
         val KEY_RUNTIME_NAVIGATION_ENABLED = booleanPreferencesKey("runtime_navigation_enabled")
+        val KEY_WEBVIEW_DEBUG_ENABLED = booleanPreferencesKey("webview_debug_enabled")
         val KEY_TERMS_ACCEPTED_VERSION = intPreferencesKey("terms_accepted_version")
     }
 
@@ -73,6 +74,9 @@ class PreferencesRepository(private val context: Context) {
     val predictiveBackEnabled: Flow<Boolean> = context.dataStore.data.map { it[KEY_PREDICTIVE_BACK_ENABLED] ?: true }
     val runtimeNavigationEnabled: Flow<Boolean> = context.dataStore.data.map {
         it[KEY_RUNTIME_NAVIGATION_ENABLED] ?: false
+    }
+    val webViewDebugEnabled: Flow<Boolean> = context.dataStore.data.map {
+        it[KEY_WEBVIEW_DEBUG_ENABLED] ?: false
     }
     val termsAcceptedVersion: Flow<Int> = context.dataStore.data.map { it[KEY_TERMS_ACCEPTED_VERSION] ?: 0 }
 
@@ -132,6 +136,9 @@ class PreferencesRepository(private val context: Context) {
     suspend fun setPredictiveBackEnabled(v: Boolean) = context.dataStore.edit { it[KEY_PREDICTIVE_BACK_ENABLED] = v }
     suspend fun setRuntimeNavigationEnabled(v: Boolean) = context.dataStore.edit {
         it[KEY_RUNTIME_NAVIGATION_ENABLED] = v
+    }
+    suspend fun setWebViewDebugEnabled(v: Boolean) = context.dataStore.edit {
+        it[KEY_WEBVIEW_DEBUG_ENABLED] = v
     }
     suspend fun acceptCurrentTerms() = context.dataStore.edit {
         it[KEY_TERMS_ACCEPTED_VERSION] = CURRENT_TERMS_VERSION

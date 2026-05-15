@@ -112,6 +112,7 @@ data class MainUiState(
     val prebuiltGkiEnabled: Boolean = true,
     val predictiveBackEnabled: Boolean = true,
     val runtimeNavigationEnabled: Boolean = false,
+    val webViewDebugEnabled: Boolean = false,
     val abkRuntimeStatus: AbkRuntimeStatus? = null,
     val abkRuntimeLoading: Boolean = false,
     val abkRuntimeError: String? = null,
@@ -124,6 +125,12 @@ data class MainUiState(
     val managerSettingsLoading: Boolean = false,
     val managerSettingsError: String? = null,
     val managerSettingActionId: String? = null,
+    val managerToolsLoading: Boolean = false,
+    val managerToolsError: String? = null,
+    val managerToolActionId: String? = null,
+    val selinuxEnforcing: Boolean = true,
+    val selinuxModeText: String = "",
+    val umountPaths: List<String> = emptyList(),
     val appProfileTemplates: List<AppProfileTemplateItem> = emptyList(),
     val appProfileTemplatesLoading: Boolean = false,
     val appProfileTemplatesError: String? = null,
@@ -388,6 +395,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update { it.copy(runtimeNavigationEnabled = enabled) }
             }
         }
+        viewModelScope.launch {
+            prefs.webViewDebugEnabled.collect { enabled ->
+                _uiState.update { it.copy(webViewDebugEnabled = enabled) }
+            }
+        }
     }
 
     private fun registerStatusReceiver() {
@@ -441,6 +453,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(runtimeNavigationEnabled = enabled) }
         viewModelScope.launch { prefs.setRuntimeNavigationEnabled(enabled) }
         if (enabled) refreshAbkRuntimeStatus()
+    }
+
+    fun setWebViewDebugEnabled(enabled: Boolean) {
+        _uiState.update { it.copy(webViewDebugEnabled = enabled) }
+        viewModelScope.launch { prefs.setWebViewDebugEnabled(enabled) }
     }
 
     fun refreshAbkRuntimeStatus() {
@@ -2211,9 +2228,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             val result = withContext(Dispatchers.IO) {
                 when (settingId) {
-                    MANAGER_SETTING_KERNEL_UMOUNT -> RootUtils.setReSukiSuFeatureEnabled("kernel_umount", checked)
-                    MANAGER_SETTING_SULOG -> RootUtils.setReSukiSuFeatureEnabled("sulog", checked)
-                    MANAGER_SETTING_ADB_ROOT -> RootUtils.setReSukiSuFeatureEnabled("adb_root", checked)
+                    MANAGER_SETTING_KERNEL_UMOUNT -> RootUtils.setKsuFeatureEnabled("kernel_umount", checked)
+                    MANAGER_SETTING_SULOG -> RootUtils.setKsuFeatureEnabled("sulog", checked)
+                    MANAGER_SETTING_ADB_ROOT -> RootUtils.setKsuFeatureEnabled("adb_root", checked)
+                    MANAGER_SETTING_SELINUX_HIDE -> RootUtils.setKsuFeatureEnabled("selinux_hide", checked)
+                    MANAGER_SETTING_WEBVIEW_DEBUG -> {
+                        prefs.setWebViewDebugEnabled(checked)
+                        RootUtils.ShellResult(true, emptyList())
+                    }
                     MANAGER_SETTING_DEFAULT_UMOUNT -> {
                         val ok = RootUtils.setDefaultUmountModules(checked)
                         RootUtils.ShellResult(ok, if (ok) emptyList() else listOf("保存失败"))
@@ -2258,6 +2280,112 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
             }
+        }
+    }
+
+    fun refreshManagerTools(force: Boolean = false) {
+        if (!force && _uiState.value.managerToolsLoading) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(managerToolsLoading = true, managerToolsError = null) }
+            val modeResult = withContext(Dispatchers.IO) { RootUtils.readSelinuxMode() }
+            val pathsResult = withContext(Dispatchers.IO) { RootUtils.listUmountPaths() }
+            val mode = modeResult.output.lastOrNull { it.isNotBlank() }?.trim().orEmpty()
+            _uiState.update {
+                it.copy(
+                    managerToolsLoading = false,
+                    selinuxModeText = mode.ifBlank { "未知" },
+                    selinuxEnforcing = mode.equals("Enforcing", ignoreCase = true),
+                    umountPaths = if (pathsResult.success) {
+                        pathsResult.output.map { line -> line.trim() }.filter { line -> line.isNotBlank() }
+                    } else {
+                        emptyList()
+                    },
+                    managerToolsError = when {
+                        modeResult.success -> null
+                        else -> modeResult.output.lastOrNull() ?: "工具状态读取失败"
+                    },
+                    managerToolActionId = null
+                )
+            }
+        }
+    }
+
+    fun setSelinuxEnforcing(enforcing: Boolean) {
+        if (_uiState.value.managerToolActionId != null) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(managerToolActionId = MANAGER_TOOL_SELINUX_MODE, managerToolsError = null) }
+            val result = withContext(Dispatchers.IO) { RootUtils.setSelinuxEnforcing(enforcing) }
+            if (result.success) {
+                refreshManagerTools(force = true)
+            } else {
+                _uiState.update {
+                    it.copy(
+                        managerToolActionId = null,
+                        managerToolsError = result.output.lastOrNull()?.takeIf { line -> line.isNotBlank() }
+                            ?: "SELinux 模式切换失败"
+                    )
+                }
+            }
+        }
+    }
+
+    fun backupRootGrantAllowlist(uri: Uri) {
+        if (_uiState.value.managerToolActionId != null) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(managerToolActionId = MANAGER_TOOL_BACKUP_ALLOWLIST, managerToolsError = null) }
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val profiles = RootUtils.listRootGrantApps(getApplication())
+                        .filter { app -> app.profile.allowSu || !app.profile.rootUseDefault }
+                        .map { app -> app.profile }
+                    getApplication<Application>().contentResolver.openOutputStream(uri)?.use { stream ->
+                        stream.write(gson.toJson(profiles).toByteArray(StandardCharsets.UTF_8))
+                    } ?: error("无法打开导出位置")
+                    RootUtils.ShellResult(true, listOf("已导出 ${profiles.size} 个授权项"))
+                }.getOrElse { error ->
+                    RootUtils.ShellResult(false, listOf(error.message ?: "导出失败"))
+                }
+            }
+            _uiState.update {
+                it.copy(
+                    managerToolActionId = null,
+                    managerToolsError = if (result.success) null else result.output.lastOrNull() ?: "导出失败"
+                )
+            }
+        }
+    }
+
+    fun restoreRootGrantAllowlist(uri: Uri) {
+        if (_uiState.value.managerToolActionId != null) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(managerToolActionId = MANAGER_TOOL_RESTORE_ALLOWLIST, managerToolsError = null) }
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val json = getApplication<Application>().contentResolver.openInputStream(uri)?.use { stream ->
+                        stream.readBytes().toString(StandardCharsets.UTF_8)
+                    } ?: error("无法读取备份文件")
+                    val type = object : TypeToken<List<RootGrantProfile>>() {}.type
+                    val profiles: List<RootGrantProfile> = gson.fromJson(json, type) ?: emptyList()
+                    var restored = 0
+                    profiles.forEach { profile ->
+                        if (profile.name.isNotBlank() && RootUtils.setRootGrantProfile(profile)) restored++
+                    }
+                    if (restored == profiles.size) {
+                        RootUtils.ShellResult(true, listOf("已还原 $restored 个授权项"))
+                    } else {
+                        RootUtils.ShellResult(false, listOf("已还原 $restored/${profiles.size} 个授权项"))
+                    }
+                }.getOrElse { error ->
+                    RootUtils.ShellResult(false, listOf(error.message ?: "还原失败"))
+                }
+            }
+            _uiState.update {
+                it.copy(
+                    managerToolActionId = null,
+                    managerToolsError = if (result.success) null else result.output.lastOrNull() ?: "还原失败"
+                )
+            }
+            if (result.success) refreshRootGrantApps(force = true)
         }
     }
 
@@ -2377,15 +2505,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun loadManagerSettings(): ManagerSettingsLoad {
         val snapshot = RootUtils.readManagerRuntimeSnapshot()
         val manager = snapshot.manager
-        if (!manager.active || !manager.isReSukiSu()) {
+        if (!manager.active) {
             return ManagerSettingsLoad()
         }
-        val items = buildReSukiSuSettings()
-        return ManagerSettingsLoad(
-            backend = "resukisu",
-            title = "ReSukiSU",
-            items = items
-        )
+        return when {
+            manager.isReSukiSu() -> ManagerSettingsLoad(
+                backend = "resukisu",
+                title = "ReSukiSU",
+                items = buildReSukiSuSettings()
+            )
+            manager.isSukiSu() -> ManagerSettingsLoad(
+                backend = "sukisu",
+                title = "SukiSU",
+                items = buildSukiSuSettings()
+            )
+            manager.isOfficialKernelSu() -> ManagerSettingsLoad(
+                backend = "kernelsu",
+                title = "KernelSU",
+                items = buildOfficialKernelSuSettings()
+            )
+            else -> ManagerSettingsLoad()
+        }
     }
 
     private fun buildReSukiSuSettings(): List<ManagerSettingItem> {
@@ -2413,7 +2553,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ManagerSettingItem(
                     id = MANAGER_SETTING_SU_COMPAT,
                     title = "传统 su 命令支持",
-                    subtitle = featureSubtitle(suCompat, "允许通过 /system/bin/su 获取 Root 权限"),
+                    subtitle = featureSubtitle(suCompat, "允许通过 /system/bin/su 获取 Root 权限", "ReSukiSU"),
                     kind = ManagerSettingKind.MODE,
                     selectedIndex = suCompatMode,
                     options = listOf("默认", "临时关闭", "永久关闭"),
@@ -2425,7 +2565,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ManagerSettingItem(
                     id = MANAGER_SETTING_KERNEL_UMOUNT,
                     title = "内核处理卸载模块",
-                    subtitle = featureSubtitle(kernelUmount, "在内核给需要的应用卸载模块"),
+                    subtitle = featureSubtitle(kernelUmount, "在内核给需要的应用卸载模块", "ReSukiSU"),
                     checked = kernelUmount.value != 0L,
                     enabled = kernelUmount.support == RootUtils.KsuFeatureSupport.SUPPORTED,
                     status = kernelUmount.toManagerSettingStatus()
@@ -2436,7 +2576,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     ManagerSettingItem(
                         id = MANAGER_SETTING_ADB_ROOT,
                         title = "ADB Root",
-                        subtitle = featureSubtitle(adbRoot, "以 root 权限运行 adbd 守护进程"),
+                        subtitle = featureSubtitle(adbRoot, "以 root 权限运行 adbd 守护进程", "ReSukiSU"),
                         checked = (adbRoot.configValue ?: adbRoot.value ?: 0L) != 0L,
                         enabled = adbRoot.support == RootUtils.KsuFeatureSupport.SUPPORTED,
                         status = adbRoot.toManagerSettingStatus()
@@ -2447,7 +2587,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 ManagerSettingItem(
                     id = MANAGER_SETTING_SULOG,
                     title = "超级用户访问日志",
-                    subtitle = featureSubtitle(sulog, "记录与 Root 有关的事件到 KernelSU 超级用户访问日志文件"),
+                    subtitle = featureSubtitle(sulog, "记录与 Root 有关的事件到 KernelSU 超级用户访问日志文件", "ReSukiSU"),
                     checked = sulog.value != 0L,
                     enabled = sulog.support == RootUtils.KsuFeatureSupport.SUPPORTED,
                     status = sulog.toManagerSettingStatus()
@@ -2469,14 +2609,186 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun buildOfficialKernelSuSettings(): List<ManagerSettingItem> =
+        buildKernelSuFamilySettings(
+            backendTitle = "KernelSU",
+            includeTools = false,
+            includeKpm = false,
+            includeSelinuxHide = true,
+            includeSulog = true,
+            includeAdbRoot = true,
+            includeWebViewDebug = false,
+            kernelUmountTitle = "卸载模块（内核级）",
+            suLogTitle = "SU Log"
+        )
+
+    private fun buildSukiSuSettings(): List<ManagerSettingItem> =
+        buildKernelSuFamilySettings(
+            backendTitle = "SukiSU",
+            includeTools = true,
+            includeKpm = RootUtils.isKpmAvailable(),
+            includeSelinuxHide = false,
+            includeSulog = false,
+            includeAdbRoot = false,
+            includeWebViewDebug = true,
+            kernelUmountTitle = "内核处理卸载模块",
+            suLogTitle = "SU Log"
+        )
+
+    private fun buildKernelSuFamilySettings(
+        backendTitle: String,
+        includeTools: Boolean,
+        includeKpm: Boolean,
+        includeSelinuxHide: Boolean,
+        includeSulog: Boolean,
+        includeAdbRoot: Boolean,
+        includeWebViewDebug: Boolean,
+        kernelUmountTitle: String,
+        suLogTitle: String
+    ): List<ManagerSettingItem> {
+        val suCompat = RootUtils.readKsuFeature("su_compat")
+        val kernelUmount = RootUtils.readKsuFeature("kernel_umount")
+        val sulog = RootUtils.readKsuFeature("sulog")
+        val adbRoot = RootUtils.readKsuFeature("adb_root")
+        val selinuxHide = RootUtils.readKsuFeature("selinux_hide")
+        val nativeProfileAvailable = RootUtils.isNativeManagerActive()
+        val suCurrentEnabled = suCompat.value != 0L
+        val suCompatMode = when {
+            suCompat.configValue == 0L -> 2
+            !suCurrentEnabled -> 1
+            else -> 0
+        }
+        return buildList {
+            add(
+                ManagerSettingItem(
+                    id = MANAGER_SETTING_APP_PROFILE_TEMPLATES,
+                    title = "App Profile 模板",
+                    subtitle = "管理本地和在线的 App Profile 模板",
+                    kind = ManagerSettingKind.NAVIGATION
+                )
+            )
+            if (includeTools) {
+                add(
+                    ManagerSettingItem(
+                        id = MANAGER_SETTING_TOOLS,
+                        title = "工具",
+                        subtitle = "更多高级功能",
+                        kind = ManagerSettingKind.NAVIGATION
+                    )
+                )
+            }
+            if (includeKpm) {
+                add(
+                    ManagerSettingItem(
+                        id = MANAGER_SETTING_KPM,
+                        title = "KPM",
+                        subtitle = "使用 KPM 管理内核模块",
+                        kind = ManagerSettingKind.NAVIGATION
+                    )
+                )
+            }
+            add(
+                ManagerSettingItem(
+                    id = MANAGER_SETTING_SU_COMPAT,
+                    title = "传统 su 命令支持",
+                    subtitle = featureSubtitle(suCompat, "允许通过 /system/bin/su 获取 Root 权限", backendTitle),
+                    kind = ManagerSettingKind.MODE,
+                    selectedIndex = suCompatMode,
+                    options = listOf("默认", "临时关闭", "永久关闭"),
+                    enabled = suCompat.support == RootUtils.KsuFeatureSupport.SUPPORTED,
+                    status = suCompat.toManagerSettingStatus()
+                )
+            )
+            add(
+                ManagerSettingItem(
+                    id = MANAGER_SETTING_KERNEL_UMOUNT,
+                    title = kernelUmountTitle,
+                    subtitle = featureSubtitle(kernelUmount, "在内核给需要的应用卸载模块", backendTitle),
+                    checked = kernelUmount.value != 0L,
+                    enabled = kernelUmount.support == RootUtils.KsuFeatureSupport.SUPPORTED,
+                    status = kernelUmount.toManagerSettingStatus()
+                )
+            )
+            if (includeSelinuxHide && selinuxHide.support == RootUtils.KsuFeatureSupport.SUPPORTED) {
+                add(
+                    ManagerSettingItem(
+                        id = MANAGER_SETTING_SELINUX_HIDE,
+                        title = "隐藏 SELinux 修改",
+                        subtitle = featureSubtitle(selinuxHide, "阻止应用检测 SELinux 修改", backendTitle),
+                        checked = selinuxHide.value != 0L,
+                        enabled = true,
+                        status = selinuxHide.toManagerSettingStatus()
+                    )
+                )
+            }
+            if (includeSulog) {
+                add(
+                    ManagerSettingItem(
+                        id = MANAGER_SETTING_SULOG,
+                        title = suLogTitle,
+                        subtitle = featureSubtitle(sulog, "Record root-related events into KernelSU sulog files.", backendTitle),
+                        checked = sulog.value != 0L,
+                        enabled = sulog.support == RootUtils.KsuFeatureSupport.SUPPORTED,
+                        status = sulog.toManagerSettingStatus()
+                    )
+                )
+            }
+            if (includeAdbRoot && Build.VERSION.SDK_INT > Build.VERSION_CODES.Q) {
+                add(
+                    ManagerSettingItem(
+                        id = MANAGER_SETTING_ADB_ROOT,
+                        title = "ADB Root",
+                        subtitle = featureSubtitle(adbRoot, "以 root 权限运行 adbd 守护进程", backendTitle),
+                        checked = (adbRoot.configValue ?: adbRoot.value ?: 0L) != 0L,
+                        enabled = adbRoot.support == RootUtils.KsuFeatureSupport.SUPPORTED,
+                        status = adbRoot.toManagerSettingStatus()
+                    )
+                )
+            }
+            add(
+                ManagerSettingItem(
+                    id = MANAGER_SETTING_DEFAULT_UMOUNT,
+                    title = "默认卸载模块",
+                    subtitle = if (nativeProfileAvailable) {
+                        "App Profile 中「卸载模块」的全局默认值"
+                    } else {
+                        "ABK 被识别为原生管理器后可用"
+                    },
+                    checked = nativeProfileAvailable && RootUtils.isDefaultUmountModules(),
+                    enabled = nativeProfileAvailable
+                )
+            )
+            if (includeWebViewDebug) {
+                add(
+                    ManagerSettingItem(
+                        id = MANAGER_SETTING_WEBVIEW_DEBUG,
+                        title = "WebView 调试",
+                        subtitle = "可用于调试 WebUI，请仅在需要时启用",
+                        checked = _uiState.value.webViewDebugEnabled
+                    )
+                )
+            }
+        }
+    }
+
     private fun RootUtils.ManagerRuntimeProbe.isReSukiSu(): Boolean {
         val text = listOf(displayName, variant, version).joinToString(" ").lowercase()
         return "resukisu" in text
     }
 
-    private fun featureSubtitle(feature: RootUtils.KsuFeatureState, normal: String): String =
+    private fun RootUtils.ManagerRuntimeProbe.isSukiSu(): Boolean {
+        val text = listOf(displayName, variant, version).joinToString(" ").lowercase()
+        return "sukisu" in text && "resukisu" !in text
+    }
+
+    private fun RootUtils.ManagerRuntimeProbe.isOfficialKernelSu(): Boolean {
+        val text = listOf(displayName, variant, version).joinToString(" ").lowercase()
+        return "kernelsu" in text
+    }
+
+    private fun featureSubtitle(feature: RootUtils.KsuFeatureState, normal: String, backendTitle: String): String =
         when (feature.support) {
-            RootUtils.KsuFeatureSupport.UNSUPPORTED -> "当前 ReSukiSU 后端不支持此功能"
+            RootUtils.KsuFeatureSupport.UNSUPPORTED -> "当前 $backendTitle 后端不支持此功能"
             RootUtils.KsuFeatureSupport.MANAGED -> "此功能已由模块接管，不能在管理器中直接修改"
             RootUtils.KsuFeatureSupport.SUPPORTED -> normal
         }
@@ -3794,11 +4106,18 @@ private const val KERNEL_WORKFLOW_FILE = "kernel-custom.yml"
 private const val MIRROR_WORKFLOW_FILE = "mirror-custom-artifacts.yml"
 private val ACTIVE_BUILD_STATUSES = setOf(BuildStatus.QUEUED, BuildStatus.IN_PROGRESS)
 private const val MANAGER_SETTING_APP_PROFILE_TEMPLATES = "app_profile_templates"
+private const val MANAGER_SETTING_TOOLS = "manager_tools"
+private const val MANAGER_SETTING_KPM = "kpm"
 private const val MANAGER_SETTING_SU_COMPAT = "su_compat"
 private const val MANAGER_SETTING_KERNEL_UMOUNT = "kernel_umount"
 private const val MANAGER_SETTING_ADB_ROOT = "adb_root"
 private const val MANAGER_SETTING_SULOG = "sulog"
+private const val MANAGER_SETTING_SELINUX_HIDE = "selinux_hide"
 private const val MANAGER_SETTING_DEFAULT_UMOUNT = "default_umount_modules"
+private const val MANAGER_SETTING_WEBVIEW_DEBUG = "webview_debug"
+private const val MANAGER_TOOL_SELINUX_MODE = "selinux_mode"
+private const val MANAGER_TOOL_BACKUP_ALLOWLIST = "backup_allowlist"
+private const val MANAGER_TOOL_RESTORE_ALLOWLIST = "restore_allowlist"
 
 private data class ManagerSettingsLoad(
     val backend: String? = null,

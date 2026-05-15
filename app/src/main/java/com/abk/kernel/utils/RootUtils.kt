@@ -21,6 +21,7 @@ object RootUtils {
     private const val FEATURE_KERNEL_UMOUNT = "kernel_umount"
     private const val FEATURE_SULOG = "sulog"
     private const val FEATURE_ADB_ROOT = "adb_root"
+    private const val FEATURE_SELINUX_HIDE = "selinux_hide"
     private val KSU_FEATURE_NAME_REGEX = Regex("^[a-z0-9_]+$")
     private var appContext: Context? = null
 
@@ -384,7 +385,7 @@ object RootUtils {
         }
     }
 
-    fun setReSukiSuFeatureEnabled(featureName: String, enabled: Boolean): ShellResult {
+    fun setKsuFeatureEnabled(featureName: String, enabled: Boolean): ShellResult {
         val feature = normalizeKsuFeatureName(featureName)
             ?: return ShellResult(false, listOf("未知 Feature"))
         val value = if (enabled) 1L else 0L
@@ -403,6 +404,9 @@ object RootUtils {
             setKsuFeatureValue(feature, value, persist = true)
         }
     }
+
+    fun setReSukiSuFeatureEnabled(featureName: String, enabled: Boolean): ShellResult =
+        setKsuFeatureEnabled(featureName, enabled)
 
     fun isDefaultUmountModules(): Boolean {
         return AbkKsuNative.isDefaultUmountModules() ?: false
@@ -482,6 +486,20 @@ object RootUtils {
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
     }
+
+    fun isKpmAvailable(): Boolean {
+        return runKsudCommand("kpm version", timeoutSeconds = 15L).success ||
+            runKsudCommand("kpm list", timeoutSeconds = 15L).success
+    }
+
+    fun readSelinuxMode(): ShellResult =
+        execRootScript("getenforce", timeoutSeconds = 10L)
+
+    fun setSelinuxEnforcing(enforcing: Boolean): ShellResult =
+        execRootScript("setenforce ${if (enforcing) "1" else "0"}", timeoutSeconds = 10L)
+
+    fun listUmountPaths(): ShellResult =
+        runKsudCommand("umount list", timeoutSeconds = 30L)
 
     fun getKpmModuleInfo(name: String): ShellResult {
         val safeName = shellQuote(name.trim())
@@ -668,6 +686,7 @@ object RootUtils {
             FEATURE_KERNEL_UMOUNT -> 1
             FEATURE_SULOG -> 2
             FEATURE_ADB_ROOT -> 3
+            FEATURE_SELINUX_HIDE -> 4
             else -> return null
         }
         val feature = AbkKsuNative.feature(featureId) ?: return null

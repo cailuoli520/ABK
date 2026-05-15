@@ -17,7 +17,10 @@ import android.widget.Toast
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.abk.kernel.data.repository.PreferencesRepository
 import com.abk.kernel.utils.RootUtils
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
@@ -47,6 +50,12 @@ class ModuleWebUiActivity : Activity() {
 
         enterImmersiveMode()
         title = moduleName
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            val debugEnabled = runCatching {
+                runBlocking { PreferencesRepository(this@ModuleWebUiActivity).webViewDebugEnabled.first() }
+            }.getOrDefault(false)
+            WebView.setWebContentsDebuggingEnabled(debugEnabled)
+        }
         webView = WebView(this).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
