@@ -248,6 +248,8 @@ fun RuntimeHomeScreen(
                 AbkRootPatchScreen(
                     rootGranted = state.rootGranted,
                     runtimeVariant = state.abkRuntimeStatus?.manager?.variant.orEmpty(),
+                    backgroundUri = state.customBackgroundUri,
+                    backgroundImageEnabled = state.backgroundImageEnabled,
                     onBack = ::closeManagerPatchPage,
                     onBackEnabledChange = { managerPatchBackEnabled = it }
                 )

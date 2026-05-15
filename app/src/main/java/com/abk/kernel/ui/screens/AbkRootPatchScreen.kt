@@ -18,9 +18,11 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -73,7 +75,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -83,17 +84,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ExpressiveListItem
 import com.abk.kernel.ui.components.ExpressiveTopBar
-import com.abk.kernel.ui.theme.LocalUiSurfaceAlpha
 import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.utils.RootUtils
 import java.io.File
@@ -112,6 +116,8 @@ private enum class LkmPatchInstallMode {
 fun AbkRootPatchScreen(
     rootGranted: Boolean,
     runtimeVariant: String,
+    backgroundUri: String?,
+    backgroundImageEnabled: Boolean,
     onBack: () -> Unit,
     onBackEnabledChange: (Boolean) -> Unit = {}
 ) {
@@ -391,9 +397,13 @@ fun AbkRootPatchScreen(
         }
     }
 
-    CompositionLocalProvider(LocalUiSurfaceAlpha provides 1f) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        LkmPatchPageBackground(
+            backgroundUri = backgroundUri,
+            backgroundImageEnabled = backgroundImageEnabled
+        )
         Scaffold(
-            containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
+            containerColor = Color.Transparent,
             topBar = {
                 ExpressiveTopBar(
                     title = "安装",
@@ -677,6 +687,39 @@ fun AbkRootPatchScreen(
 
                 Spacer(Modifier.height(80.dp))
             }
+        }
+    }
+}
+
+@Composable
+private fun LkmPatchPageBackground(
+    backgroundUri: String?,
+    backgroundImageEnabled: Boolean
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    val hasBackground = backgroundImageEnabled && !backgroundUri.isNullOrBlank()
+    val scrimColor = if (colorScheme.surface.luminance() > 0.5f) {
+        colorScheme.surface.copy(alpha = 0.28f)
+    } else {
+        Color.Black.copy(alpha = 0.38f)
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colorScheme.surface)
+    ) {
+        if (hasBackground) {
+            AsyncImage(
+                model = backgroundUri,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(scrimColor)
+            )
         }
     }
 }
