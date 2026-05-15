@@ -71,8 +71,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -86,7 +84,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
@@ -123,7 +120,6 @@ fun AbkRootPatchScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     val bundledAssets = remember(context) { RootUtils.listBundledAbkLkmAssets(context) }
     val currentKmi = remember { RootUtils.detectCurrentKmi() }
     val partitionOptions = remember { detectBootPartitionOptions() }
@@ -407,8 +403,6 @@ fun AbkRootPatchScreen(
             topBar = {
                 ExpressiveTopBar(
                     title = "安装",
-                    compactTitle = true,
-                    scrollBehavior = scrollBehavior,
                     navigationIcon = {
                         IconButton(onClick = onBack, enabled = !running) {
                             Icon(Icons.Default.ArrowBack, contentDescription = "返回")
@@ -421,7 +415,6 @@ fun AbkRootPatchScreen(
                 modifier = Modifier
                     .padding(padding)
                     .fillMaxSize()
-                    .nestedScroll(scrollBehavior.nestedScrollConnection)
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = AbkScreenHorizontalPadding)
                     .padding(top = 12.dp),
