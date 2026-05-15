@@ -791,9 +791,9 @@ jobs:
           RESUKISU_STABLE_REF="3d790eaaabe9e7e33d938bbf836e0f247121e79e"
 
           # Dev 固定引用先完整复制 Stable 配置，后续只改这里的 *_DEV_REF 即可。
-          OFFICIAL_DEV_REF="$OFFICIAL_STABLE_REF"
-          SUKISU_DEV_REF="$SUKISU_STABLE_REF"
-          RESUKISU_DEV_REF="$RESUKISU_STABLE_REF"
+          OFFICIAL_DEV_REF="290609c945728fc93d85735918793567588103c1"
+          SUKISU_DEV_REF="4610456736ba3a3c9a00ad618aa0f4ccc4db5b70"
+          RESUKISU_DEV_REF="fb771414f249ab886c09f2cfcbbf91c4b4dab2d1"
 
           # SUSFS 固定引用独立于 Stable/Dev；后续只改这里的 *_SUSFS_REF 即可。
           OFFICIAL_SUSFS_REF="$OFFICIAL_STABLE_REF"
