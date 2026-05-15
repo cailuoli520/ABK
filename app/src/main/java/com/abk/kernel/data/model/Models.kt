@@ -343,10 +343,9 @@ data class ModuleCatalogFetchResult(
 
 const val KSU_BRANCH_STABLE = "Stable(标准)"
 const val KSU_BRANCH_DEV = "Dev(开发)"
-const val KSU_BRANCH_SUSFS = "SUSFS(自动)"
 
 val KSU_BRANCH_STANDARD_OPTIONS = listOf(KSU_BRANCH_STABLE, KSU_BRANCH_DEV)
-val KSU_BRANCH_BUILD_PLAN_OPTIONS = listOf(KSU_BRANCH_STABLE, KSU_BRANCH_DEV, KSU_BRANCH_SUSFS)
+val KSU_BRANCH_BUILD_PLAN_OPTIONS = KSU_BRANCH_STANDARD_OPTIONS
 
 // App-level build config model (mirrors kernel-custom.yml inputs)
 data class KernelBuildConfig(

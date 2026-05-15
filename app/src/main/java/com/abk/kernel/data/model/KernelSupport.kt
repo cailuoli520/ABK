@@ -176,8 +176,6 @@ object KernelSupport {
             subLevel = subLevel,
             osPatchLevel = osPatch,
             kernelsuBranch = normalizeKsuBranch(
-                config.cancelSusfs,
-                config.kernelsuVariant,
                 config.kernelsuBranch
             ),
             virtualizationSupport = normalizeVirtualizationSupport(line.kernelVersion, config.virtualizationSupport),
@@ -197,22 +195,10 @@ object KernelSupport {
         )
     }
 
-    fun ksuBranchOptions(cancelSusfs: Boolean, kernelsuVariant: String): List<String> =
-        if (usesSusfsAutoBranch(cancelSusfs, kernelsuVariant)) {
-            listOf(KSU_BRANCH_SUSFS)
-        } else {
-            KSU_BRANCH_STANDARD_OPTIONS
-        }
+    fun ksuBranchOptions(): List<String> = KSU_BRANCH_STANDARD_OPTIONS
 
-    fun normalizeKsuBranch(cancelSusfs: Boolean, kernelsuVariant: String, value: String): String =
-        if (usesSusfsAutoBranch(cancelSusfs, kernelsuVariant)) {
-            KSU_BRANCH_SUSFS
-        } else {
-            value.takeIf { it in KSU_BRANCH_STANDARD_OPTIONS } ?: KSU_BRANCH_STABLE
-        }
-
-    fun usesSusfsAutoBranch(cancelSusfs: Boolean, kernelsuVariant: String): Boolean =
-        !cancelSusfs && kernelsuVariant != "ReSukiSU"
+    fun normalizeKsuBranch(value: String): String =
+        value.takeIf { it in KSU_BRANCH_STANDARD_OPTIONS } ?: KSU_BRANCH_STABLE
 
     fun virtualizationSupportOptions(kernelVersion: String): List<String> =
         if (kernelVersion == "6.12") listOf("off", "on") else listOf("off", "678", "123", "345")

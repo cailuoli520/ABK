@@ -103,9 +103,7 @@ fun BuildScreen(
     val motionScheme = MaterialTheme.motionScheme
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     val suggestedPlanName = remember(config) { vm.suggestedBuildPlanName(config) }
-    val ksuBranchOptions = remember(config.cancelSusfs, config.kernelsuVariant) {
-        KernelSupport.ksuBranchOptions(config.cancelSusfs, config.kernelsuVariant)
-    }
+    val ksuBranchOptions = remember { KernelSupport.ksuBranchOptions() }
     val virtualizationSupportOptions = remember(config.kernelVersion) {
         KernelSupport.virtualizationSupportOptions(config.kernelVersion)
     }
@@ -718,11 +716,7 @@ fun BuildScreen(
                 )
                 DropdownField(
                     label = "KSU 分支",
-                    value = KernelSupport.normalizeKsuBranch(
-                        config.cancelSusfs,
-                        config.kernelsuVariant,
-                        config.kernelsuBranch
-                    ),
+                    value = KernelSupport.normalizeKsuBranch(config.kernelsuBranch),
                     options = ksuBranchOptions,
                     onSelect = {
                         vm.updateBuildConfig(

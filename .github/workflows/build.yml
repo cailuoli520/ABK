@@ -162,10 +162,8 @@ jobs:
           } >> "$GITHUB_ENV"
 
           effective_ksu_branch="${{ inputs.ksu_branch }}"
-          if [ "$effective_ksu_branch" = "SUSFS(自动)" ] && { [ "${{ inputs.enable_susfs }}" != "true" ] || [ "${{ inputs.ksu_variant }}" = "ReSukiSU" ]; }; then
+          if [ "$effective_ksu_branch" = "SUSFS(自动)" ]; then
             effective_ksu_branch="Stable(标准)"
-          elif [ "${{ inputs.enable_susfs }}" = "true" ] && [ "${{ inputs.ksu_variant }}" != "ReSukiSU" ]; then
-            effective_ksu_branch="SUSFS(自动)"
           fi
           echo "EFFECTIVE_KSU_BRANCH=$effective_ksu_branch" >> "$GITHUB_ENV"
 
@@ -785,7 +783,6 @@ jobs:
         run: |
           branch_input="${{ inputs.ksu_branch }}"
           variant_input="${{ inputs.ksu_variant }}"
-          susfs_enabled="${{ inputs.enable_susfs }}"
           OFFICIAL_STABLE_REF="3f388ef137c78e1ca0c92c0ada3b8717cdcc4302"
           SUKISU_STABLE_REF="a992f224f5ea5a69b56ba20e925379c9a226f2b2"
           RESUKISU_STABLE_REF="3d790eaaabe9e7e33d938bbf836e0f247121e79e"
@@ -795,20 +792,8 @@ jobs:
           SUKISU_DEV_REF="4610456736ba3a3c9a00ad618aa0f4ccc4db5b70"
           RESUKISU_DEV_REF="fb771414f249ab886c09f2cfcbbf91c4b4dab2d1"
 
-          # SUSFS 固定引用独立于 Stable/Dev；后续只改这里的 *_SUSFS_REF 即可。
-          OFFICIAL_SUSFS_REF="$OFFICIAL_STABLE_REF"
-          SUKISU_SUSFS_REF="$SUKISU_STABLE_REF"
-          RESUKISU_SUSFS_REF="$RESUKISU_STABLE_REF"
-
-          if [ "$susfs_enabled" = "true" ] && [ "$variant_input" != "ReSukiSU" ]; then
-            if [ "$branch_input" != "SUSFS(自动)" ]; then
-              echo "SUSFS 已启用，忽略传入 KSU 分支: $branch_input"
-            fi
-            branch_input="SUSFS(自动)"
-          fi
-
-          if [ "$branch_input" = "SUSFS(自动)" ] && { [ "$susfs_enabled" != "true" ] || [ "$variant_input" = "ReSukiSU" ]; }; then
-            echo "当前组合不使用 SUSFS 分支选项，回退到 Stable。"
+          if [ "$branch_input" = "SUSFS(自动)" ]; then
+            echo "SUSFS(自动) 已取消独立分支，按 Stable 处理。"
             branch_input="Stable(标准)"
           fi
 
@@ -817,19 +802,13 @@ jobs:
               OFFICIAL_REF="$OFFICIAL_STABLE_REF"
               SUKISU_REF="$SUKISU_STABLE_REF"
               RESUKISU_REF="$RESUKISU_STABLE_REF"
-              NEXT_BRANCH="dev_susfs"
+              NEXT_BRANCH="main"
               ;;
             "Dev(开发)")
               OFFICIAL_REF="$OFFICIAL_DEV_REF"
               SUKISU_REF="$SUKISU_DEV_REF"
               RESUKISU_REF="$RESUKISU_DEV_REF"
-              NEXT_BRANCH="dev_susfs"
-              ;;
-            "SUSFS(自动)")
-              OFFICIAL_REF="$OFFICIAL_SUSFS_REF"
-              SUKISU_REF="$SUKISU_SUSFS_REF"
-              RESUKISU_REF="$RESUKISU_SUSFS_REF"
-              NEXT_BRANCH="dev_susfs"
+              NEXT_BRANCH="dev"
               ;;
             *)
               echo "未知分支: $branch_input" >&2
