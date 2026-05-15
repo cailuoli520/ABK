@@ -477,6 +477,18 @@ object RootUtils {
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
     }
 
+    fun setKsuModulePendingUninstall(moduleId: String, pending: Boolean): ShellResult {
+        val safeId = shellQuote(moduleId.trim())
+        val verb = if (pending) "uninstall" else "undo-uninstall"
+        val script = """
+            set -e
+            ksud_path=${'$'}(abk_find_ksud)
+            [ -n "${'$'}ksud_path" ] || exit 127
+            "${'$'}ksud_path" module $verb $safeId
+        """.trimIndent()
+        return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
+    }
+
     fun listKpmModules(): ShellResult {
         val script = """
             set -e

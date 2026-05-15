@@ -905,6 +905,47 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setAbkRuntimeModulePendingUninstall(moduleId: String, pending: Boolean) {
+        val cleanId = moduleId.trim()
+        if (cleanId.isBlank() || _uiState.value.abkRuntimeModuleActionId != null) return
+
+        viewModelScope.launch {
+            val hasRoot = _uiState.value.rootGranted || withContext(Dispatchers.IO) {
+                RootUtils.refreshRootState()
+            }
+            if (!hasRoot) {
+                _uiState.update { it.copy(abkRuntimeError = "操作未完成") }
+                return@launch
+            }
+            val module = _uiState.value.abkRuntimeStatus?.modules?.firstOrNull { it.id == cleanId }
+            if (module?.isKsuBacked() != true) {
+                _uiState.update { it.copy(abkRuntimeError = "当前模块不支持卸载") }
+                return@launch
+            }
+            _uiState.update {
+                it.copy(
+                    rootGranted = true,
+                    abkRuntimeModuleActionId = cleanId,
+                    abkRuntimeError = null
+                )
+            }
+            val result = withContext(Dispatchers.IO) {
+                RootUtils.setKsuModulePendingUninstall(cleanId, pending)
+            }
+            if (!result.success) {
+                _uiState.update {
+                    it.copy(
+                        abkRuntimeModuleActionId = null,
+                        abkRuntimeError = "操作未完成"
+                    )
+                }
+            } else {
+                _uiState.update { it.copy(abkRuntimeModuleActionId = null) }
+                refreshAbkRuntimeStatus()
+            }
+        }
+    }
+
     fun runRuntimeModuleAction(moduleId: String) {
         val cleanId = moduleId.trim()
         val module = _uiState.value.abkRuntimeStatus?.modules?.firstOrNull { it.id == cleanId } ?: return
