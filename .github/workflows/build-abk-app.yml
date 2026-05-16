@@ -164,6 +164,18 @@ jobs:
               --manifest-path "$source_dir/Cargo.toml"
           }
 
+          magiskboot_url_for_abi() {
+            case "$1" in
+              arm64-v8a) printf '%s\n' "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/manager/app/src/main/jniLibs/arm64-v8a/libmagiskboot.so" ;;
+              x86_64) printf '%s\n' "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/manager/app/src/main/jniLibs/x86_64/libmagiskboot.so" ;;
+              armeabi-v7a) printf '%s\n' "" ;;
+              *)
+                echo "::error::Unsupported magiskboot ABI: $1"
+                return 1
+                ;;
+            esac
+          }
+
           {
             echo "source_repo=$repo_url"
             echo "ref=$SUKISU_ULTRA_REF"
@@ -198,6 +210,13 @@ jobs:
               exit 1
             fi
             install -Dm755 "$ksuinit_binary" "$bin_dir/ksuinit"
+            magiskboot_url="$(magiskboot_url_for_abi "$abi")"
+            if [ -n "$magiskboot_url" ]; then
+              curl -fsSL "$magiskboot_url" -o "$bin_dir/magiskboot"
+              chmod 755 "$bin_dir/magiskboot"
+            else
+              echo "warning.$abi=magiskboot_missing_upstream" >> "$target_dir/source.properties"
+            fi
             setup_rust_build "$triple" 26
             cargo build \
               --target "$triple" \
@@ -241,6 +260,7 @@ jobs:
             echo "- Commit: $commit"
             echo "- ABIs: $SUKISU_KSUD_ABIS"
             echo "- Embedded ksuinit: aarch64-unknown-linux-musl, x86_64-unknown-linux-musl"
+            echo "- Embedded magiskboot: arm64-v8a, x86_64"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Bundle ABK LKM artifacts
