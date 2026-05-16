@@ -55,6 +55,7 @@ import com.abk.kernel.data.model.CustomExternalModuleStage
 import com.abk.kernel.data.model.ExternalModuleMetadata
 import com.abk.kernel.data.model.KernelSupport
 import com.abk.kernel.data.model.KernelBuildConfig
+import com.abk.kernel.data.model.KSU_VARIANT_NONE
 import com.abk.kernel.data.model.ModuleCatalogItem
 import com.abk.kernel.data.model.ModuleCatalogRepository
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
@@ -103,6 +104,7 @@ fun BuildScreen(
     val motionScheme = MaterialTheme.motionScheme
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     val suggestedPlanName = remember(config) { vm.suggestedBuildPlanName(config) }
+    val ksuVariantOptions = remember { KernelSupport.ksuVariantOptions() }
     val ksuBranchOptions = remember { KernelSupport.ksuBranchOptions() }
     val virtualizationSupportOptions = remember(config.kernelVersion) {
         KernelSupport.virtualizationSupportOptions(config.kernelVersion)
@@ -231,10 +233,17 @@ fun BuildScreen(
             icon = { Icon(Icons.Default.Build, null) },
             title = { Text("确认提交构建") },
             text = {
+                val noRootScheme = config.kernelsuVariant == KSU_VARIANT_NONE
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("构建配置概览：", fontWeight = FontWeight.SemiBold)
                     Text("Android ${config.androidVersion} · 内核 ${config.kernelVersion}.${config.subLevel}")
-                    Text("KSU: ${config.kernelsuVariant} (${config.kernelsuBranch})")
+                    Text(
+                        if (noRootScheme) {
+                            "KSU: ${ksuVariantDisplayName(config.kernelsuVariant)}"
+                        } else {
+                            "KSU: ${config.kernelsuVariant} (${config.kernelsuBranch})"
+                        }
+                    )
                     Text("补丁级别: ${config.osPatchLevel}")
                     Text("SUSFS: ${if (!config.cancelSusfs) "启用" else "禁用"} · ZRAM: ${if (config.useZram) "启用" else "禁用"} · KPM: ${if (config.useKpm) "启用" else "禁用"}")
                     Text("BBG: ${if (config.useBbg) "启用" else "禁用"} · DDK: ${if (config.useDdk) "启用" else "禁用"}")
@@ -706,29 +715,39 @@ fun BuildScreen(
 
             // ── KernelSU 配置 ────────────────────────────────────────────
             SectionCard(title = "KernelSU 配置") {
+                val noRootScheme = config.kernelsuVariant == KSU_VARIANT_NONE
                 DropdownField(
                     label = "KernelSU 变体",
                     value = config.kernelsuVariant,
-                    options = listOf("Official", "SukiSU", "ReSukiSU"),
+                    options = ksuVariantOptions,
                     onSelect = {
                         vm.updateBuildConfig(KernelSupport.normalize(config.copy(kernelsuVariant = it)))
                     }
                 )
-                DropdownField(
-                    label = "KSU 分支",
-                    value = KernelSupport.normalizeKsuBranch(config.kernelsuBranch),
-                    options = ksuBranchOptions,
-                    onSelect = {
-                        vm.updateBuildConfig(
-                            KernelSupport.normalize(config.copy(kernelsuBranch = it))
-                        )
-                    }
-                )
+                if (noRootScheme) {
+                    Text(
+                        text = "不注入任何 Root 授权方案；KSU 分支、SUSFS 和 KPM 会自动关闭。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    DropdownField(
+                        label = "KSU 分支",
+                        value = KernelSupport.normalizeKsuBranch(config.kernelsuBranch),
+                        options = ksuBranchOptions,
+                        onSelect = {
+                            vm.updateBuildConfig(
+                                KernelSupport.normalize(config.copy(kernelsuBranch = it))
+                            )
+                        }
+                    )
+                }
             }
 
             // ── 功能开关 ─────────────────────────────────────────────────
             SectionCard(title = "功能开关") {
-                SwitchRow("启用 SUSFS", !config.cancelSusfs) {
+                val noRootScheme = config.kernelsuVariant == KSU_VARIANT_NONE
+                SwitchRow("启用 SUSFS", !config.cancelSusfs, enabled = !noRootScheme) {
                     vm.updateBuildConfig(KernelSupport.normalize(config.copy(cancelSusfs = !it)))
                 }
                 SwitchRow("启用 ZRAM 增强算法", config.useZram) {
@@ -746,7 +765,7 @@ fun BuildScreen(
                 SwitchRow("启用网络增强 (IPSet + BBR)", config.useNetworking) {
                     vm.updateBuildConfig(config.copy(useNetworking = it))
                 }
-                SwitchRow("启用 KPM 功能", config.useKpm) {
+                SwitchRow("启用 KPM 功能", config.useKpm, enabled = !noRootScheme) {
                     vm.updateBuildConfig(config.copy(useKpm = it))
                 }
                 SwitchRow("启用 Re-Kernel 驱动 (测试)", config.useRekernel) {
@@ -1803,8 +1822,13 @@ private fun buildPlanSummary(config: KernelBuildConfig): String {
     }
     val featureSummary = enabled.ifEmpty { listOf("基础配置") }.joinToString("、")
     val externalModuleCount = if (config.useCustomExternalModules) config.customExternalModules.size else 0
+    val ksuSummary = if (config.kernelsuVariant == KSU_VARIANT_NONE) {
+        ksuVariantDisplayName(config.kernelsuVariant)
+    } else {
+        "${config.kernelsuVariant} / ${config.kernelsuBranch}"
+    }
     return "${config.kernelVersion}.${config.subLevel} · Android $android · ${config.osPatchLevel}\n" +
-        "${config.kernelsuVariant} / ${config.kernelsuBranch} · $featureSummary · 外部模块 $externalModuleCount"
+        "$ksuSummary · $featureSummary · 外部模块 $externalModuleCount"
 }
 
 private fun buildPlanScopeLabel(scope: BuildPlanShareScope): String = when (scope) {
@@ -1832,7 +1856,7 @@ private fun BuildPlanHero(
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         badge = {
             ExpressiveStatusChip(
-                label = config.kernelsuVariant,
+                label = ksuVariantDisplayName(config.kernelsuVariant),
                 icon = Icons.Default.Shield,
                 color = MaterialTheme.colorScheme.primary
             )
@@ -2169,13 +2193,26 @@ private fun buildStatusLabel(status: BuildStatus): String = when (status) {
 }
 
 @Composable
-fun SwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+fun SwitchRow(
+    label: String,
+    checked: Boolean,
+    enabled: Boolean = true,
+    onCheckedChange: (Boolean) -> Unit
+) {
     ExpressiveSwitchItem(
         title = label,
         checked = checked,
+        enabled = enabled,
         onCheckedChange = onCheckedChange
     )
 }
+
+private fun ksuVariantDisplayName(variant: String): String =
+    if (variant == KSU_VARIANT_NONE) {
+        "None（无 Root 方案）"
+    } else {
+        variant
+    }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
