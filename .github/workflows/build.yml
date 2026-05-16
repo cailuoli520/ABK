@@ -869,6 +869,92 @@ jobs:
             echo "KSU_LATEST_COMMIT_DATE=未知" >> $GITHUB_ENV
           fi
 
+      - name: 修复 5.15.74-5.15.137 Official kallsyms 链接
+        if: inputs.ksu_variant == 'Official' && inputs.android_version == 'android13' && inputs.kernel_version == '5.15'
+        working-directory: ${{ env.KERNEL_ROOT }}
+        run: |
+          set -euo pipefail
+
+          CURRENT_SUB="${{ inputs.sub_level }}"
+          if [[ ! "$CURRENT_SUB" =~ ^[0-9]+$ ]] || [ "$CURRENT_SUB" -lt 74 ] || [ "$CURRENT_SUB" -gt 137 ]; then
+            echo "当前子版本 $CURRENT_SUB 不在 5.15.74-5.15.137，跳过 Official kallsyms 兼容补丁。"
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          MARKER = "ABK: Android 13 5.15.74-5.15.137 Official kallsyms weak reference"
+          INCLUDE_ANCHOR = '#include "infra/symbol_resolver.h"\n'
+          DIRECT_CALL = "    kallsyms_on_each_symbol(ksu_lookup_symbol_cb, &ctx);\n"
+          GUARDED_CALL = """#ifdef CONFIG_KALLSYMS
+              if (!kallsyms_on_each_symbol)
+                  return NULL;
+          #endif
+
+              kallsyms_on_each_symbol(ksu_lookup_symbol_cb, &ctx);
+          """
+          WEAK_BLOCK = f"""
+          /*
+           * {MARKER}.
+           *
+           * The affected GKI 5.15 builds can fail while linking .tmp_vmlinux.btf
+           * when KernelSU keeps a strong reference to kallsyms_on_each_symbol.
+           * Keep this scoped workflow patch weak so final kernels that provide
+           * the symbol still resolve and use it.
+           */
+          #ifdef CONFIG_KALLSYMS
+          extern __attribute__((weak)) typeof(kallsyms_on_each_symbol) kallsyms_on_each_symbol;
+          #endif
+
+          """
+
+          candidates = []
+          seen = set()
+          for root in (
+              Path("common/drivers/kernelsu"),
+              Path("drivers/kernelsu"),
+              Path("KernelSU/kernel"),
+          ):
+              path = root / "infra" / "symbol_resolver.c"
+              if path.exists():
+                  resolved = path.resolve()
+                  if resolved not in seen:
+                      candidates.append(path)
+                      seen.add(resolved)
+
+          if not candidates:
+              raise SystemExit("未找到 Official KernelSU infra/symbol_resolver.c，无法应用 kallsyms 兼容补丁")
+
+          changed = False
+          for path in candidates:
+              text = path.read_text()
+              if "kallsyms_on_each_symbol" not in text:
+                  print(f"{path} 未引用 kallsyms_on_each_symbol，跳过")
+                  continue
+
+              updated = text
+              if MARKER not in updated:
+                  if INCLUDE_ANCHOR not in updated:
+                      raise SystemExit(f"{path} 缺少 include anchor: {INCLUDE_ANCHOR.strip()}")
+                  updated = updated.replace(INCLUDE_ANCHOR, INCLUDE_ANCHOR + WEAK_BLOCK, 1)
+
+              if "if (!kallsyms_on_each_symbol)" not in updated:
+                  if DIRECT_CALL not in updated:
+                      raise SystemExit(f"{path} 未找到预期 kallsyms_on_each_symbol 调用位置")
+                  updated = updated.replace(DIRECT_CALL, GUARDED_CALL, 1)
+
+              if updated != text:
+                  path.write_text(updated)
+                  changed = True
+                  print(f"已修复 {path} 的 Official kallsyms 弱引用兼容")
+              else:
+                  print(f"{path} 已包含 Official kallsyms 兼容补丁")
+
+          if not changed:
+              print("Official kallsyms 兼容补丁无需修改。")
+          PY
+
       - name: 修复 ReSukiSU SUSFS 源码兼容
         if: inputs.ksu_variant == 'ReSukiSU' && inputs.enable_susfs
         working-directory: ${{ env.KERNEL_ROOT }}
