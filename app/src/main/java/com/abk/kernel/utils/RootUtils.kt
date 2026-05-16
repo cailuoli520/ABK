@@ -694,7 +694,7 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            "${'$'}ksud_path" module list
+            abk_exec_ksud "${'$'}ksud_path" module list
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
     }
@@ -705,7 +705,7 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            "${'$'}ksud_path" module action $safeId
+            abk_exec_ksud "${'$'}ksud_path" module action $safeId
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 300L, onOutput = onOutput)
     }
@@ -717,7 +717,7 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            "${'$'}ksud_path" module $verb $safeId
+            abk_exec_ksud "${'$'}ksud_path" module $verb $safeId
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
     }
@@ -729,7 +729,7 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            "${'$'}ksud_path" module $verb $safeId
+            abk_exec_ksud "${'$'}ksud_path" module $verb $safeId
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
     }
@@ -739,7 +739,7 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            "${'$'}ksud_path" kpm list
+            abk_exec_ksud "${'$'}ksud_path" kpm list
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
     }
@@ -764,7 +764,7 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            "${'$'}ksud_path" kpm info $safeName
+            abk_exec_ksud "${'$'}ksud_path" kpm info $safeName
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
     }
@@ -853,7 +853,7 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            "${'$'}ksud_path" profile set-sepolicy $safePackage $safeRules
+            abk_exec_ksud "${'$'}ksud_path" profile set-sepolicy $safePackage $safeRules
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L).success
     }
@@ -964,7 +964,7 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            "${'$'}ksud_path" $cleanArgs
+            abk_exec_ksud "${'$'}ksud_path" $cleanArgs
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = timeoutSeconds)
     }
@@ -1185,7 +1185,9 @@ object RootUtils {
                     val safeKsud = shellQuote(ksudPath)
                     val version = execWithShell(
                         shell,
-                        "$safeKsud --version 2>/dev/null || true",
+                        withManagerShellHelpers(
+                            "abk_exec_ksud $safeKsud --version 2>/dev/null || true"
+                        ),
                         normalizeOutput = false
                     )
                         .output
@@ -1194,14 +1196,16 @@ object RootUtils {
                         .orEmpty()
                     val capabilityOutput = execWithShell(
                         shell,
-                        """
-                        caps="root_shell modules"
-                        $safeKsud module list >/dev/null 2>&1 && caps="${'$'}caps module_control"
-                        $safeKsud susfs status >/dev/null 2>&1 && caps="${'$'}caps susfs"
-                        $safeKsud kpm version >/dev/null 2>&1 && caps="${'$'}caps kpm"
-                        $safeKsud feature check su_compat >/dev/null 2>&1 && caps="${'$'}caps features"
-                        printf '%s\n' "${'$'}caps"
-                        """.trimIndent(),
+                        withManagerShellHelpers(
+                            """
+                            caps="root_shell modules"
+                            abk_exec_ksud $safeKsud module list >/dev/null 2>&1 && caps="${'$'}caps module_control"
+                            abk_exec_ksud $safeKsud susfs status >/dev/null 2>&1 && caps="${'$'}caps susfs"
+                            abk_exec_ksud $safeKsud kpm version >/dev/null 2>&1 && caps="${'$'}caps kpm"
+                            abk_exec_ksud $safeKsud feature check su_compat >/dev/null 2>&1 && caps="${'$'}caps features"
+                            printf '%s\n' "${'$'}caps"
+                            """.trimIndent()
+                        ),
                         normalizeOutput = false
                     ).output.firstOrNull().orEmpty()
                     val capabilities = capabilityOutput
@@ -1315,13 +1319,6 @@ object RootUtils {
             .setFlags(Shell.FLAG_MOUNT_MASTER or Shell.FLAG_REDIRECT_STDERR)
             .setTimeout(timeoutSeconds)
         val candidates = mutableListOf<Array<String>>()
-        embeddedKsudPath()?.let { path ->
-            if (globalMount) {
-                candidates += arrayOf(path, "debug", "su", "-g")
-            } else {
-                candidates += arrayOf(path, "debug", "su")
-            }
-        }
         if (globalMount) {
             candidates += arrayOf("/data/adb/ksud", "debug", "su", "-g")
             candidates += arrayOf("ksud", "debug", "su", "-g")
@@ -1388,6 +1385,9 @@ object RootUtils {
         }
     }
 
+    private fun buildKsudShellCommand(ksudPath: String, args: List<String>): String =
+        buildShellCommand(buildKsudCommand(ksudPath, args))
+
     private fun embeddedMagiskbootPath(context: Context? = appContext): String? {
         val safeContext = context ?: return null
         return File(safeContext.applicationInfo.nativeLibraryDir, "libmagiskboot.so")
@@ -1406,7 +1406,7 @@ object RootUtils {
             createRootShell(timeoutSeconds = timeoutSeconds).use { shell ->
                 execWithShell(
                     shell,
-                    buildShellCommand(listOf(embedded) + args),
+                    buildKsudShellCommand(embedded, args),
                     onOutput = onOutput
                 )
             }
@@ -1523,7 +1523,7 @@ object RootUtils {
                 onOutput?.invoke("[ABK] ksud 路径: $embedded")
                 execWithShell(
                     shell,
-                    buildShellCommand(listOf(embedded) + args),
+                    buildKsudShellCommand(embedded, args),
                     onOutput = onOutput
                 )
             }
@@ -1657,7 +1657,11 @@ object RootUtils {
             abk_find_ksud() {
                 for candidate in "${'$'}abk_embedded_ksud" /data/adb/ksud ${'$'}(command -v ksud 2>/dev/null || true); do
                     [ -n "${'$'}candidate" ] || continue
-                    [ -x "${'$'}candidate" ] || continue
+                    if [ -n "${'$'}abk_embedded_ksud" ] && [ "${'$'}candidate" = "${'$'}abk_embedded_ksud" ]; then
+                        [ -r "${'$'}candidate" ] || continue
+                    else
+                        [ -x "${'$'}candidate" ] || continue
+                    fi
                     printf '%s\n' "${'$'}candidate"
                     return 0
                 done
