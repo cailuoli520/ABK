@@ -62,6 +62,7 @@ jobs:
 
           source_dir="$RUNNER_TEMP/sukisu-ultra"
           target_dir="$GITHUB_WORKSPACE/app/build/generated/abk-assets/main/ksud"
+          cargo_target_dir="$source_dir/target"
           repo_url="${SUKISU_ULTRA_REPO%.git}"
 
           rm -rf "$source_dir" "$target_dir"
@@ -117,11 +118,25 @@ jobs:
             cargo build \
               --target "$triple" \
               --release \
+              --target-dir "$cargo_target_dir" \
               --manifest-path "$source_dir/userspace/ksud/Cargo.toml"
 
-            binary="$source_dir/target/$triple/release/ksud"
+            binary=""
+            for candidate in \
+              "$cargo_target_dir/$triple/release/ksud" \
+              "$source_dir/userspace/ksud/target/$triple/release/ksud" \
+              "$GITHUB_WORKSPACE/target/$triple/release/ksud"
+            do
+              if [ -f "$candidate" ]; then
+                binary="$candidate"
+                break
+              fi
+            done
             if [ ! -f "$binary" ]; then
               echo "::error::ksud binary missing for $abi ($triple)"
+              echo "cargo_target_dir=$cargo_target_dir"
+              find "$source_dir" -maxdepth 4 -type f \( -name 'ksud' -o -name 'ksud.exe' \) | sort || true
+              find "$GITHUB_WORKSPACE" -maxdepth 4 -type f \( -name 'ksud' -o -name 'ksud.exe' \) | sort || true
               exit 1
             fi
 
