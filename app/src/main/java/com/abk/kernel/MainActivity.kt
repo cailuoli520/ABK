@@ -320,7 +320,7 @@ private fun AbkMainScaffold(
     var rootAuthDetailPageVisible by rememberSaveable { mutableStateOf(false) }
     var managerPatchPageVisible by rememberSaveable { mutableStateOf(false) }
     var lastBackAt by remember { mutableStateOf(0L) }
-    val runtimeNativeManagerActive = state.abkRuntimeStatus?.runtimeBackend?.backend == "native"
+    val runtimeNativeManagerActive = state.hasNativeManagerPermission
     val visibleTabs = remember(state.runtimeNavigationEnabled, runtimeNativeManagerActive) {
         if (state.runtimeNavigationEnabled) {
             buildList {

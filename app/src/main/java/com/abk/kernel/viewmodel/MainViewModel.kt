@@ -37,6 +37,14 @@ import java.util.UUID
 
 enum class AuthStep { CHECK_ROOT, LOGIN, FORK_CHECK, READY }
 
+enum class ManagerAccessState {
+    UNKNOWN,
+    NATIVE_MANAGER,
+    ROOT_ONLY,
+    NO_ROOT,
+    NATIVE_KERNEL_NO_MANAGER
+}
+
 data class WorkflowEnablementPrompt(
     val message: String,
     val actionUrl: String
@@ -113,6 +121,9 @@ data class MainUiState(
     val predictiveBackEnabled: Boolean = true,
     val runtimeNavigationEnabled: Boolean = false,
     val webViewDebugEnabled: Boolean = false,
+    val managerAccessState: ManagerAccessState = ManagerAccessState.UNKNOWN,
+    val managerAccessError: String? = null,
+    val hasNativeManagerPermission: Boolean = false,
     val abkRuntimeStatus: AbkRuntimeStatus? = null,
     val abkRuntimeLoading: Boolean = false,
     val abkRuntimeError: String? = null,
@@ -464,30 +475,59 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _uiState.update { it.copy(abkRuntimeLoading = true, abkRuntimeError = null) }
             val rootGranted = _uiState.value.rootGranted
-            val (runtimeStatus, runtimeError) = withContext(Dispatchers.IO) {
-                if (!rootGranted && !RootUtils.isNativeManagerActive()) {
-                    return@withContext null to externalManagerAccessDeniedMessage()
+            val (access, runtimeStatus, runtimeError) = withContext(Dispatchers.IO) {
+                val managerAccess = resolveManagerAccess(rootGranted)
+                if (!managerAccess.hasNativeManagerPermission) {
+                    val snapshot = if (rootGranted) RootUtils.readManagerRuntimeSnapshot() else null
+                    val compatStatus = snapshot
+                        ?.takeIf { it.manager.active }
+                        ?.let {
+                            mergeRuntimeStatus(
+                                manager = it.manager,
+                                controlJson = it.controlStatusJson,
+                                ksuModulesJson = it.ksuModulesJson
+                            )
+                        }
+                    return@withContext Triple(
+                        managerAccess,
+                        compatStatus,
+                        managerAccessErrorMessage(managerAccess, rootGranted)
+                    )
                 }
                 val snapshot = RootUtils.readManagerRuntimeSnapshot()
                 if (!snapshot.manager.active) {
-                    null to snapshot.manager.diagnostics.firstOrNull()
+                    Triple(
+                        managerAccess,
+                        null as AbkRuntimeStatus?,
+                        snapshot.manager.diagnostics.firstOrNull()
+                    )
                 } else {
-                    mergeRuntimeStatus(
-                        manager = snapshot.manager,
-                        controlJson = snapshot.controlStatusJson,
-                        ksuModulesJson = snapshot.ksuModulesJson
-                    ) to null
+                    Triple(
+                        managerAccess,
+                        mergeRuntimeStatus(
+                            manager = snapshot.manager,
+                            controlJson = snapshot.controlStatusJson,
+                            ksuModulesJson = snapshot.ksuModulesJson
+                        ),
+                        null as String?
+                    )
                 }
             }
             _uiState.update {
                 if (runtimeStatus != null) {
                     it.copy(
+                        managerAccessState = access.toUiState(),
+                        managerAccessError = if (access.hasNativeManagerPermission) access.diagnostic else runtimeError,
+                        hasNativeManagerPermission = access.hasNativeManagerPermission,
                         abkRuntimeStatus = runtimeStatus,
                         abkRuntimeLoading = false,
-                        abkRuntimeError = null
+                        abkRuntimeError = if (access.hasNativeManagerPermission) null else runtimeError
                     )
                 } else {
                     it.copy(
+                        managerAccessState = access.toUiState(),
+                        managerAccessError = runtimeError,
+                        hasNativeManagerPermission = access.hasNativeManagerPermission,
                         abkRuntimeStatus = null,
                         abkRuntimeLoading = false,
                         abkRuntimeError = runtimeError ?: "管理器未激活"
@@ -516,27 +556,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 it.copy(rootGrantLoading = true, rootGrantError = null)
             }
-            val (active, apps, diagnostic) = withContext(Dispatchers.IO) {
-                if (!rootGranted && !RootUtils.isNativeManagerActive()) {
-                    return@withContext Triple(false, emptyList(), externalManagerAccessDeniedMessage())
+            val (access, active, apps, diagnostic) = withContext(Dispatchers.IO) {
+                val managerAccess = resolveManagerAccess(rootGranted)
+                if (!managerAccess.hasNativeManagerPermission) {
+                    return@withContext Quadruple(
+                        managerAccess,
+                        false,
+                        emptyList<RootGrantApp>(),
+                        managerAccessErrorMessage(managerAccess, rootGranted)
+                    )
                 }
-                val nativeActive = RootUtils.isNativeManagerActive()
-                val rootGrantApps = if (nativeActive) {
+                val rootGrantApps = if (managerAccess.hasNativeManagerPermission) {
                     RootUtils.listRootGrantApps(getApplication<Application>())
                 } else {
                     emptyList()
                 }
-                val inactiveDiagnostic = if (nativeActive) {
-                    null
-                } else {
-                    RootUtils.refreshRootState()
-                    RootUtils.readManagerRuntimeSnapshot().manager.diagnostics.firstOrNull()
-                }
-                Triple(nativeActive, rootGrantApps, inactiveDiagnostic)
+                Quadruple(managerAccess, true, rootGrantApps, null as String?)
             }
             _uiState.update {
                 if (!active) {
                     it.copy(
+                        managerAccessState = access.toUiState(),
+                        managerAccessError = diagnostic,
+                        hasNativeManagerPermission = access.hasNativeManagerPermission,
                         rootGrantApps = emptyList(),
                         rootGrantRuntimeBackend = backendAtRequest,
                         rootGrantLoading = false,
@@ -544,6 +586,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 } else {
                     it.copy(
+                        managerAccessState = access.toUiState(),
+                        managerAccessError = null,
+                        hasNativeManagerPermission = access.hasNativeManagerPermission,
                         rootGrantApps = apps,
                         rootGrantRuntimeBackend = backendAtRequest,
                         rootGrantLoading = false,
@@ -574,11 +619,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 it.copy(rootGrantSavingPackage = cleanPackage, rootGrantError = null)
             }
+            val rootGranted = _uiState.value.rootGranted
             val result = withContext(Dispatchers.IO) {
-                RootUtils.setRootGrantProfile(profile.copy(name = cleanPackage))
+                val access = resolveManagerAccess(rootGranted)
+                if (!access.hasNativeManagerPermission) {
+                    false to managerAccessErrorMessage(access, rootGranted)
+                } else {
+                    RootUtils.setRootGrantProfile(profile.copy(name = cleanPackage)) to null
+                }
             }
             _uiState.update { state ->
-                if (result) {
+                if (result.first) {
                     state.copy(
                         rootGrantSavingPackage = null,
                         rootGrantError = null,
@@ -593,11 +644,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     state.copy(
                         rootGrantSavingPackage = null,
-                        rootGrantError = "保存失败"
+                        rootGrantError = result.second ?: "保存失败"
                     )
                 }
             }
-            if (result) refreshRootGrantApps(force = true)
+            if (result.first) refreshRootGrantApps(force = true)
         }
     }
 
@@ -2272,11 +2323,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val rootGranted = _uiState.value.rootGranted
             _uiState.update { it.copy(managerSettingsLoading = true, managerSettingsError = null) }
-            if (!rootGranted && !withContext(Dispatchers.IO) { RootUtils.isNativeManagerActive() }) {
+            val access = withContext(Dispatchers.IO) { resolveManagerAccess(rootGranted) }
+            if (!access.hasNativeManagerPermission) {
                 _uiState.update {
                     it.copy(
+                        managerAccessState = access.toUiState(),
+                        managerAccessError = managerAccessErrorMessage(access, rootGranted),
+                        hasNativeManagerPermission = false,
+                        managerSettingsBackend = null,
+                        managerSettingsTitle = "",
+                        managerSettingsItems = emptyList(),
                         managerSettingsLoading = false,
-                        managerSettingsError = externalManagerAccessDeniedMessage(),
+                        managerSettingsError = null,
                         managerSettingActionId = null
                     )
                 }
@@ -2293,6 +2351,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             _uiState.update {
                 it.copy(
+                    managerAccessState = access.toUiState(),
+                    managerAccessError = null,
+                    hasNativeManagerPermission = true,
                     managerSettingsBackend = loaded.backend?.trim()?.ifBlank { null },
                     managerSettingsTitle = loaded.title.trim(),
                     managerSettingsItems = sanitizeManagerSettingItems(loaded.items),
@@ -2310,8 +2371,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 it.copy(managerSettingActionId = settingId, managerSettingsError = null)
             }
+            val rootGranted = _uiState.value.rootGranted
             val result = runCatching {
                 withContext(Dispatchers.IO) {
+                    val access = resolveManagerAccess(rootGranted)
+                    if (!access.hasNativeManagerPermission) {
+                        return@withContext RootUtils.ShellResult(false, listOf(managerAccessErrorMessage(access, rootGranted)))
+                    }
                     when (settingId) {
                         MANAGER_SETTING_KERNEL_UMOUNT -> RootUtils.setKsuFeatureEnabled("kernel_umount", checked)
                         MANAGER_SETTING_SULOG -> RootUtils.setKsuFeatureEnabled("sulog", checked)
@@ -2351,8 +2417,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 it.copy(managerSettingActionId = settingId, managerSettingsError = null)
             }
+            val rootGranted = _uiState.value.rootGranted
             val result = runCatching {
                 withContext(Dispatchers.IO) {
+                    val access = resolveManagerAccess(rootGranted)
+                    if (!access.hasNativeManagerPermission) {
+                        return@withContext RootUtils.ShellResult(false, listOf(managerAccessErrorMessage(access, rootGranted)))
+                    }
                     when (settingId) {
                         MANAGER_SETTING_SU_COMPAT -> RootUtils.setSuCompatMode(selectedIndex.coerceIn(0, 2))
                         else -> RootUtils.ShellResult(false, listOf("不支持的设置项"))
@@ -2380,11 +2451,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val rootGranted = _uiState.value.rootGranted
             _uiState.update { it.copy(managerToolsLoading = true, managerToolsError = null) }
-            if (!rootGranted && !withContext(Dispatchers.IO) { RootUtils.isNativeManagerActive() }) {
+            val access = withContext(Dispatchers.IO) { resolveManagerAccess(rootGranted) }
+            if (!access.hasNativeManagerPermission) {
                 _uiState.update {
                     it.copy(
+                        managerAccessState = access.toUiState(),
+                        managerAccessError = managerAccessErrorMessage(access, rootGranted),
+                        hasNativeManagerPermission = false,
                         managerToolsLoading = false,
-                        managerToolsError = externalManagerAccessDeniedMessage(),
+                        managerToolsError = managerAccessErrorMessage(access, rootGranted),
                         managerToolActionId = null
                     )
                 }
@@ -2395,6 +2470,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val mode = modeResult.output.lastOrNull { it.isNotBlank() }?.trim().orEmpty()
             _uiState.update {
                 it.copy(
+                    managerAccessState = access.toUiState(),
+                    managerAccessError = null,
+                    hasNativeManagerPermission = true,
                     managerToolsLoading = false,
                     selinuxModeText = mode.ifBlank { "未知" },
                     selinuxEnforcing = mode.equals("Enforcing", ignoreCase = true),
@@ -2417,7 +2495,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (_uiState.value.managerToolActionId != null) return
         viewModelScope.launch {
             _uiState.update { it.copy(managerToolActionId = MANAGER_TOOL_SELINUX_MODE, managerToolsError = null) }
-            val result = withContext(Dispatchers.IO) { RootUtils.setSelinuxEnforcing(enforcing) }
+            val rootGranted = _uiState.value.rootGranted
+            val result = withContext(Dispatchers.IO) {
+                val access = resolveManagerAccess(rootGranted)
+                if (!access.hasNativeManagerPermission) {
+                    RootUtils.ShellResult(false, listOf(managerAccessErrorMessage(access, rootGranted)))
+                } else {
+                    RootUtils.setSelinuxEnforcing(enforcing)
+                }
+            }
             if (result.success) {
                 refreshManagerTools(force = true)
             } else {
@@ -2436,8 +2522,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (_uiState.value.managerToolActionId != null) return
         viewModelScope.launch {
             _uiState.update { it.copy(managerToolActionId = MANAGER_TOOL_BACKUP_ALLOWLIST, managerToolsError = null) }
+            val rootGranted = _uiState.value.rootGranted
             val result = withContext(Dispatchers.IO) {
                 runCatching {
+                    val access = resolveManagerAccess(rootGranted)
+                    if (!access.hasNativeManagerPermission) {
+                        error(managerAccessErrorMessage(access, rootGranted))
+                    }
                     val profiles = RootUtils.listRootGrantApps(getApplication())
                         .filter { app -> app.profile.allowSu || !app.profile.rootUseDefault }
                         .map { app -> app.profile }
@@ -2462,8 +2553,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (_uiState.value.managerToolActionId != null) return
         viewModelScope.launch {
             _uiState.update { it.copy(managerToolActionId = MANAGER_TOOL_RESTORE_ALLOWLIST, managerToolsError = null) }
+            val rootGranted = _uiState.value.rootGranted
             val result = withContext(Dispatchers.IO) {
                 runCatching {
+                    val access = resolveManagerAccess(rootGranted)
+                    if (!access.hasNativeManagerPermission) {
+                        error(managerAccessErrorMessage(access, rootGranted))
+                    }
                     val json = getApplication<Application>().contentResolver.openInputStream(uri)?.use { stream ->
                         stream.readBytes().toString(StandardCharsets.UTF_8)
                     } ?: error("无法读取备份文件")
@@ -2497,11 +2593,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val rootGranted = _uiState.value.rootGranted
             _uiState.update { it.copy(appProfileTemplatesLoading = true, appProfileTemplatesError = null) }
-            if (!rootGranted && !withContext(Dispatchers.IO) { RootUtils.isNativeManagerActive() }) {
+            val access = withContext(Dispatchers.IO) { resolveManagerAccess(rootGranted) }
+            if (!access.hasNativeManagerPermission) {
                 _uiState.update {
                     it.copy(
+                        managerAccessState = access.toUiState(),
+                        managerAccessError = managerAccessErrorMessage(access, rootGranted),
+                        hasNativeManagerPermission = false,
+                        appProfileTemplates = emptyList(),
+                        selectedAppProfileTemplateId = null,
+                        selectedAppProfileTemplateContent = "",
                         appProfileTemplatesLoading = false,
-                        appProfileTemplatesError = externalManagerAccessDeniedMessage()
+                        appProfileTemplatesError = managerAccessErrorMessage(access, rootGranted)
                     )
                 }
                 return@launch
@@ -2512,6 +2615,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 if (result.success) {
                     it.copy(
+                        managerAccessState = access.toUiState(),
+                        managerAccessError = null,
+                        hasNativeManagerPermission = true,
                         appProfileTemplates = result.output
                             .map { id -> id.trim() }
                             .filter { id -> id.isNotBlank() }
@@ -2523,6 +2629,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 } else {
                     it.copy(
+                        managerAccessState = access.toUiState(),
+                        managerAccessError = null,
+                        hasNativeManagerPermission = true,
                         appProfileTemplatesLoading = false,
                         appProfileTemplatesError = result.output.lastOrNull() ?: "模板列表读取失败"
                     )
@@ -2551,8 +2660,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     appProfileTemplatesError = null
                 )
             }
+            val rootGranted = _uiState.value.rootGranted
             val result = withContext(Dispatchers.IO) {
-                RootUtils.readAppProfileTemplate(cleanId)
+                val access = resolveManagerAccess(rootGranted)
+                if (!access.hasNativeManagerPermission) {
+                    RootUtils.ShellResult(false, listOf(managerAccessErrorMessage(access, rootGranted)))
+                } else {
+                    RootUtils.readAppProfileTemplate(cleanId)
+                }
             }
             _uiState.update {
                 if (result.success) {
@@ -2578,8 +2693,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 it.copy(appProfileTemplateSaving = true, appProfileTemplatesError = null)
             }
+            val rootGranted = _uiState.value.rootGranted
             val result = withContext(Dispatchers.IO) {
-                RootUtils.writeAppProfileTemplate(cleanId, content)
+                val access = resolveManagerAccess(rootGranted)
+                if (!access.hasNativeManagerPermission) {
+                    RootUtils.ShellResult(false, listOf(managerAccessErrorMessage(access, rootGranted)))
+                } else {
+                    RootUtils.writeAppProfileTemplate(cleanId, content)
+                }
             }
             _uiState.update {
                 it.copy(
@@ -2600,8 +2721,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 it.copy(appProfileTemplateSaving = true, appProfileTemplatesError = null)
             }
+            val rootGranted = _uiState.value.rootGranted
             val result = withContext(Dispatchers.IO) {
-                RootUtils.deleteAppProfileTemplate(cleanId)
+                val access = resolveManagerAccess(rootGranted)
+                if (!access.hasNativeManagerPermission) {
+                    RootUtils.ShellResult(false, listOf(managerAccessErrorMessage(access, rootGranted)))
+                } else {
+                    RootUtils.deleteAppProfileTemplate(cleanId)
+                }
             }
             _uiState.update {
                 it.copy(
@@ -2617,6 +2744,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun loadManagerSettings(): ManagerSettingsLoad =
         runCatching {
+            if (!RootUtils.isNativeManagerActive()) {
+                return@runCatching ManagerSettingsLoad()
+            }
             val snapshot = RootUtils.readManagerRuntimeSnapshot()
             val manager = snapshot.manager.normalizedForManagerSettings()
             if (!manager.active) {
@@ -3680,6 +3810,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 private fun externalManagerAccessDeniedMessage(): String =
     "未授予 ABK Root 权限，无法读取外部 Root 后端。请先为 ABK 授权，或使用已将 ABK 识别为原生管理器的内核。"
 
+private fun externalRootManagerPermissionDeniedMessage(): String =
+    "当前仅接入外部 Root / ksud 兼容层，ABK 没有原生管理权限，无法访问原生桥、管理器设置或 Root 授权策略。"
+
+private fun resolveManagerAccess(rootGranted: Boolean): RootUtils.ManagerAccessInfo =
+    RootUtils.resolveManagerAccess(rootGranted)
+
+private fun managerAccessErrorMessage(
+    access: RootUtils.ManagerAccessInfo,
+    rootGranted: Boolean
+): String {
+    access.diagnostic?.takeIf { it.isNotBlank() }?.let { return it }
+    return when (access.kind) {
+        RootUtils.ManagerAccessKind.NATIVE_MANAGER -> ""
+        RootUtils.ManagerAccessKind.NO_ROOT -> externalManagerAccessDeniedMessage()
+        RootUtils.ManagerAccessKind.ROOT_ONLY -> externalRootManagerPermissionDeniedMessage()
+        RootUtils.ManagerAccessKind.NATIVE_KERNEL_NO_MANAGER ->
+            "当前 ABK 已连接到内核接口，但没有原生管理权限。请确认内核已将当前 ABK APK 识别为管理器。"
+    }
+}
+
+private fun RootUtils.ManagerAccessInfo.toUiState(): ManagerAccessState =
+    when (kind) {
+        RootUtils.ManagerAccessKind.NATIVE_MANAGER -> ManagerAccessState.NATIVE_MANAGER
+        RootUtils.ManagerAccessKind.ROOT_ONLY -> ManagerAccessState.ROOT_ONLY
+        RootUtils.ManagerAccessKind.NO_ROOT -> ManagerAccessState.NO_ROOT
+        RootUtils.ManagerAccessKind.NATIVE_KERNEL_NO_MANAGER -> ManagerAccessState.NATIVE_KERNEL_NO_MANAGER
+    }
+
 private fun sanitizeBuildPlanName(name: String, config: KernelBuildConfig): String =
     name.trim().ifBlank { defaultBuildPlanName(config) }.take(BUILD_PLAN_NAME_LIMIT)
 
@@ -4336,6 +4494,8 @@ private data class ManagerSettingsLoad(
     val error: String? = null
 )
 
+private data class Quadruple<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
+
 private fun workflowActionsUrl(owner: String, repoName: String): String =
     "https://github.com/$owner/$repoName/actions/workflows/$KERNEL_WORKFLOW_FILE"
 private const val MIRROR_WORKFLOW_MAX_POLLS = 40
@@ -4408,6 +4568,10 @@ private data class BackgroundPreferences(
     val alpha: Float
 )
 
+private operator fun <A, B, C, D> Quadruple<A, B, C, D>.component1() = a
+private operator fun <A, B, C, D> Quadruple<A, B, C, D>.component2() = b
+private operator fun <A, B, C, D> Quadruple<A, B, C, D>.component3() = c
+private operator fun <A, B, C, D> Quadruple<A, B, C, D>.component4() = d
 private operator fun <A, B, C, D, E> Quintuple<A, B, C, D, E>.component1() = a
 private operator fun <A, B, C, D, E> Quintuple<A, B, C, D, E>.component2() = b
 private operator fun <A, B, C, D, E> Quintuple<A, B, C, D, E>.component3() = c

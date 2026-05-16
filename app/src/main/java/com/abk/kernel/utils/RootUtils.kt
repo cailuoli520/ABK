@@ -497,6 +497,9 @@ object RootUtils {
     fun reboot(): ShellResult = execRootScript("svc power reboot || reboot", timeoutSeconds = 15L)
 
     fun readAbkControlStatus(): ShellResult {
+        if (!isNativeManagerActive()) {
+            return nativeManagerPermissionDeniedResult()
+        }
         val status = AbkKsuNative.controlStatus()
         return if (status != null) {
             ShellResult(true, listOf(status))
@@ -546,7 +549,7 @@ object RootUtils {
     fun isNativeManagerActive(): Boolean = AbkKsuNative.isUsableManager()
 
     fun listRootGrantApps(context: Context): List<RootGrantApp> {
-        if (!AbkKsuNative.isUsableManager()) return emptyList()
+        if (!isNativeManagerActive()) return emptyList()
         val packageManager = context.packageManager
         val apps = installedApplications(packageManager)
         return apps
@@ -578,7 +581,7 @@ object RootUtils {
     }
 
     fun setRootGrantProfile(profile: RootGrantProfile): Boolean {
-        if (!AbkKsuNative.isUsableManager()) return false
+        if (!isNativeManagerActive()) return false
         if (profile.allowSu && !profile.rootUseDefault && profile.rules.isNotBlank()) {
             if (!setProfileSepolicy(profile.name, profile.rules)) return false
         }
@@ -645,18 +648,22 @@ object RootUtils {
         setKsuFeatureEnabled(featureName, enabled)
 
     fun isDefaultUmountModules(): Boolean {
+        if (!isNativeManagerActive()) return false
         return AbkKsuNative.isDefaultUmountModules() ?: false
     }
 
     fun setDefaultUmountModules(enabled: Boolean): Boolean {
+        if (!isNativeManagerActive()) return false
         return AbkKsuNative.setDefaultUmountModules(enabled)
     }
 
     fun listAppProfileTemplates(): ShellResult {
+        if (!isNativeManagerActive()) return nativeManagerPermissionDeniedResult()
         return runKsudCommand("profile list-templates", timeoutSeconds = 30L)
     }
 
     fun readAppProfileTemplate(id: String): ShellResult {
+        if (!isNativeManagerActive()) return nativeManagerPermissionDeniedResult()
         if (!isSafeTemplateId(id)) {
             return ShellResult(false, listOf("模板名称无效"))
         }
@@ -664,6 +671,7 @@ object RootUtils {
     }
 
     fun writeAppProfileTemplate(id: String, content: String): ShellResult {
+        if (!isNativeManagerActive()) return nativeManagerPermissionDeniedResult()
         if (!isSafeTemplateId(id)) {
             return ShellResult(false, listOf("模板名称无效"))
         }
@@ -674,6 +682,7 @@ object RootUtils {
     }
 
     fun deleteAppProfileTemplate(id: String): ShellResult {
+        if (!isNativeManagerActive()) return nativeManagerPermissionDeniedResult()
         if (!isSafeTemplateId(id)) {
             return ShellResult(false, listOf("模板名称无效"))
         }
@@ -761,6 +770,9 @@ object RootUtils {
     }
 
     fun writeAbkControlCommand(command: String): ShellResult {
+        if (!isNativeManagerActive()) {
+            return nativeManagerPermissionDeniedResult()
+        }
         return if (AbkKsuNative.controlCommand(command)) {
             ShellResult(true, emptyList())
         } else {
@@ -902,6 +914,49 @@ object RootUtils {
         val diagnostics: List<String> = emptyList()
     )
 
+    enum class ManagerAccessKind {
+        NATIVE_MANAGER,
+        ROOT_ONLY,
+        NO_ROOT,
+        NATIVE_KERNEL_NO_MANAGER
+    }
+
+    data class ManagerAccessInfo(
+        val kind: ManagerAccessKind,
+        val diagnostic: String? = null,
+        val runtime: ManagerRuntimeProbe? = null
+    ) {
+        val hasNativeManagerPermission: Boolean
+            get() = kind == ManagerAccessKind.NATIVE_MANAGER
+    }
+
+    fun resolveManagerAccess(rootGranted: Boolean): ManagerAccessInfo {
+        val nativeRuntime = detectNativeManagerRuntime()
+        if (nativeRuntime?.active == true) {
+            return ManagerAccessInfo(
+                kind = ManagerAccessKind.NATIVE_MANAGER,
+                diagnostic = nativeRuntime.diagnostics.firstOrNull(),
+                runtime = nativeRuntime
+            )
+        }
+        if (nativeRuntime != null) {
+            return ManagerAccessInfo(
+                kind = ManagerAccessKind.NATIVE_KERNEL_NO_MANAGER,
+                diagnostic = nativeRuntime.diagnostics.firstOrNull(),
+                runtime = nativeRuntime
+            )
+        }
+        if (!rootGranted) {
+            return ManagerAccessInfo(ManagerAccessKind.NO_ROOT)
+        }
+        val shellRuntime = detectShellManagerRuntime(nativeRuntime = null)
+        return ManagerAccessInfo(
+            kind = ManagerAccessKind.ROOT_ONLY,
+            diagnostic = shellRuntime?.diagnostics?.firstOrNull(),
+            runtime = shellRuntime
+        )
+    }
+
     private fun runKsudCommand(args: String, timeoutSeconds: Long): ShellResult {
         val cleanArgs = args.trim()
         if (cleanArgs.isBlank()) return ShellResult(false, listOf("ksud 参数为空"))
@@ -915,6 +970,7 @@ object RootUtils {
     }
 
     private fun getKsuFeatureSupport(featureName: String): KsuFeatureSupport? {
+        if (!isNativeManagerActive()) return null
         val result = runKsudCommand("feature check ${shellQuote(featureName)}", timeoutSeconds = 15L)
         val status = result.output
             .asReversed()
@@ -930,18 +986,21 @@ object RootUtils {
     }
 
     private fun getKsuFeatureValue(featureName: String): Long? {
+        if (!isNativeManagerActive()) return null
         val result = runKsudCommand("feature get ${shellQuote(featureName)}", timeoutSeconds = 15L)
         if (!result.success) return null
         return parseKsuFeatureValue(result.output)
     }
 
     private fun getKsuFeatureConfigValue(featureName: String): Long? {
+        if (!isNativeManagerActive()) return null
         val result = runKsudCommand("feature get ${shellQuote(featureName)} --config", timeoutSeconds = 15L)
         if (!result.success) return null
         return parseKsuFeatureValue(result.output)
     }
 
     private fun setKsuFeatureValue(featureName: String, value: Long, persist: Boolean): ShellResult {
+        if (!isNativeManagerActive()) return nativeManagerPermissionDeniedResult()
         val setResult = runKsudCommand(
             "feature set ${shellQuote(featureName)} $value",
             timeoutSeconds = 30L
@@ -951,6 +1010,7 @@ object RootUtils {
     }
 
     private fun setNativeKsuFeatureValue(featureName: String, value: Long, persist: Boolean): ShellResult {
+        if (!isNativeManagerActive()) return nativeManagerPermissionDeniedResult()
         val enabled = value != 0L
         val setResult = when (featureName) {
             FEATURE_SU_COMPAT -> {
@@ -968,9 +1028,14 @@ object RootUtils {
     }
 
     private fun saveKsuFeatureConfig(): ShellResult =
-        runKsudCommand("feature save", timeoutSeconds = 30L)
+        if (isNativeManagerActive()) {
+            runKsudCommand("feature save", timeoutSeconds = 30L)
+        } else {
+            nativeManagerPermissionDeniedResult()
+        }
 
     private fun readNativeFeature(featureName: String): KsuFeatureState? {
+        if (!isNativeManagerActive()) return null
         val featureId = when (featureName) {
             FEATURE_SU_COMPAT -> 0
             FEATURE_KERNEL_UMOUNT -> 1
@@ -1673,6 +1738,12 @@ object RootUtils {
         onOutput?.invoke(fallback)
         return listOf(fallback)
     }
+
+    private fun nativeManagerPermissionDeniedMessage(): String =
+        "当前 ABK 没有原生管理权限，无法访问该功能。请使用已将 ABK 识别为原生管理器的内核。"
+
+    private fun nativeManagerPermissionDeniedResult(): ShellResult =
+        ShellResult(false, listOf(nativeManagerPermissionDeniedMessage()))
 
     private fun partitionExists(name: String): Boolean {
         return listOf(

@@ -107,6 +107,13 @@ fun SettingsScreen(
         vm.refreshManagerSettings(force = true)
     }
 
+    LaunchedEffect(state.hasNativeManagerPermission) {
+        if (!state.hasNativeManagerPermission) {
+            showAppProfileTemplates = false
+            showManagerTools = false
+        }
+    }
+
     LaunchedEffect(showChildPage) {
         if (showChildPage) {
             onThemePageVisibleChange(true)
@@ -586,6 +593,7 @@ private fun ManagerInjectedSettingsGroup(
     onOpenManagerTools: () -> Unit,
     onOpenInstalledModules: () -> Unit
 ) {
+    if (!state.hasNativeManagerPermission) return
     val hasInjectedSettings = state.managerSettingsItems.isNotEmpty()
     if (!hasInjectedSettings && !state.managerSettingsLoading && state.managerSettingsError == null) return
 
