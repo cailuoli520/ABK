@@ -28,6 +28,17 @@ object RootUtils {
     private val KSU_FEATURE_NAME_REGEX = Regex("^[a-z0-9_]+$")
     private var appContext: Context? = null
 
+    private enum class KsudSource(val label: String) {
+        EMBEDDED("APK 内置"),
+        DATA_ADB("外部 /data/adb"),
+        SYSTEM("系统")
+    }
+
+    private data class KsudBinary(
+        val path: String,
+        val source: KsudSource
+    )
+
     fun init(context: Context) {
         appContext = context.applicationContext
         Shell.enableVerboseLogging = false
@@ -98,7 +109,6 @@ object RootUtils {
 
     fun installModule(zipPath: String, onOutput: ((String) -> Unit)? = null): ShellResult {
         val safeZip = shellQuote(zipPath)
-        val embeddedKsud = embeddedKsudPath()?.let(::shellQuote) ?: ""
         val script = """
             set -e
             echo "[ABK] 开始安装模块"
@@ -106,15 +116,14 @@ object RootUtils {
             module_size=${'$'}(wc -c < $safeZip 2>/dev/null || echo 0)
             echo "[ABK] 模块大小: ${'$'}module_size bytes"
             chmod 0644 $safeZip 2>/dev/null || true
-            installer=""
-            for candidate in $embeddedKsud ${'$'}(command -v ksud 2>/dev/null || true) /data/adb/ksud; do
-                [ -n "${'$'}candidate" ] || continue
-                [ -x "${'$'}candidate" ] || continue
-                installer="${'$'}candidate"
-                break
-            done
+            installer=${'$'}(abk_find_ksud 2>/dev/null || true)
             if [ -n "${'$'}installer" ]; then
-                echo "[ABK] 使用 KernelSU 安装模块: ${'$'}installer"
+                ksud_source=${'$'}(abk_ksud_source "${'$'}installer")
+                ksud_label=${'$'}(abk_ksud_label "${'$'}ksud_source")
+                echo "[ABK] 使用${'$'}ksud_label ksud 安装模块: ${'$'}installer"
+                if [ "${'$'}ksud_source" != "embedded" ]; then
+                    echo "[ABK] 内置 ksud 不可用，已回退到${'$'}ksud_label ksud"
+                fi
                 if "${'$'}installer" module install $safeZip; then
                     echo "[ABK] KernelSU 模块安装命令完成"
                 else
@@ -150,7 +159,11 @@ object RootUtils {
             sync
             echo "[ABK] 模块安装完成，通常需要重启后生效"
         """.trimIndent()
-        return execRootScript(script, timeoutSeconds = 240, onOutput = onOutput)
+        return execRootScript(
+            withManagerShellHelpers(script),
+            timeoutSeconds = 240,
+            onOutput = onOutput
+        )
     }
 
     fun installApk(
@@ -270,26 +283,7 @@ object RootUtils {
         return "$android-$kernel"
     }
 
-    fun resolveUserlandKsudPath(context: Context): String? {
-        File(context.applicationInfo.nativeLibraryDir, "libksud.so")
-            .takeIf { it.isFile && it.canExecute() }
-            ?.let { return it.absolutePath }
-        File("/data/adb/ksud")
-            .takeIf { it.isFile && it.canExecute() }
-            ?.let { return it.absolutePath }
-        return runCatching {
-            val process = ProcessBuilder("sh", "-c", "command -v ksud 2>/dev/null")
-                .redirectErrorStream(true)
-                .start()
-            if (!process.waitFor(2, TimeUnit.SECONDS)) {
-                process.destroyForcibly()
-                return@runCatching null
-            }
-            if (process.exitValue() != 0) return@runCatching null
-            process.inputStream.bufferedReader().use { it.readLine()?.trim() }
-                ?.takeIf { it.isNotBlank() }
-        }.getOrNull()
-    }
+    fun resolveUserlandKsudPath(context: Context): String? = resolveUserlandKsud(context)?.path
 
     fun patchAbkLkmBootImage(
         context: Context,
@@ -375,17 +369,24 @@ object RootUtils {
                 if (enableAdb) add("--enable-adbd")
             }
             val requiresRootShell = flash || sourceBoot == null
-            val userlandKsud = resolveUserlandKsudPath(context)
+            val userlandKsud = resolveUserlandKsud(context)
             val result = when {
                 !requiresRootShell && userlandKsud != null -> {
-                    onOutput?.invoke("[ABK] 使用用户态 ksud: $userlandKsud")
-                    runLocalCommand(listOf(userlandKsud) + args, timeoutSeconds = 300L, onOutput = onOutput)
+                    onOutput?.invoke("[ABK] 使用${userlandKsud.source.label} ksud: ${userlandKsud.path}")
+                    if (userlandKsud.source != KsudSource.EMBEDDED) {
+                        onOutput?.invoke("[ABK] 内置 ksud 不可用，已回退到${userlandKsud.source.label} ksud。")
+                    }
+                    runLocalCommand(
+                        listOf(userlandKsud.path) + args,
+                        timeoutSeconds = 300L,
+                        onOutput = onOutput
+                    )
                 }
                 allowRootFallback -> {
                     if (requiresRootShell) {
                         onOutput?.invoke("[ABK] 通过 Root shell 执行 ksud boot-patch")
                     } else {
-                        onOutput?.invoke("[ABK] 未找到用户态 ksud，尝试通过 Root shell 使用系统 ksud")
+                        onOutput?.invoke("[ABK] 用户态内置 ksud 不可用，尝试通过 Root shell 执行 ksud boot-patch")
                     }
                     val command = args.joinToString(" ") { shellQuote(it) }
                     execRootScript(
@@ -394,6 +395,12 @@ object RootUtils {
                                 set -e
                                 ksud_path=${'$'}(abk_find_ksud)
                                 [ -n "${'$'}ksud_path" ] || { echo "未找到 ksud"; exit 127; }
+                                ksud_source=${'$'}(abk_ksud_source "${'$'}ksud_path")
+                                ksud_label=${'$'}(abk_ksud_label "${'$'}ksud_source")
+                                echo "[ABK] Root shell ksud 来源: ${'$'}ksud_label"
+                                if [ "${'$'}ksud_source" != "embedded" ]; then
+                                    echo "[ABK] 内置 ksud 不可用，已回退到${'$'}ksud_label ksud"
+                                fi
                                 "${'$'}ksud_path" $command
                             """.trimIndent()
                         ),
@@ -404,7 +411,7 @@ object RootUtils {
                 requiresRootShell -> ShellResult(false, listOf("该安装方式需要 Root 权限。"))
                 else -> ShellResult(
                     false,
-                    listOf("未找到可执行 ksud；无 Root 时需要 APK 内置或系统可直接执行的 ksud 才能仅修补 boot。")
+                    listOf("未找到可执行 ksud；无 Root 时需要 APK 内置、/data/adb/ksud 或系统可直接执行的 ksud 才能仅修补 boot。")
                 )
             }
             val outputPath = outputImage.takeIf { result.success && it.isFile }?.absolutePath
@@ -1218,12 +1225,12 @@ object RootUtils {
             }
         }
         if (globalMount) {
-            candidates += arrayOf("ksud", "debug", "su", "-g")
             candidates += arrayOf("/data/adb/ksud", "debug", "su", "-g")
+            candidates += arrayOf("ksud", "debug", "su", "-g")
             candidates += arrayOf("su", "-mm")
         } else {
-            candidates += arrayOf("ksud", "debug", "su")
             candidates += arrayOf("/data/adb/ksud", "debug", "su")
+            candidates += arrayOf("ksud", "debug", "su")
             candidates += arrayOf("su")
         }
 
@@ -1252,24 +1259,65 @@ object RootUtils {
         return result.isSuccess && output.firstOrNull()?.trim() == "0"
     }
 
-    private fun embeddedKsudPath(): String? {
-        val context = appContext ?: return null
-        return File(context.applicationInfo.nativeLibraryDir, "libksud.so")
+    private fun embeddedKsudPath(context: Context? = appContext): String? {
+        val safeContext = context ?: return null
+        return File(safeContext.applicationInfo.nativeLibraryDir, "libksud.so")
             .takeIf { it.isFile && it.canExecute() }
             ?.absolutePath
     }
 
+    private fun resolveUserlandKsud(context: Context): KsudBinary? {
+        embeddedKsudPath(context)?.let { return KsudBinary(it, KsudSource.EMBEDDED) }
+        File("/data/adb/ksud")
+            .takeIf { it.isFile && it.canExecute() }
+            ?.let { return KsudBinary(it.absolutePath, KsudSource.DATA_ADB) }
+        return resolveSystemKsudPath()
+            ?.let { path -> KsudBinary(path, KsudSource.SYSTEM) }
+    }
+
+    private fun resolveSystemKsudPath(): String? {
+        return runCatching {
+            val process = ProcessBuilder("sh", "-c", "command -v ksud 2>/dev/null")
+                .redirectErrorStream(true)
+                .start()
+            if (!process.waitFor(2, TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+                return@runCatching null
+            }
+            if (process.exitValue() != 0) return@runCatching null
+            process.inputStream.bufferedReader().use { it.readLine()?.trim() }
+                ?.takeIf { it.isNotBlank() && File(it).isFile && File(it).canExecute() }
+        }.getOrNull()
+    }
+
     private fun withManagerShellHelpers(script: String): String {
-        val embedded = embeddedKsudPath()?.let(::shellQuote).orEmpty()
+        val embedded = embeddedKsudPath()?.let(::shellQuote) ?: "''"
         return """
+            abk_embedded_ksud=$embedded
             abk_find_ksud() {
-                for candidate in $embedded ${'$'}(command -v ksud 2>/dev/null || true) /data/adb/ksud; do
+                for candidate in "${'$'}abk_embedded_ksud" /data/adb/ksud ${'$'}(command -v ksud 2>/dev/null || true); do
                     [ -n "${'$'}candidate" ] || continue
                     [ -x "${'$'}candidate" ] || continue
                     printf '%s\n' "${'$'}candidate"
                     return 0
                 done
                 return 1
+            }
+            abk_ksud_source() {
+                if [ -n "${'$'}abk_embedded_ksud" ] && [ "$1" = "${'$'}abk_embedded_ksud" ]; then
+                    printf '%s\n' "embedded"
+                elif [ "$1" = "/data/adb/ksud" ]; then
+                    printf '%s\n' "data_adb"
+                else
+                    printf '%s\n' "system"
+                fi
+            }
+            abk_ksud_label() {
+                case "$1" in
+                    embedded) printf '%s\n' "APK 内置" ;;
+                    data_adb) printf '%s\n' "外部 /data/adb" ;;
+                    *) printf '%s\n' "系统" ;;
+                esac
             }
             $script
         """.trimIndent()

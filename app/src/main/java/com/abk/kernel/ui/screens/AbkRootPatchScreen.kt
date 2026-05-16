@@ -636,7 +636,7 @@ fun AbkRootPatchScreen(
                 userlandKsudPath == null &&
                 !rootGranted
             ) {
-                InlineWarning("未检测到可直接执行的 ksud；未授权 Root 时无法进行本地修补。")
+                InlineWarning("未检测到可直接执行的内置或外部 ksud；未授权 Root 时无法进行本地修补。")
             }
 
             Button(

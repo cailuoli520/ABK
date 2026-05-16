@@ -654,7 +654,16 @@ private fun ManagerModeSettingItem(
     onSelected: (Int) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val enabled = item.enabled && !actionInFlight
+    val options = remember(item.options) {
+        item.options.map { it.trim() }.filter { it.isNotBlank() }
+    }
+    val selectedIndex = if (options.isNotEmpty()) {
+        item.selectedIndex.coerceIn(0, options.lastIndex)
+    } else {
+        0
+    }
+    val selectedLabel = options.getOrNull(selectedIndex) ?: "不可用"
+    val enabled = item.enabled && !actionInFlight && options.isNotEmpty()
     ExpressiveListItem(
         title = item.title,
         subtitle = item.subtitle,
@@ -669,7 +678,7 @@ private fun ManagerModeSettingItem(
                     if (actionInFlight) {
                         LoadingIndicator(Modifier.size(18.dp))
                     } else {
-                        Text(item.options.getOrElse(item.selectedIndex) { "选择" })
+                        Text(selectedLabel)
                         Icon(Icons.Default.ArrowDropDown, contentDescription = null)
                     }
                 }
@@ -677,17 +686,17 @@ private fun ManagerModeSettingItem(
                     expanded = expanded,
                     onDismissRequest = { expanded = false }
                 ) {
-                    item.options.forEachIndexed { index, option ->
+                    options.forEachIndexed { index, option ->
                         DropdownMenuItem(
                             text = { Text(option) },
                             leadingIcon = {
-                                if (index == item.selectedIndex) {
+                                if (index == selectedIndex) {
                                     Icon(Icons.Default.Check, contentDescription = null)
                                 }
                             },
                             onClick = {
                                 expanded = false
-                                if (index != item.selectedIndex) onSelected(index)
+                                if (index != selectedIndex) onSelected(index)
                             }
                         )
                     }

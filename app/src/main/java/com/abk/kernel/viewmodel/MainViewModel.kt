@@ -2263,14 +2263,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!force && _uiState.value.managerSettingsLoading) return
         viewModelScope.launch {
             _uiState.update { it.copy(managerSettingsLoading = true, managerSettingsError = null) }
-            val loaded = withContext(Dispatchers.IO) {
-                loadManagerSettings()
+            val loaded = runCatching {
+                withContext(Dispatchers.IO) {
+                    loadManagerSettings()
+                }
+            }.getOrElse { error ->
+                ManagerSettingsLoad(
+                    error = error.message?.takeIf { it.isNotBlank() } ?: "后端设置读取失败"
+                )
             }
             _uiState.update {
                 it.copy(
-                    managerSettingsBackend = loaded.backend,
-                    managerSettingsTitle = loaded.title,
-                    managerSettingsItems = loaded.items,
+                    managerSettingsBackend = loaded.backend?.trim()?.ifBlank { null },
+                    managerSettingsTitle = loaded.title.trim(),
+                    managerSettingsItems = sanitizeManagerSettingItems(loaded.items),
                     managerSettingsLoading = false,
                     managerSettingsError = loaded.error,
                     managerSettingActionId = null
@@ -2285,22 +2291,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 it.copy(managerSettingActionId = settingId, managerSettingsError = null)
             }
-            val result = withContext(Dispatchers.IO) {
-                when (settingId) {
-                    MANAGER_SETTING_KERNEL_UMOUNT -> RootUtils.setKsuFeatureEnabled("kernel_umount", checked)
-                    MANAGER_SETTING_SULOG -> RootUtils.setKsuFeatureEnabled("sulog", checked)
-                    MANAGER_SETTING_ADB_ROOT -> RootUtils.setKsuFeatureEnabled("adb_root", checked)
-                    MANAGER_SETTING_SELINUX_HIDE -> RootUtils.setKsuFeatureEnabled("selinux_hide", checked)
-                    MANAGER_SETTING_WEBVIEW_DEBUG -> {
-                        prefs.setWebViewDebugEnabled(checked)
-                        RootUtils.ShellResult(true, emptyList())
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    when (settingId) {
+                        MANAGER_SETTING_KERNEL_UMOUNT -> RootUtils.setKsuFeatureEnabled("kernel_umount", checked)
+                        MANAGER_SETTING_SULOG -> RootUtils.setKsuFeatureEnabled("sulog", checked)
+                        MANAGER_SETTING_ADB_ROOT -> RootUtils.setKsuFeatureEnabled("adb_root", checked)
+                        MANAGER_SETTING_SELINUX_HIDE -> RootUtils.setKsuFeatureEnabled("selinux_hide", checked)
+                        MANAGER_SETTING_WEBVIEW_DEBUG -> {
+                            prefs.setWebViewDebugEnabled(checked)
+                            RootUtils.ShellResult(true, emptyList())
+                        }
+                        MANAGER_SETTING_DEFAULT_UMOUNT -> {
+                            val ok = RootUtils.setDefaultUmountModules(checked)
+                            RootUtils.ShellResult(ok, if (ok) emptyList() else listOf("保存失败"))
+                        }
+                        else -> RootUtils.ShellResult(false, listOf("不支持的设置项"))
                     }
-                    MANAGER_SETTING_DEFAULT_UMOUNT -> {
-                        val ok = RootUtils.setDefaultUmountModules(checked)
-                        RootUtils.ShellResult(ok, if (ok) emptyList() else listOf("保存失败"))
-                    }
-                    else -> RootUtils.ShellResult(false, listOf("不支持的设置项"))
                 }
+            }.getOrElse { error ->
+                RootUtils.ShellResult(false, listOf(error.message ?: "操作失败"))
             }
             if (result.success) {
                 refreshManagerSettings(force = true)
@@ -2322,11 +2332,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 it.copy(managerSettingActionId = settingId, managerSettingsError = null)
             }
-            val result = withContext(Dispatchers.IO) {
-                when (settingId) {
-                    MANAGER_SETTING_SU_COMPAT -> RootUtils.setSuCompatMode(selectedIndex)
-                    else -> RootUtils.ShellResult(false, listOf("不支持的设置项"))
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    when (settingId) {
+                        MANAGER_SETTING_SU_COMPAT -> RootUtils.setSuCompatMode(selectedIndex.coerceIn(0, 2))
+                        else -> RootUtils.ShellResult(false, listOf("不支持的设置项"))
+                    }
                 }
+            }.getOrElse { error ->
+                RootUtils.ShellResult(false, listOf(error.message ?: "操作失败"))
             }
             if (result.success) {
                 refreshManagerSettings(force = true)
@@ -2561,31 +2575,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun loadManagerSettings(): ManagerSettingsLoad {
-        val snapshot = RootUtils.readManagerRuntimeSnapshot()
-        val manager = snapshot.manager
-        if (!manager.active) {
-            return ManagerSettingsLoad()
+    private fun loadManagerSettings(): ManagerSettingsLoad =
+        runCatching {
+            val snapshot = RootUtils.readManagerRuntimeSnapshot()
+            val manager = snapshot.manager.normalizedForManagerSettings()
+            if (!manager.active) {
+                ManagerSettingsLoad()
+            } else {
+                when {
+                    manager.isReSukiSu() -> ManagerSettingsLoad(
+                        backend = "resukisu",
+                        title = "ReSukiSU",
+                        items = buildReSukiSuSettings()
+                    )
+                    manager.isSukiSu() -> ManagerSettingsLoad(
+                        backend = "sukisu",
+                        title = "SukiSU",
+                        items = buildSukiSuSettings()
+                    )
+                    manager.isOfficialKernelSu() -> ManagerSettingsLoad(
+                        backend = "kernelsu",
+                        title = "KernelSU",
+                        items = buildOfficialKernelSuSettings()
+                    )
+                    else -> ManagerSettingsLoad(
+                        backend = manager.backend.takeIf { it.isNotBlank() },
+                        title = managerSettingsTitle(manager),
+                        error = buildUnknownManagerSettingsError(manager)
+                    )
+                }
+            }
+        }.getOrElse { error ->
+            ManagerSettingsLoad(
+                error = error.message?.takeIf { it.isNotBlank() } ?: "后端设置读取失败"
+            )
         }
-        return when {
-            manager.isReSukiSu() -> ManagerSettingsLoad(
-                backend = "resukisu",
-                title = "ReSukiSU",
-                items = buildReSukiSuSettings()
-            )
-            manager.isSukiSu() -> ManagerSettingsLoad(
-                backend = "sukisu",
-                title = "SukiSU",
-                items = buildSukiSuSettings()
-            )
-            manager.isOfficialKernelSu() -> ManagerSettingsLoad(
-                backend = "kernelsu",
-                title = "KernelSU",
-                items = buildOfficialKernelSuSettings()
-            )
-            else -> ManagerSettingsLoad()
-        }
-    }
 
     private fun buildReSukiSuSettings(): List<ManagerSettingItem> {
         val suCompat = RootUtils.readKsuFeature("su_compat")
@@ -2871,6 +2895,56 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             "official" in text ||
             (backend == "native" && "native_manager" in capabilities) ||
             (backend == "ksud" && capabilities.any { it == "features" || it == "module_control" || it == "modules" })
+    }
+
+    private fun RootUtils.ManagerRuntimeProbe.normalizedForManagerSettings(): RootUtils.ManagerRuntimeProbe =
+        copy(
+            displayName = displayName.trim(),
+            variant = variant.trim(),
+            backend = backend.trim().lowercase(),
+            version = version.trim(),
+            workMode = workMode.trim(),
+            capabilities = capabilities.map { it.trim() }.filter { it.isNotBlank() }.distinct(),
+            diagnostics = diagnostics.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        )
+
+    private fun sanitizeManagerSettingItems(items: List<ManagerSettingItem>): List<ManagerSettingItem> =
+        items.map { item ->
+            val options = item.options
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+            when (item.kind) {
+                ManagerSettingKind.MODE -> {
+                    val hasOptions = options.isNotEmpty()
+                    item.copy(
+                        title = item.title.ifBlank { "未命名设置" },
+                        subtitle = item.subtitle.trim(),
+                        options = options,
+                        selectedIndex = if (hasOptions) {
+                            item.selectedIndex.coerceIn(0, options.lastIndex)
+                        } else {
+                            0
+                        },
+                        enabled = item.enabled && hasOptions
+                    )
+                }
+                else -> item.copy(
+                    title = item.title.ifBlank { "未命名设置" },
+                    subtitle = item.subtitle.trim(),
+                    options = options
+                )
+            }
+        }
+
+    private fun managerSettingsTitle(manager: RootUtils.ManagerRuntimeProbe): String =
+        manager.displayName
+            .ifBlank { manager.variant }
+            .ifBlank { "管理器设置" }
+
+    private fun buildUnknownManagerSettingsError(manager: RootUtils.ManagerRuntimeProbe): String {
+        val detail = manager.diagnostics.firstOrNull { it.isNotBlank() }
+        val base = "当前后端已激活，但 ABK 无法稳定识别其类型；已跳过不安全的设置注入。"
+        return if (detail == null) base else "$base $detail"
     }
 
     private fun featureSubtitle(feature: RootUtils.KsuFeatureState, normal: String, backendTitle: String): String =
