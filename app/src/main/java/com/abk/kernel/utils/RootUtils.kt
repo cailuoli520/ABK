@@ -689,7 +689,7 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            abk_exec_ksud "${'$'}ksud_path" module list
+            "${'$'}ksud_path" module list
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
     }
@@ -700,7 +700,7 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            abk_exec_ksud "${'$'}ksud_path" module action $safeId
+            "${'$'}ksud_path" module action $safeId
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 300L, onOutput = onOutput)
     }
@@ -712,7 +712,7 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            abk_exec_ksud "${'$'}ksud_path" module $verb $safeId
+            "${'$'}ksud_path" module $verb $safeId
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
     }
@@ -724,7 +724,7 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            abk_exec_ksud "${'$'}ksud_path" module $verb $safeId
+            "${'$'}ksud_path" module $verb $safeId
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
     }
@@ -734,7 +734,7 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            abk_exec_ksud "${'$'}ksud_path" kpm list
+            "${'$'}ksud_path" kpm list
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
     }
@@ -759,7 +759,7 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            abk_exec_ksud "${'$'}ksud_path" kpm info $safeName
+            "${'$'}ksud_path" kpm info $safeName
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L)
     }
@@ -845,7 +845,7 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            abk_exec_ksud "${'$'}ksud_path" profile set-sepolicy $safePackage $safeRules
+            "${'$'}ksud_path" profile set-sepolicy $safePackage $safeRules
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = 30L).success
     }
@@ -913,7 +913,7 @@ object RootUtils {
             set -e
             ksud_path=${'$'}(abk_find_ksud)
             [ -n "${'$'}ksud_path" ] || exit 127
-            abk_exec_ksud "${'$'}ksud_path" $cleanArgs
+            "${'$'}ksud_path" $cleanArgs
         """.trimIndent()
         return execRootScript(withManagerShellHelpers(script), timeoutSeconds = timeoutSeconds)
     }
@@ -1124,7 +1124,7 @@ object RootUtils {
                     val safeKsud = shellQuote(ksudPath)
                     val version = execWithShell(
                         shell,
-                        "abk_exec_ksud $safeKsud --version 2>/dev/null || true",
+                        "$safeKsud --version 2>/dev/null || true",
                         normalizeOutput = false
                     )
                         .output
@@ -1135,10 +1135,10 @@ object RootUtils {
                         shell,
                         """
                         caps="root_shell modules"
-                        abk_exec_ksud $safeKsud module list >/dev/null 2>&1 && caps="${'$'}caps module_control"
-                        abk_exec_ksud $safeKsud susfs status >/dev/null 2>&1 && caps="${'$'}caps susfs"
-                        abk_exec_ksud $safeKsud kpm version >/dev/null 2>&1 && caps="${'$'}caps kpm"
-                        abk_exec_ksud $safeKsud feature check su_compat >/dev/null 2>&1 && caps="${'$'}caps features"
+                        $safeKsud module list >/dev/null 2>&1 && caps="${'$'}caps module_control"
+                        $safeKsud susfs status >/dev/null 2>&1 && caps="${'$'}caps susfs"
+                        $safeKsud kpm version >/dev/null 2>&1 && caps="${'$'}caps kpm"
+                        $safeKsud feature check su_compat >/dev/null 2>&1 && caps="${'$'}caps features"
                         printf '%s\n' "${'$'}caps"
                         """.trimIndent(),
                         normalizeOutput = false
@@ -1307,7 +1307,11 @@ object RootUtils {
         File(path).name == "libksud.so"
 
     private fun resolveAndroidLinkerPath(): String {
-        val candidates = if (Process.is64Bit()) {
+        val embeddedPath = embeddedKsudPath()
+        val prefers64Bit = embeddedPath?.contains("/arm64-v8a/") == true ||
+            embeddedPath?.contains("/x86_64/") == true ||
+            embeddedPath?.contains("64") == true
+        val candidates = if (prefers64Bit) {
             listOf("/apex/com.android.runtime/bin/linker64", "/system/bin/linker64")
         } else {
             listOf("/apex/com.android.runtime/bin/linker", "/system/bin/linker")
@@ -1622,17 +1626,10 @@ object RootUtils {
         return """
             abk_embedded_ksud=$embedded
             abk_embedded_linker=$linker
-            abk_can_exec_ksud() {
-                if [ -n "${'$'}abk_embedded_ksud" ] && [ "$1" = "${'$'}abk_embedded_ksud" ]; then
-                    [ -f "$1" ]
-                else
-                    [ -x "$1" ]
-                fi
-            }
             abk_find_ksud() {
                 for candidate in "${'$'}abk_embedded_ksud" /data/adb/ksud ${'$'}(command -v ksud 2>/dev/null || true); do
                     [ -n "${'$'}candidate" ] || continue
-                    abk_can_exec_ksud "${'$'}candidate" || continue
+                    [ -x "${'$'}candidate" ] || continue
                     printf '%s\n' "${'$'}candidate"
                     return 0
                 done
