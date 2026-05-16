@@ -76,6 +76,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -121,14 +122,14 @@ fun AbkRootPatchScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val bundledAssets = remember(context) { RootUtils.listBundledAbkLkmAssets(context) }
-    val currentKmi = remember { RootUtils.detectCurrentKmi() }
-    val partitionOptions = remember { detectBootPartitionOptions() }
-    val defaultPartition = remember(partitionOptions) {
-        when {
-            "init_boot" in partitionOptions -> "init_boot"
-            "boot" in partitionOptions -> "boot"
-            else -> "boot"
-        }
+    val currentKmi by produceState<String?>(initialValue = null, context, rootGranted) {
+        value = withContext(Dispatchers.IO) { RootUtils.detectCurrentKmi() }
+    }
+    val partitionOptions by produceState(initialValue = emptyList<String>(), context, rootGranted) {
+        value = withContext(Dispatchers.IO) { RootUtils.listBootPatchPartitions() }
+    }
+    val defaultPartition by produceState(initialValue = "boot", context, rootGranted) {
+        value = withContext(Dispatchers.IO) { RootUtils.detectDefaultBootPartition() }
     }
 
     var selectedMode by rememberSaveable { mutableStateOf<LkmPatchInstallMode?>(null) }
@@ -158,6 +159,7 @@ fun AbkRootPatchScreen(
     var selectedLocalLkmPath by rememberSaveable { mutableStateOf("") }
     var selectedLocalLkmName by rememberSaveable { mutableStateOf("") }
     var selectedPartition by rememberSaveable { mutableStateOf(defaultPartition) }
+    var hasCustomPartitionSelection by rememberSaveable { mutableStateOf(false) }
     var showPartitionMenu by remember { mutableStateOf(false) }
     var showAdvancedOptions by rememberSaveable { mutableStateOf(false) }
     var allowShell by rememberSaveable { mutableStateOf(false) }
@@ -168,7 +170,9 @@ fun AbkRootPatchScreen(
     var logLines by remember { mutableStateOf(emptyList<String>()) }
     var currentAction by remember { mutableStateOf("") }
 
-    val userlandKsudPath = remember(context) { RootUtils.resolveUserlandKsudPath(context) }
+    val userlandKsudPath by produceState<String?>(initialValue = null, context) {
+        value = withContext(Dispatchers.IO) { RootUtils.resolveUserlandKsudPath(context) }
+    }
     val hasLocalLkm = selectedLocalLkmPath.isNotBlank()
     val activeLkmLabel = selectedLocalLkmName.takeIf { it.isNotBlank() }
         ?: selectedAsset?.let { "${it.variantLabel} · ${it.kmi}" }
@@ -188,9 +192,20 @@ fun AbkRootPatchScreen(
         null -> false
     }
 
-    LaunchedEffect(selectedVariant, kmiOptions) {
+    LaunchedEffect(selectedVariant, kmiOptions, currentKmi) {
         if (selectedKmi !in kmiOptions) {
             selectedKmi = currentKmi?.takeIf { it in kmiOptions } ?: kmiOptions.firstOrNull().orEmpty()
+        }
+    }
+
+    LaunchedEffect(defaultPartition, partitionOptions, hasCustomPartitionSelection) {
+        if (partitionOptions.isEmpty()) return@LaunchedEffect
+        if (!hasCustomPartitionSelection) {
+            selectedPartition = defaultPartition.takeIf { it in partitionOptions }
+                ?: partitionOptions.first()
+        } else if (selectedPartition !in partitionOptions) {
+            selectedPartition = defaultPartition.takeIf { it in partitionOptions }
+                ?: partitionOptions.first()
         }
     }
 
@@ -508,6 +523,7 @@ fun AbkRootPatchScreen(
                             DropdownMenuItem(
                                 text = { Text(partitionMenuLabel(partition, defaultPartition)) },
                                 onClick = {
+                                    hasCustomPartitionSelection = true
                                     selectedPartition = partition
                                     showPartitionMenu = false
                                 }
@@ -608,6 +624,12 @@ fun AbkRootPatchScreen(
                     exit = shrinkVertically() + fadeOut()
                 ) {
                     Column {
+                        Text(
+                            text = "高级参数会直接透传给当前 APK 内置 ksud，不再做兼容探测。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                        )
                         PatchDivider()
                         PatchCheckboxItem(
                             title = "总是给 shell 授予 root 权限",
@@ -636,7 +658,7 @@ fun AbkRootPatchScreen(
                 userlandKsudPath == null &&
                 !rootGranted
             ) {
-                InlineWarning("未检测到可直接执行的内置 SukiSU-Ultra ksud 或外部 ksud；未授权 Root 时无法进行本地修补。")
+                InlineWarning("未检测到可执行的 APK 内置 SukiSU-Ultra ksud；未授权 Root 时只能在选择 boot.img 后生成 patched 镜像。")
             }
 
             Button(
@@ -946,20 +968,6 @@ private fun isZipFile(context: Context, uri: Uri): Boolean {
     val name = displayNameForUri(context, uri)
     return uri.lastPathSegment.orEmpty().endsWith(".zip", ignoreCase = true) ||
         name.endsWith(".zip", ignoreCase = true)
-}
-
-private fun detectBootPartitionOptions(): List<String> {
-    val candidates = listOf("init_boot", "boot", "vendor_boot")
-    val detected = candidates.filter(::partitionExists)
-    return detected.ifEmpty { candidates }
-}
-
-private fun partitionExists(name: String): Boolean {
-    return listOf(
-        "/dev/block/by-name/$name",
-        "/dev/block/bootdevice/by-name/$name",
-        "/dev/block/mapper/$name"
-    ).any { File(it).exists() }
 }
 
 private fun partitionLabel(partition: String, defaultPartition: String): String =
