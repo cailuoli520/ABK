@@ -17,6 +17,7 @@ object AbkKsuNative {
     val loaded: Boolean
         get() = libraryLoaded
 
+    external fun hasDriverFd(): Boolean
     external fun getVersion(): Int
     external fun isSafeMode(): Boolean
     external fun isLkmMode(): Boolean
@@ -42,9 +43,23 @@ object AbkKsuNative {
     external fun getControlStatus(): String?
     external fun runControlCommand(command: String): Boolean
 
+    @Volatile
+    private var nativeBridgeAvailable = false
+
+    @Volatile
+    private var cachedStatus: NativeStatus? = null
+
+    private fun hasNativeBridge(): Boolean {
+        if (!libraryLoaded) return false
+        if (nativeBridgeAvailable) return true
+        nativeBridgeAvailable = runCatching { hasDriverFd() }.getOrDefault(false)
+        return nativeBridgeAvailable
+    }
+
     fun status(): NativeStatus? {
-        if (!libraryLoaded) return null
-        return runCatching {
+        cachedStatus?.let { return it }
+        if (!hasNativeBridge()) return null
+        val resolved = runCatching {
             val kernelVersion = getVersion()
             if (kernelVersion <= 0) return null
             val manager = isManager()
@@ -60,46 +75,50 @@ object AbkKsuNative {
                 superuserCount = if (manager) getSuperuserCount() else 0
             )
         }.getOrNull()
+        if (resolved != null) {
+            cachedStatus = resolved
+        }
+        return resolved
     }
 
     fun isUsableManager(): Boolean = status()?.isManager == true
 
     fun readProfile(packageName: String, uid: Int): RootGrantProfile? {
-        if (!libraryLoaded || packageName.isBlank()) return null
+        if (!hasNativeBridge() || packageName.isBlank()) return null
         return runCatching {
             getAppProfile(packageName, uid)?.toRootGrantProfile()
         }.getOrNull()
     }
 
     fun writeProfile(profile: RootGrantProfile): Boolean {
-        if (!libraryLoaded || profile.name.isBlank()) return false
+        if (!hasNativeBridge() || profile.name.isBlank()) return false
         return runCatching {
             setAppProfile(Profile(profile))
         }.getOrDefault(false)
     }
 
     fun userName(uid: Int): String =
-        if (!libraryLoaded) "" else runCatching { getUserName(uid).orEmpty() }.getOrDefault("")
+        if (!hasNativeBridge()) "" else runCatching { getUserName(uid).orEmpty() }.getOrDefault("")
 
     fun controlStatus(): String? {
-        if (!libraryLoaded) return null
+        if (!hasNativeBridge()) return null
         return runCatching { getControlStatus()?.trim()?.takeIf { it.startsWith("{") } }.getOrNull()
     }
 
     fun controlCommand(command: String): Boolean {
-        if (!libraryLoaded) return false
+        if (!hasNativeBridge()) return false
         val cleanCommand = command.trim()
         if (cleanCommand.isBlank()) return false
         return runCatching { runControlCommand(cleanCommand) }.getOrDefault(false)
     }
 
     fun feature(featureId: Int): Feature? {
-        if (!libraryLoaded) return null
+        if (!hasNativeBridge()) return null
         return runCatching { getFeature(featureId) }.getOrNull()
     }
 
     fun setDefaultUmountModules(umountModules: Boolean): Boolean {
-        if (!libraryLoaded) return false
+        if (!hasNativeBridge()) return false
         return runCatching {
             setAppProfile(
                 Profile(
@@ -113,7 +132,7 @@ object AbkKsuNative {
     }
 
     fun isDefaultUmountModules(): Boolean? {
-        if (!libraryLoaded) return null
+        if (!hasNativeBridge()) return null
         return runCatching {
             getAppProfile(NON_ROOT_DEFAULT_PROFILE_KEY, NOBODY_UID)?.umountModules
         }.getOrNull()
