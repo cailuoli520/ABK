@@ -82,6 +82,11 @@ android {
         compose = true
         buildConfig = true
     }
+    sourceSets {
+        getByName("main") {
+            assets.srcDir(layout.buildDirectory.dir("generated/abk-assets/main"))
+        }
+    }
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")

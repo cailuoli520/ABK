@@ -8,14 +8,14 @@ on:
       - "build.gradle.kts"
       - "settings.gradle.kts"
       - "gradle/**"
-      - ".github/workflows/build-abk-app.yml"
+      - ".github/workflows/build-abk-app-dev.yml"
   pull_request:
     paths:
       - "app/**"
       - "build.gradle.kts"
       - "settings.gradle.kts"
       - "gradle/**"
-      - ".github/workflows/build-abk-app.yml"
+      - ".github/workflows/build-abk-app-dev.yml"
 
 jobs:
   build:
@@ -25,6 +25,9 @@ jobs:
       actions: read
     env:
       HAS_RELEASE_SIGNING: ${{ secrets.ABK_RELEASE_KEYSTORE_BASE64 != '' && secrets.ABK_RELEASE_STORE_PASSWORD != '' && secrets.ABK_RELEASE_KEY_ALIAS != '' && secrets.ABK_RELEASE_KEY_PASSWORD != '' }}
+      SUKISU_ULTRA_REPO: https://github.com/SukiSU-Ultra/SukiSU-Ultra.git
+      SUKISU_ULTRA_REF: v4.1.2
+      SUKISU_KSUD_ABIS: arm64-v8a,armeabi-v7a,x86_64
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -45,6 +48,100 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.3.1"
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - name: Build bundled SukiSU-Ultra ksud assets
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/28.2.13676358
+        run: |
+          set -euo pipefail
+
+          source_dir="$RUNNER_TEMP/sukisu-ultra"
+          target_dir="$GITHUB_WORKSPACE/app/build/generated/abk-assets/main/ksud"
+          repo_url="${SUKISU_ULTRA_REPO%.git}"
+
+          rm -rf "$source_dir" "$target_dir"
+          git clone --depth 1 --branch "$SUKISU_ULTRA_REF" "$SUKISU_ULTRA_REPO" "$source_dir"
+          commit="$(git -C "$source_dir" rev-parse HEAD)"
+          mkdir -p "$target_dir"
+
+          setup_rust_build() {
+            local triple="$1"
+            local android_sdk_level="$2"
+            local llvm_path="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64"
+            local llvm_bin="$llvm_path/bin"
+            local ndk_triple="$triple"
+            if [ "$ndk_triple" = "armv7-linux-androideabi" ]; then
+              ndk_triple="armv7a-linux-androideabi"
+            fi
+            local clang_path="$llvm_bin/${ndk_triple}${android_sdk_level}-clang"
+            local utriple="${triple//-/_}"
+            local uutriple="${utriple^^}"
+            export "CC_${utriple}=$clang_path"
+            export "CXX_${utriple}=${clang_path}++"
+            export "AR_${utriple}=$llvm_bin/llvm-ar"
+            export "CARGO_TARGET_${uutriple}_LINKER=$clang_path"
+            export "BINDGEN_EXTRA_CLANG_ARGS_${utriple}=--sysroot=$llvm_path/sysroot -I$llvm_path/sysroot/usr/include/$triple"
+          }
+
+          triples_for_abi() {
+            case "$1" in
+              arm64-v8a) printf '%s\n' "aarch64-linux-android" ;;
+              armeabi-v7a) printf '%s\n' "armv7-linux-androideabi" ;;
+              x86_64) printf '%s\n' "x86_64-linux-android" ;;
+              *)
+                echo "::error::Unsupported ksud ABI: $1"
+                return 1
+                ;;
+            esac
+          }
+
+          {
+            echo "source_repo=$repo_url"
+            echo "ref=$SUKISU_ULTRA_REF"
+            echo "commit=$commit"
+            echo "abis=$SUKISU_KSUD_ABIS"
+            echo "built_by=.github/workflows/build-abk-app-dev.yml"
+          } > "$target_dir/source.properties"
+
+          IFS=',' read -ra abi_list <<< "$SUKISU_KSUD_ABIS"
+          for abi in "${abi_list[@]}"; do
+            abi="$(printf '%s' "$abi" | xargs)"
+            [ -n "$abi" ] || continue
+            triple="$(triples_for_abi "$abi")"
+            setup_rust_build "$triple" 26
+            cargo build \
+              --target "$triple" \
+              --release \
+              --manifest-path "$source_dir/userspace/ksud/Cargo.toml"
+
+            binary="$source_dir/target/$triple/release/ksud"
+            if [ ! -f "$binary" ]; then
+              echo "::error::ksud binary missing for $abi ($triple)"
+              exit 1
+            fi
+
+            install -Dm755 "$binary" "$target_dir/$abi/ksud"
+            sha256="$(sha256sum "$binary" | awk '{print tolower($1)}')"
+            size="$(wc -c < "$binary" | tr -d '[:space:]')"
+            {
+              echo "sha256.$abi=$sha256"
+              echo "size.$abi=$size"
+            } >> "$target_dir/source.properties"
+          done
+
+          {
+            echo "### Bundled SukiSU-Ultra ksud"
+            echo
+            echo "- Source: $repo_url"
+            echo "- Ref: $SUKISU_ULTRA_REF"
+            echo "- Commit: $commit"
+            echo "- ABIs: $SUKISU_KSUD_ABIS"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Bundle ABK LKM artifacts
         env:
