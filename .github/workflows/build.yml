@@ -1255,7 +1255,11 @@ jobs:
               grep -qF 'SUSFS_IS_INODE_SUS_MAP' "$file" || return 0
               grep -qF '#include <linux/susfs_def.h>' "$file" && return 0
 
-              if grep -qF '#include <linux/mm_inline.h>' "$file"; then
+              if grep -qF '#include <linux/zswap.h>' "$file"; then
+                sed -i '/#include <linux\/zswap.h>/a #ifdef CONFIG_KSU_SUSFS\n#include <linux\/susfs_def.h>\n#endif' "$file"
+              elif grep -qF '#include <linux/sched/sysctl.h>' "$file"; then
+                sed -i '/#include <linux\/sched\/sysctl.h>/a #ifdef CONFIG_KSU_SUSFS\n#include <linux\/susfs_def.h>\n#endif' "$file"
+              elif grep -qF '#include <linux/mm_inline.h>' "$file"; then
                 sed -i '/#include <linux\/mm_inline.h>/a #ifdef CONFIG_KSU_SUSFS\n#include <linux\/susfs_def.h>\n#endif' "$file"
               elif grep -qF '#include <linux/mm.h>' "$file"; then
                 sed -i '/#include <linux\/mm.h>/a #ifdef CONFIG_KSU_SUSFS\n#include <linux\/susfs_def.h>\n#endif' "$file"
@@ -2316,6 +2320,17 @@ jobs:
           # CONFIG_KSU_SUSFS_OPEN_REDIRECT is not set
           # CONFIG_KSU_SUSFS_SUS_MAP is not set
           EOF
+          fi
+
+          CURRENT_SUB="${{ inputs.sub_level }}"
+          if [[ ! "$CURRENT_SUB" =~ ^[0-9]+$ ]]; then
+            CURRENT_SUB=99999
+          fi
+          if [[ "${{ inputs.ksu_variant }}" == "ReSukiSU" && "${{ inputs.android_version }}" == "android13" && "${{ inputs.kernel_version }}" == "5.15" && "$CURRENT_SUB" -ge 74 && "$CURRENT_SUB" -le 137 ]]; then
+            {
+              echo "CONFIG_KALLSYMS=y"
+              echo "CONFIG_KALLSYMS_ALL=y"
+            } >> "$DEFCONFIG"
           fi
 
           sed -i 's/check_defconfig//' ./common/build.config.gki
