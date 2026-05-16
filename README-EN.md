@@ -206,6 +206,12 @@ The ABK app follows a Material 3 Expressive design direction and targets an end-
 
 The app is built by the [`Build ABK App`](.github/workflows/build-abk-app.yml) workflow.
 
+### Bundled ksud
+
+- The APK build workflow compiles `userspace/ksud` from `SukiSU-Ultra/SukiSU-Ultra` during the app build and packages the resulting `ksud` binaries into the APK.
+- The workflow currently bundles `arm64-v8a`, `armeabi-v7a`, and `x86_64`; at runtime ABK prefers the APK-bundled `ksud` and falls back to `/data/adb/ksud` or a system `ksud` only when needed.
+- This repository does not check in prebuilt `ksud` binaries. Source, build provenance, and license notes are documented in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+
 ## Acknowledgements
 
 ABK continues development on top of the following projects, repositories, and community work. This section centralizes the major repositories and projects referenced by the README, website, workflows, or release notes:

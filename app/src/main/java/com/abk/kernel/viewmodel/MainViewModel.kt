@@ -3891,7 +3891,7 @@ private const val BUILD_PLAN_MAX_MODULES = 32
 private const val OFFICIAL_MODULE_CATALOG_ID = "official-abk-module-catalog"
 private const val OFFICIAL_MODULE_CATALOG_URL = "https://github.com/xingguangcuican6666/ABK_repo"
 
-private val BUILD_PLAN_KSU_VARIANTS = listOf("Official", "SukiSU", "ReSukiSU")
+private val BUILD_PLAN_KSU_VARIANTS = listOf("Official", "SukiSU", "ReSukiSU", "None")
 private val BUILD_PLAN_KSU_BRANCHES = KSU_BRANCH_BUILD_PLAN_OPTIONS
 private val BUILD_PLAN_VIRTUALIZATION_OPTIONS = listOf("off", "on", "678", "123", "345")
 private val BUILD_PLAN_MODULE_STAGES = listOf(

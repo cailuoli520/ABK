@@ -343,9 +343,19 @@ data class ModuleCatalogFetchResult(
 
 const val KSU_BRANCH_STABLE = "Stable(标准)"
 const val KSU_BRANCH_DEV = "Dev(开发)"
+const val KSU_VARIANT_NONE = "None"
+const val KSU_VARIANT_OFFICIAL = "Official"
+const val KSU_VARIANT_SUKISU = "SukiSU"
+const val KSU_VARIANT_RESUKISU = "ReSukiSU"
 
 val KSU_BRANCH_STANDARD_OPTIONS = listOf(KSU_BRANCH_STABLE, KSU_BRANCH_DEV)
 val KSU_BRANCH_BUILD_PLAN_OPTIONS = KSU_BRANCH_STANDARD_OPTIONS
+val KSU_VARIANT_OPTIONS = listOf(
+    KSU_VARIANT_OFFICIAL,
+    KSU_VARIANT_SUKISU,
+    KSU_VARIANT_RESUKISU,
+    KSU_VARIANT_NONE
+)
 
 // App-level build config model (mirrors kernel-custom.yml inputs)
 data class KernelBuildConfig(
@@ -354,7 +364,7 @@ data class KernelBuildConfig(
     val subLevel: String = "66",
     val osPatchLevel: String = "2022-01",
     val revision: String = "r11",
-    val kernelsuVariant: String = "ReSukiSU",
+    val kernelsuVariant: String = KSU_VARIANT_RESUKISU,
     val kernelsuBranch: String = KSU_BRANCH_STABLE,
     val version: String = "",
     val buildTime: String = "",

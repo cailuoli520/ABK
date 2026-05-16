@@ -1366,6 +1366,7 @@ private fun aboutLinks(): List<AboutLink> {
     return listOf(
         AboutLink("上游仓库", BuildConfig.UPSTREAM_REPO_URL),
         AboutLink("顶层仓库", BuildConfig.TOP_LEVEL_REPO_URL),
+        AboutLink("第三方声明", "${sourceRepoUrl()}/blob/main/THIRD_PARTY_NOTICES.md"),
         AboutLink("KernelSU", "https://github.com/tiann/KernelSU"),
         AboutLink("KernelSU Next", "https://github.com/KernelSU-Next/KernelSU-Next"),
         AboutLink("SukiSU Ultra", "https://github.com/SukiSU-Ultra/SukiSU-Ultra"),

@@ -160,6 +160,7 @@ object KernelSupport {
 
     fun normalize(config: KernelBuildConfig): KernelBuildConfig {
         val line = lineFor(config.androidVersion, config.kernelVersion)
+        val ksuVariant = normalizeKsuVariant(config.kernelsuVariant)
         val subLevel = when {
             config.subLevel == "X" -> "X"
             subLevels(line).contains(config.subLevel) -> config.subLevel
@@ -175,9 +176,13 @@ object KernelSupport {
             kernelVersion = line.kernelVersion,
             subLevel = subLevel,
             osPatchLevel = osPatch,
+            kernelsuVariant = ksuVariant,
             kernelsuBranch = normalizeKsuBranch(
-                config.kernelsuBranch
+                if (ksuVariant == KSU_VARIANT_NONE) KSU_BRANCH_STABLE else config.kernelsuBranch
             ),
+            useKpm = if (ksuVariant == KSU_VARIANT_NONE) false else config.useKpm,
+            cancelSusfs = if (ksuVariant == KSU_VARIANT_NONE) true else config.cancelSusfs,
+            kpmPassword = if (ksuVariant == KSU_VARIANT_NONE) "" else config.kpmPassword,
             virtualizationSupport = normalizeVirtualizationSupport(line.kernelVersion, config.virtualizationSupport),
             customExternalModules = config.customExternalModules.orEmpty()
                 .mapNotNull { module ->
@@ -193,6 +198,16 @@ object KernelSupport {
                 }
                 .distinctBy { it.url.lowercase() to CustomExternalModuleStage.normalize(it.stage) }
         )
+    }
+
+    fun ksuVariantOptions(): List<String> = KSU_VARIANT_OPTIONS
+
+    fun normalizeKsuVariant(value: String): String = when (value.trim().lowercase()) {
+        KSU_VARIANT_OFFICIAL.lowercase() -> KSU_VARIANT_OFFICIAL
+        KSU_VARIANT_SUKISU.lowercase() -> KSU_VARIANT_SUKISU
+        KSU_VARIANT_RESUKISU.lowercase() -> KSU_VARIANT_RESUKISU
+        KSU_VARIANT_NONE.lowercase(), "无" -> KSU_VARIANT_NONE
+        else -> KSU_VARIANT_RESUKISU
     }
 
     fun ksuBranchOptions(): List<String> = KSU_BRANCH_STANDARD_OPTIONS
