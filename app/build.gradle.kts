@@ -85,6 +85,7 @@ android {
     sourceSets {
         getByName("main") {
             assets.srcDir("build/generated/abk-assets/main")
+            jniLibs.srcDir("build/generated/abk-jniLibs/main")
         }
     }
     externalNativeBuild {
