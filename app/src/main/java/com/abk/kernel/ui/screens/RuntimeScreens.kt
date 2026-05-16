@@ -195,12 +195,10 @@ fun RuntimeHomeScreen(
                     error = state.abkRuntimeError,
                     onRefresh = vm::refreshAbkRuntimeStatus,
                     onOpenManagerPatch = {
-                        if (state.abkRuntimeStatus != null) {
-                            managerPatchBackProgress = 0f
-                            managerPatchBackEnabled = true
-                            onManagerPatchPageVisibleChange(true)
-                            showManagerPatchPage = true
-                        }
+                        managerPatchBackProgress = 0f
+                        managerPatchBackEnabled = true
+                        onManagerPatchPageVisibleChange(true)
+                        showManagerPatchPage = true
                     }
                 )
 
@@ -248,6 +246,7 @@ fun RuntimeHomeScreen(
             ) {
                 AbkRootPatchScreen(
                     rootGranted = state.rootGranted,
+                    hasNativeManagerPermission = state.hasNativeManagerPermission,
                     runtimeVariant = state.abkRuntimeStatus?.manager?.variant.orEmpty(),
                     backgroundUri = state.customBackgroundUri,
                     backgroundImageEnabled = state.backgroundImageEnabled,
@@ -568,7 +567,7 @@ private fun RuntimeStatusHeader(
     onRefresh: () -> Unit,
     onOpenManagerPatch: (() -> Unit)? = null
 ) {
-    val clickableModifier = if (runtimeStatus != null && onOpenManagerPatch != null) {
+    val clickableModifier = if (onOpenManagerPatch != null) {
         Modifier.clickable(onClick = onOpenManagerPatch)
     } else {
         Modifier

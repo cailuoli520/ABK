@@ -321,11 +321,11 @@ private fun AbkMainScaffold(
     var managerPatchPageVisible by rememberSaveable { mutableStateOf(false) }
     var lastBackAt by remember { mutableStateOf(0L) }
     val runtimeNativeManagerActive = state.hasNativeManagerPermission
-    val visibleTabs = remember(state.runtimeNavigationEnabled, runtimeNativeManagerActive) {
+    val visibleTabs = remember(state.runtimeNavigationEnabled, state.rootGranted, runtimeNativeManagerActive) {
         if (state.runtimeNavigationEnabled) {
             buildList {
                 add(AbkTab.RuntimeHome)
-                add(AbkTab.InstalledModules)
+                if (state.rootGranted) add(AbkTab.InstalledModules)
                 if (runtimeNativeManagerActive) add(AbkTab.RootAuth)
                 add(AbkTab.Settings)
             }
@@ -538,7 +538,11 @@ private fun AbkMainScaffold(
                         onThemePageVisibleChange = { settingsThemePageVisible = it },
                         onOpenInstalledModules = {
                             if (!state.runtimeNavigationEnabled) vm.setRuntimeNavigationEnabled(true)
-                            selectedTab = AbkTab.InstalledModules
+                            selectedTab = if (state.rootGranted) {
+                                AbkTab.InstalledModules
+                            } else {
+                                AbkTab.RuntimeHome
+                            }
                         }
                     )
                 }
