@@ -53,7 +53,13 @@ object RootUtils {
 
     private data class BootPatchArgsResolution(
         val args: List<String>,
-        val warnings: List<String>
+        val warnings: List<String>,
+        val error: String? = null
+    )
+
+    private data class BootPatchCandidate(
+        val binary: KsudBinary,
+        val support: BootPatchOptionSupport
     )
 
     private data class BundledKsudMetadata(
@@ -400,21 +406,31 @@ object RootUtils {
                 }
             }
             val requiresRootShell = flash || sourceBoot == null
-            val userlandKsud = resolveUserlandKsud(context)
+            val userlandCandidate = selectBootPatchCandidate(
+                candidates = listUserlandKsudCandidates(context),
+                allowShell = allowShell,
+                enableAdb = enableAdb,
+                supportResolver = { ksud -> detectBootPatchOptionSupport(ksud.path) }
+            )
             val result = when {
-                !requiresRootShell && userlandKsud != null -> {
-                    val support = detectBootPatchOptionSupport(userlandKsud.path)
+                !requiresRootShell && userlandCandidate != null -> {
+                    val userlandKsud = userlandCandidate.binary
                     val resolvedArgs = resolveBootPatchArgs(
                         baseArgs = baseArgs,
                         allowShell = allowShell,
                         enableAdb = enableAdb,
-                        support = support
+                        support = userlandCandidate.support,
+                        sourceLabel = userlandKsud.source.label
                     )
                     onOutput?.invoke("[ABK] 使用${userlandKsud.source.label} ksud: ${userlandKsud.path}")
                     if (userlandKsud.source != KsudSource.EMBEDDED) {
                         onOutput?.invoke("[ABK] 内置 SukiSU-Ultra ksud 不可用，已回退到${userlandKsud.source.label} ksud。")
                     }
                     resolvedArgs.warnings.forEach { onOutput?.invoke(it) }
+                    resolvedArgs.error?.let { error ->
+                        onOutput?.invoke(error)
+                        return@runCatching BootPatchResult(false, listOf(error), null)
+                    }
                     runLocalCommand(
                         listOf(userlandKsud.path) + resolvedArgs.args,
                         timeoutSeconds = 300L,
@@ -426,6 +442,7 @@ object RootUtils {
                     allowShell = allowShell,
                     enableAdb = enableAdb,
                     requiresRootShell = requiresRootShell,
+                    context = context,
                     onOutput = onOutput
                 )
                 requiresRootShell -> ShellResult(false, listOf("该安装方式需要 Root 权限。"))
@@ -1333,18 +1350,24 @@ object RootUtils {
         allowShell: Boolean,
         enableAdb: Boolean,
         requiresRootShell: Boolean,
+        context: Context,
         onOutput: ((String) -> Unit)? = null
     ): ShellResult {
         return try {
             createRootShell(timeoutSeconds = 300L).use { shell ->
-                val rootKsud = resolveRootShellKsudBinary(shell)
-                    ?: return ShellResult(false, listOf("未找到 ksud"))
-                val support = detectBootPatchOptionSupport(shell, rootKsud.path)
+                val rootCandidate = selectBootPatchCandidate(
+                    candidates = listUserlandKsudCandidates(context),
+                    allowShell = allowShell,
+                    enableAdb = enableAdb,
+                    supportResolver = { ksud -> detectBootPatchOptionSupport(shell, ksud.path) }
+                ) ?: return ShellResult(false, listOf("未找到 ksud"))
+                val rootKsud = rootCandidate.binary
                 val resolvedArgs = resolveBootPatchArgs(
                     baseArgs = baseArgs,
                     allowShell = allowShell,
                     enableAdb = enableAdb,
-                    support = support
+                    support = rootCandidate.support,
+                    sourceLabel = rootKsud.source.label
                 )
 
                 if (requiresRootShell) {
@@ -1357,6 +1380,10 @@ object RootUtils {
                     onOutput?.invoke("[ABK] 内置 SukiSU-Ultra ksud 不可用，已回退到${rootKsud.source.label} ksud")
                 }
                 resolvedArgs.warnings.forEach { onOutput?.invoke(it) }
+                resolvedArgs.error?.let { error ->
+                    onOutput?.invoke(error)
+                    return ShellResult(false, listOf(error))
+                }
 
                 val command = resolvedArgs.args.joinToString(" ") { shellQuote(it) }
                 execWithShell(
@@ -1374,29 +1401,6 @@ object RootUtils {
             onOutput?.invoke(line)
             ShellResult(false, listOf(line))
         }
-    }
-
-    private fun resolveRootShellKsudBinary(shell: Shell): KsudBinary? {
-        val result = execWithShell(
-            shell,
-            withManagerShellHelpers(
-                """
-                    ksud_path=${'$'}(abk_find_ksud)
-                    [ -n "${'$'}ksud_path" ] || exit 127
-                    printf '%s\n' "${'$'}ksud_path"
-                    abk_ksud_source "${'$'}ksud_path"
-                """.trimIndent()
-            ),
-            normalizeOutput = false
-        )
-        val path = result.output.getOrNull(0)?.trim().orEmpty()
-        val source = when (result.output.getOrNull(1)?.trim()) {
-            "embedded" -> KsudSource.EMBEDDED
-            "data_adb" -> KsudSource.DATA_ADB
-            "system" -> KsudSource.SYSTEM
-            else -> null
-        }
-        return if (path.isBlank() || source == null) null else KsudBinary(path, source)
     }
 
     private fun detectBootPatchOptionSupport(ksudPath: String): BootPatchOptionSupport {
@@ -1430,25 +1434,63 @@ object RootUtils {
         baseArgs: List<String>,
         allowShell: Boolean,
         enableAdb: Boolean,
-        support: BootPatchOptionSupport
+        support: BootPatchOptionSupport,
+        sourceLabel: String
     ): BootPatchArgsResolution {
         val args = baseArgs.toMutableList()
         val warnings = mutableListOf<String>()
+        val unsupported = mutableListOf<String>()
         if (allowShell) {
             if (support.allowShell) {
                 args += "--allow-shell"
             } else {
-                warnings += "[ABK] 当前 ksud 不支持 --allow-shell，已忽略“总是给 shell 授予 root 权限”。"
+                unsupported += "--allow-shell"
             }
         }
         if (enableAdb) {
             if (support.enableAdbd) {
                 args += "--enable-adbd"
             } else {
-                warnings += "[ABK] 当前 ksud 不支持 --enable-adbd，已忽略“启动时强制启用 ADB 调试”。"
+                unsupported += "--enable-adbd"
             }
         }
-        return BootPatchArgsResolution(args = args, warnings = warnings)
+        val error = if (unsupported.isEmpty()) {
+            null
+        } else {
+            "[ABK] 当前选中的${sourceLabel} ksud 不支持 ${unsupported.joinToString("、")}，高级选项无法生效。"
+        }
+        return BootPatchArgsResolution(args = args, warnings = warnings, error = error)
+    }
+
+    private fun listUserlandKsudCandidates(context: Context): List<KsudBinary> {
+        val candidates = mutableListOf<KsudBinary>()
+        embeddedKsudPath(context)?.let { candidates += KsudBinary(it, KsudSource.EMBEDDED) }
+        File("/data/adb/ksud")
+            .takeIf { it.isFile && it.canExecute() }
+            ?.let { candidates += KsudBinary(it.absolutePath, KsudSource.DATA_ADB) }
+        resolveSystemKsudPath()?.let { path ->
+            candidates += KsudBinary(path, KsudSource.SYSTEM)
+        }
+        return candidates.distinctBy { it.path }
+    }
+
+    private fun selectBootPatchCandidate(
+        candidates: List<KsudBinary>,
+        allowShell: Boolean,
+        enableAdb: Boolean,
+        supportResolver: (KsudBinary) -> BootPatchOptionSupport
+    ): BootPatchCandidate? {
+        if (candidates.isEmpty()) return null
+        val resolved = candidates.map { binary ->
+            BootPatchCandidate(binary = binary, support = supportResolver(binary))
+        }
+        if (!allowShell && !enableAdb) {
+            return resolved.firstOrNull()
+        }
+        return resolved.firstOrNull { candidate ->
+            (!allowShell || candidate.support.allowShell) &&
+                (!enableAdb || candidate.support.enableAdbd)
+        } ?: resolved.firstOrNull()
     }
 
     private fun readBundledKsudMetadata(context: Context): BundledKsudMetadata? {
@@ -1536,12 +1578,7 @@ object RootUtils {
     }
 
     private fun resolveUserlandKsud(context: Context): KsudBinary? {
-        embeddedKsudPath(context)?.let { return KsudBinary(it, KsudSource.EMBEDDED) }
-        File("/data/adb/ksud")
-            .takeIf { it.isFile && it.canExecute() }
-            ?.let { return KsudBinary(it.absolutePath, KsudSource.DATA_ADB) }
-        return resolveSystemKsudPath()
-            ?.let { path -> KsudBinary(path, KsudSource.SYSTEM) }
+        return listUserlandKsudCandidates(context).firstOrNull()
     }
 
     private fun resolveSystemKsudPath(): String? {
