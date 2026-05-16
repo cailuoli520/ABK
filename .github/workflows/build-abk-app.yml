@@ -62,13 +62,14 @@ jobs:
 
           source_dir="$RUNNER_TEMP/sukisu-ultra"
           target_dir="$GITHUB_WORKSPACE/app/build/generated/abk-assets/main/ksud"
+          jni_target_dir="$GITHUB_WORKSPACE/app/build/generated/abk-jniLibs/main"
           cargo_target_dir="$source_dir/target"
           repo_url="${SUKISU_ULTRA_REPO%.git}"
 
-          rm -rf "$source_dir" "$target_dir"
+          rm -rf "$source_dir" "$target_dir" "$jni_target_dir"
           git clone --depth 1 --branch "$SUKISU_ULTRA_REF" "$SUKISU_ULTRA_REPO" "$source_dir"
           commit="$(git -C "$source_dir" rev-parse HEAD)"
-          mkdir -p "$target_dir"
+          mkdir -p "$target_dir" "$jni_target_dir"
 
           setup_rust_build() {
             local triple="$1"
@@ -223,7 +224,7 @@ jobs:
               exit 1
             fi
 
-            install -Dm755 "$binary" "$target_dir/$abi/ksud"
+            install -Dm755 "$binary" "$jni_target_dir/$abi/libksud.so"
             sha256="$(sha256sum "$binary" | awk '{print tolower($1)}')"
             size="$(wc -c < "$binary" | tr -d '[:space:]')"
             {

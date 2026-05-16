@@ -1298,9 +1298,9 @@ object RootUtils {
 
     private fun embeddedKsudPath(context: Context? = appContext): String? {
         val safeContext = context ?: return null
-        return synchronized(bundledKsudLock) {
-            prepareBundledKsudPath(safeContext)
-        }
+        return File(safeContext.applicationInfo.nativeLibraryDir, "libksud.so")
+            .takeIf { it.isFile && it.canExecute() }
+            ?.absolutePath
     }
 
     private fun prepareBundledKsudPath(context: Context): String? {
