@@ -84,7 +84,7 @@ android {
     }
     sourceSets {
         getByName("main") {
-            assets.srcDir(layout.buildDirectory.dir("generated/abk-assets/main"))
+            assets.srcDir("build/generated/abk-assets/main")
         }
     }
     externalNativeBuild {
