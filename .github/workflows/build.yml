@@ -871,8 +871,10 @@ jobs:
 
       - name: 修复 ReSukiSU SUSFS 源码兼容
         if: inputs.ksu_variant == 'ReSukiSU' && inputs.enable_susfs
+        working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           set -euo pipefail
+          echo "ReSukiSU SUSFS compat cwd: $(pwd)"
 
           python3 - <<'PY'
           from pathlib import Path
