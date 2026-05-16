@@ -18,6 +18,12 @@
 #endif
 
 extern "C"
+JNIEXPORT jboolean JNICALL
+Java_com_abk_kernel_utils_AbkKsuNative_hasDriverFd(JNIEnv *env, jobject) {
+    return has_driver_fd();
+}
+
+extern "C"
 JNIEXPORT jint JNICALL
 Java_com_abk_kernel_utils_AbkKsuNative_getVersion(JNIEnv *env, jobject) {
     int version = get_version();

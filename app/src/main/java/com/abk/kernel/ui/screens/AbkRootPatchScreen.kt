@@ -76,6 +76,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -112,6 +113,7 @@ private enum class LkmPatchInstallMode {
 @Composable
 fun AbkRootPatchScreen(
     rootGranted: Boolean,
+    hasNativeManagerPermission: Boolean,
     runtimeVariant: String,
     backgroundUri: String?,
     backgroundImageEnabled: Boolean,
@@ -121,14 +123,14 @@ fun AbkRootPatchScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val bundledAssets = remember(context) { RootUtils.listBundledAbkLkmAssets(context) }
-    val currentKmi = remember { RootUtils.detectCurrentKmi() }
-    val partitionOptions = remember { detectBootPartitionOptions() }
-    val defaultPartition = remember(partitionOptions) {
-        when {
-            "init_boot" in partitionOptions -> "init_boot"
-            "boot" in partitionOptions -> "boot"
-            else -> "boot"
-        }
+    val currentKmi by produceState<String?>(initialValue = null, context, rootGranted) {
+        value = withContext(Dispatchers.IO) { RootUtils.detectCurrentKmi() }
+    }
+    val partitionOptions by produceState(initialValue = emptyList<String>(), context, rootGranted) {
+        value = withContext(Dispatchers.IO) { RootUtils.listBootPatchPartitions() }
+    }
+    val defaultPartition by produceState(initialValue = "boot", context, rootGranted) {
+        value = withContext(Dispatchers.IO) { RootUtils.detectDefaultBootPartition() }
     }
 
     var selectedMode by rememberSaveable { mutableStateOf<LkmPatchInstallMode?>(null) }
@@ -158,6 +160,7 @@ fun AbkRootPatchScreen(
     var selectedLocalLkmPath by rememberSaveable { mutableStateOf("") }
     var selectedLocalLkmName by rememberSaveable { mutableStateOf("") }
     var selectedPartition by rememberSaveable { mutableStateOf(defaultPartition) }
+    var hasCustomPartitionSelection by rememberSaveable { mutableStateOf(false) }
     var showPartitionMenu by remember { mutableStateOf(false) }
     var showAdvancedOptions by rememberSaveable { mutableStateOf(false) }
     var allowShell by rememberSaveable { mutableStateOf(false) }
@@ -168,16 +171,24 @@ fun AbkRootPatchScreen(
     var logLines by remember { mutableStateOf(emptyList<String>()) }
     var currentAction by remember { mutableStateOf("") }
 
-    val userlandKsudPath = remember(context) { RootUtils.resolveUserlandKsudPath(context) }
+    val userlandKsudPath by produceState<String?>(initialValue = null, context) {
+        value = withContext(Dispatchers.IO) { RootUtils.resolveUserlandKsudPath(context) }
+    }
+    val userlandMagiskbootPath by produceState<String?>(initialValue = null, context) {
+        value = withContext(Dispatchers.IO) { RootUtils.resolveUserlandMagiskbootPath(context) }
+    }
     val hasLocalLkm = selectedLocalLkmPath.isNotBlank()
     val activeLkmLabel = selectedLocalLkmName.takeIf { it.isNotBlank() }
         ?: selectedAsset?.let { "${it.variantLabel} · ${it.kmi}" }
         ?: ""
     val hasLkmSource = hasLocalLkm || selectedAsset != null
+    val showRootInstallModes = rootGranted
+    val hasUserlandKsud = userlandKsudPath != null
+    val hasUserlandMagiskboot = userlandMagiskbootPath != null
     val canPatchSelectedFile = selectedBootPath.isNotBlank() &&
         hasLkmSource &&
         !running &&
-        (userlandKsudPath != null || rootGranted)
+        (rootGranted || (hasUserlandKsud && hasUserlandMagiskboot))
     val canDirectInstall = rootGranted && hasLkmSource && !running
     val canFlashAnyKernel3 = rootGranted && selectedAnyKernelPath.isNotBlank() && !running
     val canProceed = when (selectedMode) {
@@ -188,14 +199,35 @@ fun AbkRootPatchScreen(
         null -> false
     }
 
-    LaunchedEffect(selectedVariant, kmiOptions) {
+    LaunchedEffect(selectedVariant, kmiOptions, currentKmi) {
         if (selectedKmi !in kmiOptions) {
             selectedKmi = currentKmi?.takeIf { it in kmiOptions } ?: kmiOptions.firstOrNull().orEmpty()
         }
     }
 
+    LaunchedEffect(defaultPartition, partitionOptions, hasCustomPartitionSelection) {
+        if (partitionOptions.isEmpty()) return@LaunchedEffect
+        if (!hasCustomPartitionSelection) {
+            selectedPartition = defaultPartition.takeIf { it in partitionOptions }
+                ?: partitionOptions.first()
+        } else if (selectedPartition !in partitionOptions) {
+            selectedPartition = defaultPartition.takeIf { it in partitionOptions }
+                ?: partitionOptions.first()
+        }
+    }
+
     LaunchedEffect(running) {
         onBackEnabledChange(!running)
+    }
+
+    LaunchedEffect(showRootInstallModes) {
+        if (!showRootInstallModes && selectedMode != null && selectedMode != LkmPatchInstallMode.SelectFile) {
+            selectedMode = null
+            patchedImagePath = ""
+            success = null
+            currentAction = ""
+            logLines = emptyList()
+        }
     }
 
     DisposableEffect(Unit) {
@@ -431,49 +463,51 @@ fun AbkRootPatchScreen(
                         bootPicker.launch(arrayOf("application/octet-stream", "image/*", "*/*"))
                     }
                 )
-                PatchDivider()
-                PatchModeRow(
-                    title = "直接安装（推荐）",
-                    subtitle = if (rootGranted) "自动识别当前 boot / init_boot 并直接修补" else "需要 Root 权限",
-                    selected = selectedMode == LkmPatchInstallMode.DirectInstall,
-                    enabled = !running && rootGranted,
-                    onClick = {
-                        selectedMode = LkmPatchInstallMode.DirectInstall
-                        patchedImagePath = ""
-                        success = null
-                        currentAction = ""
-                        logLines = emptyList()
-                    }
-                )
-                PatchDivider()
-                PatchModeRow(
-                    title = "安装到未使用的槽位（OTA 后）",
-                    subtitle = if (rootGranted) "修补并写入另一槽位" else "需要 Root 权限",
-                    selected = selectedMode == LkmPatchInstallMode.OtaInstall,
-                    enabled = !running && rootGranted,
-                    onClick = {
-                        selectedMode = LkmPatchInstallMode.OtaInstall
-                        patchedImagePath = ""
-                        success = null
-                        currentAction = ""
-                        logLines = emptyList()
-                    }
-                )
-                PatchDivider()
-                PatchModeRow(
-                    title = "AnyKernel3 内核",
-                    subtitle = selectedAnyKernelName.ifBlank { "刷入 AnyKernel3 格式的内核 zip 包" },
-                    selected = selectedMode == LkmPatchInstallMode.AnyKernel3,
-                    enabled = !running && rootGranted,
-                    onClick = {
-                        selectedMode = LkmPatchInstallMode.AnyKernel3
-                        patchedImagePath = ""
-                        success = null
-                        currentAction = ""
-                        logLines = emptyList()
-                        anyKernelPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
-                    }
-                )
+                if (showRootInstallModes) {
+                    PatchDivider()
+                    PatchModeRow(
+                        title = "直接安装（推荐）",
+                        subtitle = "自动识别当前 boot / init_boot 并直接修补",
+                        selected = selectedMode == LkmPatchInstallMode.DirectInstall,
+                        enabled = !running,
+                        onClick = {
+                            selectedMode = LkmPatchInstallMode.DirectInstall
+                            patchedImagePath = ""
+                            success = null
+                            currentAction = ""
+                            logLines = emptyList()
+                        }
+                    )
+                    PatchDivider()
+                    PatchModeRow(
+                        title = "安装到未使用的槽位（OTA 后）",
+                        subtitle = "修补并写入另一槽位",
+                        selected = selectedMode == LkmPatchInstallMode.OtaInstall,
+                        enabled = !running,
+                        onClick = {
+                            selectedMode = LkmPatchInstallMode.OtaInstall
+                            patchedImagePath = ""
+                            success = null
+                            currentAction = ""
+                            logLines = emptyList()
+                        }
+                    )
+                    PatchDivider()
+                    PatchModeRow(
+                        title = "AnyKernel3 内核",
+                        subtitle = selectedAnyKernelName.ifBlank { "刷入 AnyKernel3 格式的内核 zip 包" },
+                        selected = selectedMode == LkmPatchInstallMode.AnyKernel3,
+                        enabled = !running,
+                        onClick = {
+                            selectedMode = LkmPatchInstallMode.AnyKernel3
+                            patchedImagePath = ""
+                            success = null
+                            currentAction = ""
+                            logLines = emptyList()
+                            anyKernelPicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
+                        }
+                    )
+                }
             }
 
             PatchGroupCard {
@@ -508,6 +542,7 @@ fun AbkRootPatchScreen(
                             DropdownMenuItem(
                                 text = { Text(partitionMenuLabel(partition, defaultPartition)) },
                                 onClick = {
+                                    hasCustomPartitionSelection = true
                                     selectedPartition = partition
                                     showPartitionMenu = false
                                 }
@@ -608,6 +643,12 @@ fun AbkRootPatchScreen(
                     exit = shrinkVertically() + fadeOut()
                 ) {
                     Column {
+                        Text(
+                            text = "高级参数会直接透传给当前 APK 内置 ksud，不再做兼容探测。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                        )
                         PatchDivider()
                         PatchCheckboxItem(
                             title = "总是给 shell 授予 root 权限",
@@ -631,12 +672,11 @@ fun AbkRootPatchScreen(
             if (!hasLkmSource && selectedMode != LkmPatchInstallMode.AnyKernel3) {
                 InlineWarning("当前变体和 KMI 没有内置 LKM，请选择本地 .ko 文件。")
             }
-            if (
-                selectedMode == LkmPatchInstallMode.SelectFile &&
-                userlandKsudPath == null &&
-                !rootGranted
-            ) {
-                InlineWarning("未检测到可直接执行的内置 SukiSU-Ultra ksud 或外部 ksud；未授权 Root 时无法进行本地修补。")
+            if (selectedMode == LkmPatchInstallMode.SelectFile && !rootGranted) {
+                when {
+                    !hasUserlandKsud -> InlineWarning("当前 APK 未包含可执行的内置 SukiSU-Ultra ksud，无法无 Root 修补 boot.img。请使用带内置 ksud 的 APK，或授予 Root 后继续。")
+                    !hasUserlandMagiskboot -> InlineWarning("当前 APK 未包含可执行的内置 magiskboot，无法无 Root 解包 boot.img。请使用带内置 magiskboot 的 APK，或授予 Root 后继续。")
+                }
             }
 
             Button(
@@ -946,20 +986,6 @@ private fun isZipFile(context: Context, uri: Uri): Boolean {
     val name = displayNameForUri(context, uri)
     return uri.lastPathSegment.orEmpty().endsWith(".zip", ignoreCase = true) ||
         name.endsWith(".zip", ignoreCase = true)
-}
-
-private fun detectBootPartitionOptions(): List<String> {
-    val candidates = listOf("init_boot", "boot", "vendor_boot")
-    val detected = candidates.filter(::partitionExists)
-    return detected.ifEmpty { candidates }
-}
-
-private fun partitionExists(name: String): Boolean {
-    return listOf(
-        "/dev/block/by-name/$name",
-        "/dev/block/bootdevice/by-name/$name",
-        "/dev/block/mapper/$name"
-    ).any { File(it).exists() }
 }
 
 private fun partitionLabel(partition: String, defaultPartition: String): String =

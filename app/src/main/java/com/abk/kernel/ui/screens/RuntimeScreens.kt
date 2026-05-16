@@ -190,16 +190,15 @@ fun RuntimeHomeScreen(
             ) {
                 RuntimeStatusHeader(
                     runtimeStatus = state.abkRuntimeStatus,
+                    hasNativeManagerPermission = state.hasNativeManagerPermission,
                     loading = state.abkRuntimeLoading,
                     error = state.abkRuntimeError,
                     onRefresh = vm::refreshAbkRuntimeStatus,
                     onOpenManagerPatch = {
-                        if (state.abkRuntimeStatus != null) {
-                            managerPatchBackProgress = 0f
-                            managerPatchBackEnabled = true
-                            onManagerPatchPageVisibleChange(true)
-                            showManagerPatchPage = true
-                        }
+                        managerPatchBackProgress = 0f
+                        managerPatchBackEnabled = true
+                        onManagerPatchPageVisibleChange(true)
+                        showManagerPatchPage = true
                     }
                 )
 
@@ -247,6 +246,7 @@ fun RuntimeHomeScreen(
             ) {
                 AbkRootPatchScreen(
                     rootGranted = state.rootGranted,
+                    hasNativeManagerPermission = state.hasNativeManagerPermission,
                     runtimeVariant = state.abkRuntimeStatus?.manager?.variant.orEmpty(),
                     backgroundUri = state.customBackgroundUri,
                     backgroundImageEnabled = state.backgroundImageEnabled,
@@ -443,7 +443,11 @@ fun InstalledModulesScreen(
 
             state.abkRuntimeError?.let {
                 RuntimeErrorCard(
-                    message = if (state.abkRuntimeStatus == null) it else "操作未完成，请刷新后重试",
+                    message = if (state.abkRuntimeStatus == null || !state.hasNativeManagerPermission) {
+                        it
+                    } else {
+                        "操作未完成，请刷新后重试"
+                    },
                     onRefresh = vm::refreshAbkRuntimeStatus
                 )
             }
@@ -557,29 +561,38 @@ fun InstalledModulesScreen(
 @Composable
 private fun RuntimeStatusHeader(
     runtimeStatus: AbkRuntimeStatus?,
+    hasNativeManagerPermission: Boolean,
     loading: Boolean,
     error: String?,
     onRefresh: () -> Unit,
     onOpenManagerPatch: (() -> Unit)? = null
 ) {
-    val clickableModifier = if (runtimeStatus != null && onOpenManagerPatch != null) {
+    val clickableModifier = if (onOpenManagerPatch != null) {
         Modifier.clickable(onClick = onOpenManagerPatch)
     } else {
         Modifier
     }
     ExpressiveHeroCard(
-        title = if (runtimeStatus != null) "管理器已激活" else "管理器未激活",
+        title = when {
+            runtimeStatus != null && hasNativeManagerPermission -> "管理器已激活"
+            runtimeStatus != null -> "原生管理权限缺失"
+            else -> "管理器未激活"
+        },
         subtitle = runtimeStatus?.let {
-            val managerName = it.manager?.displayName?.takeIf { name -> name.isNotBlank() } ?: "Root"
-            "$managerName · ABK ${it.abkVersion.ifBlank { "unknown" }} · ${it.modules.size} 个模块"
+            if (!hasNativeManagerPermission && !error.isNullOrBlank()) {
+                error
+            } else {
+                val managerName = it.manager?.displayName?.takeIf { name -> name.isNotBlank() } ?: "Root"
+                "$managerName · ABK ${it.abkVersion.ifBlank { "unknown" }} · ${it.modules.size} 个模块"
+            }
         } ?: (error ?: "安装并启用支持管理器的内核后可查看运行态信息"),
-        icon = if (runtimeStatus != null) Icons.Default.CheckCircle else Icons.Default.Error,
-        containerColor = if (runtimeStatus != null) {
+        icon = if (runtimeStatus != null && hasNativeManagerPermission) Icons.Default.CheckCircle else Icons.Default.Error,
+        containerColor = if (runtimeStatus != null && hasNativeManagerPermission) {
             MaterialTheme.colorScheme.primaryContainer
         } else {
             MaterialTheme.colorScheme.surfaceVariant
         },
-        contentColor = if (runtimeStatus != null) {
+        contentColor = if (runtimeStatus != null && hasNativeManagerPermission) {
             MaterialTheme.colorScheme.onPrimaryContainer
         } else {
             MaterialTheme.colorScheme.onSurfaceVariant

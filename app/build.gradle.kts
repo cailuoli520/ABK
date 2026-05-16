@@ -88,6 +88,11 @@ android {
             jniLibs.srcDir("build/generated/abk-jniLibs/main")
         }
     }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")

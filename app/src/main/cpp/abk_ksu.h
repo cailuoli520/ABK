@@ -17,6 +17,8 @@
 
 uint32_t get_version();
 
+bool has_driver_fd();
+
 void get_full_version(char *buff, size_t size);
 
 void get_hook_type(char *buff, size_t size);
