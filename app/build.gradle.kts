@@ -3,6 +3,8 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+import java.util.Properties
+
 val githubClientId = providers.gradleProperty("ABK_GITHUB_CLIENT_ID")
     .orElse(providers.environmentVariable("ABK_GITHUB_CLIENT_ID"))
     .orElse("Ov23li8skGo6AFPBeSTh")
@@ -22,6 +24,19 @@ val hasReleaseSigning = !releaseStoreFile.orNull.isNullOrBlank() &&
     !releaseStorePassword.orNull.isNullOrBlank() &&
     !releaseKeyAlias.orNull.isNullOrBlank() &&
     !releaseKeyPassword.orNull.isNullOrBlank()
+val managerCertMetadata = Properties().apply {
+    val metadataFile = file("signing/abk-manager-cert.env")
+    if (metadataFile.isFile) {
+        metadataFile.inputStream().use(::load)
+    }
+}
+val officialManagerPackage = managerCertMetadata.getProperty("ABK_MANAGER_PACKAGE", "com.abk.kernel")
+val officialManagerCertSize = managerCertMetadata.getProperty("ABK_MANAGER_CERT_SIZE", "0")
+    .toIntOrNull() ?: 0
+val officialManagerCertSha256 = managerCertMetadata
+    .getProperty("ABK_MANAGER_CERT_SHA256", "")
+    .trim()
+    .lowercase()
 
 android {
     namespace = "com.abk.kernel"
@@ -41,6 +56,9 @@ android {
         buildConfigField("String", "SOURCE_REPO_NAME", "\"ABK\"")
         buildConfigField("String", "UPSTREAM_REPO_URL", "\"https://github.com/zzh20188/GKI_KernelSU_SUSFS\"")
         buildConfigField("String", "TOP_LEVEL_REPO_URL", "\"https://github.com/WildKernels/GKI_KernelSU_SUSFS\"")
+        buildConfigField("String", "ABK_MANAGER_PACKAGE", "\"${officialManagerPackage}\"")
+        buildConfigField("int", "ABK_MANAGER_CERT_SIZE", officialManagerCertSize.toString())
+        buildConfigField("String", "ABK_MANAGER_CERT_SHA256", "\"${officialManagerCertSha256}\"")
 
         externalNativeBuild {
             cmake {
