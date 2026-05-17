@@ -2360,7 +2360,7 @@ jobs:
           if [[ ! "$CURRENT_SUB" =~ ^[0-9]+$ ]]; then
             CURRENT_SUB=99999
           fi
-          if [[ ( "${{ inputs.ksu_variant }}" == "Official" || "${{ inputs.ksu_variant }}" == "ReSukiSU" ) && "${{ inputs.android_version }}" == "android13" && "${{ inputs.kernel_version }}" == "5.15" && "$CURRENT_SUB" -ge 74 && "$CURRENT_SUB" -le 137 ]]; then
+          if [[ ( "${{ inputs.ksu_variant }}" == "Official" || "${{ inputs.ksu_variant }}" == "ReSukiSU" ) && "${{ inputs.android_version }}" == "android13" && "${{ inputs.kernel_version }}" == "5.15" && "$CURRENT_SUB" -ge 41 && "$CURRENT_SUB" -le 137 ]]; then
             {
               echo "CONFIG_KALLSYMS=y"
               echo "CONFIG_KALLSYMS_ALL=y"
@@ -3093,7 +3093,7 @@ jobs:
 
             if [[ "${{ inputs.android_version }}" == "android13" \
               && "${{ inputs.kernel_version }}" == "5.15" \
-              && "$CURRENT_SUB" -ge 74 && "$CURRENT_SUB" -le 137 ]]; then
+              && "$CURRENT_SUB" -ge 41 && "$CURRENT_SUB" -le 137 ]]; then
               case "${{ inputs.ksu_variant }}" in
                 "Official"|"ReSukiSU")
                   echo "编译前兜底修复 ${{ inputs.ksu_variant }} 5.15 kallsyms symbol_resolver"
@@ -3102,8 +3102,8 @@ jobs:
             from textwrap import dedent
 
             VARIANT = "${{ inputs.ksu_variant }}"
-            MARKER = "ABK: Android 13 5.15.74-5.15.137 Official/ReSukiSU kallsyms lookup rewrite"
-            LEGACY_MARKER = "ABK: Android 13 5.15.74-5.15.137 Official/ReSukiSU kallsyms weak reference"
+            MARKER = "ABK: Android 13 5.15.41-5.15.137 Official/ReSukiSU kallsyms lookup rewrite"
+            LEGACY_MARKER = "ABK: Android 13 5.15.41-5.15.137 Official/ReSukiSU kallsyms weak reference"
             TARGET_SOURCE = dedent(f"""\
             // SPDX-License-Identifier: GPL-2.0-only
             /*
