@@ -115,11 +115,11 @@ fun BuildScreen(
     val osPatchOptions = remember(config.androidVersion, config.kernelVersion, config.subLevel) {
         KernelSupport.patchLevelOptions(config.androidVersion, config.kernelVersion, config.subLevel)
     }
-    val versionPreview = remember(config.version, config.kernelVersion, config.subLevel) {
-        buildVersionPreview(config)
+    val versionPreview = remember(context, config.version, config.kernelVersion, config.subLevel) {
+        buildVersionPreview(context, config)
     }
-    val buildTimePreview = remember(config.buildTime) {
-        buildTimePreview(config.buildTime)
+    val buildTimePreview = remember(context, config.buildTime) {
+        buildTimePreview(context, config.buildTime)
     }
     var showConfirmDialog by remember { mutableStateOf(false) }
     var showSavePlanDialog by remember { mutableStateOf(false) }
@@ -231,12 +231,14 @@ fun BuildScreen(
         AlertDialog(
             onDismissRequest = { showConfirmDialog = false },
             icon = { Icon(Icons.Default.Build, null) },
-            title = { Text("确认提交构建") },
+            title = { Text(stringResource(R.string.build_confirm_submit)) },
             text = {
                 val noRootScheme = config.kernelsuVariant == KSU_VARIANT_NONE
+                val enabledLabel = stringResource(R.string.build_feature_enabled)
+                val disabledLabel = stringResource(R.string.build_feature_disabled)
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("构建配置概览：", fontWeight = FontWeight.SemiBold)
-                    Text("Android ${config.androidVersion} · 内核 ${config.kernelVersion}.${config.subLevel}")
+                    Text(stringResource(R.string.build_config_overview), fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.build_kernel_line, config.androidVersion, config.kernelVersion, config.subLevel))
                     Text(
                         if (noRootScheme) {
                             "KSU: ${ksuVariantDisplayName(config.kernelsuVariant)}"
@@ -244,19 +246,43 @@ fun BuildScreen(
                             "KSU: ${config.kernelsuVariant} (${config.kernelsuBranch})"
                         }
                     )
-                    Text("补丁级别: ${config.osPatchLevel}")
-                    Text("SUSFS: ${if (!config.cancelSusfs) "启用" else "禁用"} · ZRAM: ${if (config.useZram) "启用" else "禁用"} · KPM: ${if (config.useKpm) "启用" else "禁用"}")
-                    Text("BBG: ${if (config.useBbg) "启用" else "禁用"} · DDK: ${if (config.useDdk) "启用" else "禁用"}")
-                    Text("NTsync: ${if (config.useNtsync) "启用" else "禁用"} · 网络增强: ${if (config.useNetworking) "启用" else "禁用"}")
-                    Text("虚拟化支持: ${virtualizationSupportLabel(config.virtualizationSupport)}")
+                    Text(stringResource(R.string.build_patch_level_line, config.osPatchLevel))
                     Text(
-                        "外部模块: ${
-                            if (config.useCustomExternalModules) "${config.customExternalModules.size} 个" else "未启用"
-                        }"
+                        stringResource(
+                            R.string.build_feature_line,
+                            if (!config.cancelSusfs) enabledLabel else disabledLabel,
+                            if (config.useZram) enabledLabel else disabledLabel,
+                            if (config.useKpm) enabledLabel else disabledLabel
+                        )
+                    )
+                    Text(
+                        stringResource(
+                            R.string.build_protection_line,
+                            if (config.useBbg) enabledLabel else disabledLabel,
+                            if (config.useDdk) enabledLabel else disabledLabel
+                        )
+                    )
+                    Text(
+                        stringResource(
+                            R.string.build_sync_network_line,
+                            if (config.useNtsync) enabledLabel else disabledLabel,
+                            if (config.useNetworking) enabledLabel else disabledLabel
+                        )
+                    )
+                    Text(stringResource(R.string.build_virtualization_line, virtualizationSupportLabel(config.virtualizationSupport)))
+                    Text(
+                        stringResource(
+                            R.string.build_external_modules_line,
+                            if (config.useCustomExternalModules) {
+                                stringResource(R.string.build_external_modules_count, config.customExternalModules.size)
+                            } else {
+                                disabledLabel
+                            }
+                        )
                     )
                     if (activeBuild || activeQueueCount > 0) {
                         Text(
-                            text = "当前有构建活动，此配置会加入本地队列并按顺序派发。",
+                            text = stringResource(R.string.build_active_queue_notice),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall
                         )
@@ -283,7 +309,7 @@ fun BuildScreen(
             onConfirm = {
                 vm.saveCurrentBuildPlan(savePlanName)
                 showSavePlanDialog = false
-                Toast.makeText(context, "方案已保存", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.build_plan_saved), Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -306,18 +332,18 @@ fun BuildScreen(
                     }
                     .onFailure {
                         importPlanPreview = null
-                        importPlanError = it.message ?: "方案码解析失败"
+                        importPlanError = it.message ?: context.getString(R.string.build_plan_parse_failed)
                     }
             },
             onApply = { preview ->
                 vm.importBuildPlanToCurrentConfig(preview)
                 showImportPlanDialog = false
-                Toast.makeText(context, "方案已应用", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.build_plan_applied), Toast.LENGTH_SHORT).show()
             },
             onSave = { preview ->
                 vm.importBuildPlanToLibrary(preview)
                 showImportPlanDialog = false
-                Toast.makeText(context, "方案已保存到方案库", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.build_plan_saved_library), Toast.LENGTH_SHORT).show()
             },
             onDismiss = { showImportPlanDialog = false }
         )
@@ -330,11 +356,11 @@ fun BuildScreen(
             onShare = { scope ->
                 copyTextToClipboard(
                     context = context,
-                    label = "ABK 构建方案",
+                    label = context.getString(R.string.build_plan_clipboard_label),
                     text = vm.shareBuildPlanCode(plan.config, plan.name, scope)
                 )
                 sharePlanTarget = null
-                Toast.makeText(context, "方案码已复制", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.build_plan_code_copied), Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -347,7 +373,7 @@ fun BuildScreen(
             onConfirm = {
                 vm.renameBuildPlan(plan.id, renamePlanName)
                 renamePlanTarget = null
-                Toast.makeText(context, "方案已重命名", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.build_plan_renamed), Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -359,7 +385,7 @@ fun BuildScreen(
             onConfirm = {
                 vm.deleteBuildPlan(plan.id)
                 deletePlanTarget = null
-                Toast.makeText(context, "方案已删除", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.build_plan_deleted), Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -374,7 +400,7 @@ fun BuildScreen(
                 selectedCustomModuleStages = emptyList()
             },
             icon = { Icon(Icons.Default.Extension, null) },
-            title = { Text("选择注入阶段") },
+            title = { Text(stringResource(R.string.build_select_injection_stage)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
@@ -385,7 +411,7 @@ fun BuildScreen(
                     if (metadata.version.isNotBlank() || metadata.description.isNotBlank()) {
                         Text(
                             text = buildString {
-                                if (metadata.version.isNotBlank()) append("版本: ${metadata.version}")
+                                if (metadata.version.isNotBlank()) append(stringResource(R.string.module_repo_version, metadata.version))
                                 if (metadata.version.isNotBlank() && metadata.description.isNotBlank()) appendLine()
                                 if (metadata.description.isNotBlank()) append(metadata.description)
                             },
@@ -410,7 +436,11 @@ fun BuildScreen(
                                 }
                             )
                             Text(
-                                text = if (stage in recommendedStages) "$stage（推荐）" else stage,
+                                text = if (stage in recommendedStages) {
+                                    "$stage${stringResource(R.string.build_recommended_suffix)}"
+                                } else {
+                                    stage
+                                },
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
@@ -429,7 +459,7 @@ fun BuildScreen(
                     },
                     enabled = selectedStages.isNotEmpty()
                 ) {
-                    Text("添加所选")
+                    Text(stringResource(R.string.module_repo_add_selected))
                 }
             },
             dismissButton = {
@@ -444,7 +474,7 @@ fun BuildScreen(
                             }
                         }
                     ) {
-                        Text("全部阶段")
+                        Text(stringResource(R.string.module_repo_all_stages))
                     }
                     TextButton(
                         onClick = {
@@ -467,11 +497,11 @@ fun BuildScreen(
                 editingCustomModuleStages = emptyList()
             },
             icon = { Icon(Icons.Default.Edit, null) },
-            title = { Text("编辑注入阶段") },
+            title = { Text(stringResource(R.string.build_edit_injection_stage)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        text = group.displayName(),
+                        text = group.displayName(stringResource(R.string.build_external_module_default)),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -511,7 +541,13 @@ fun BuildScreen(
                         editingCustomModuleStages = emptyList()
                     }
                 ) {
-                    Text(if (editingCustomModuleStages.isEmpty()) "移除模块" else "保存")
+                    Text(
+                        if (editingCustomModuleStages.isEmpty()) {
+                            stringResource(R.string.build_remove_module)
+                        } else {
+                            stringResource(R.string.build_save)
+                        }
+                    )
                 }
             },
             dismissButton = {
@@ -531,14 +567,14 @@ fun BuildScreen(
         AlertDialog(
             onDismissRequest = { vm.dismissWorkflowEnablementPrompt() },
             icon = { Icon(Icons.Default.OpenInBrowser, null) },
-            title = { Text("需要启用工作流") },
+            title = { Text(stringResource(R.string.build_workflow_required)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("提交构建前，ABK 无法确认或启用 GitHub Actions 构建工作流。")
-                    Text("请在浏览器中登录 GitHub，并确认当前账号有此 Fork 仓库的 Actions/Workflow 权限。")
-                    Text("打开页面后，如果看到 Enable workflow 或启用工作流，请手动启用，再返回 ABK 重新提交构建。")
+                    Text(stringResource(R.string.build_workflow_required_desc_1))
+                    Text(stringResource(R.string.build_workflow_required_desc_2))
+                    Text(stringResource(R.string.build_workflow_required_desc_3))
                     Text(
-                        text = "检查结果：${prompt.message}",
+                        text = stringResource(R.string.build_workflow_check_result, prompt.message),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -553,12 +589,12 @@ fun BuildScreen(
                 ) {
                     Icon(Icons.Default.OpenInBrowser, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("打开 Actions 页面")
+                    Text(stringResource(R.string.build_open_actions_page))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { vm.dismissWorkflowEnablementPrompt() }) {
-                    Text("稍后处理")
+                    Text(stringResource(R.string.build_handle_later))
                 }
             }
         )
@@ -637,10 +673,9 @@ fun BuildScreen(
                 }
             }
 
-            // ── 内核版本配置 ──────────────────────────────────────────────
-            SectionCard(title = "内核版本配置") {
+            SectionCard(section = BuildSection.KernelVersion) {
                 DropdownField(
-                    label = "Android 版本",
+                    label = stringResource(R.string.build_android_version),
                     value = config.androidVersion,
                     options = KernelSupport.androidVersions(),
                     recommendedValue = recommended?.androidVersion,
@@ -656,7 +691,7 @@ fun BuildScreen(
                     }
                 )
                 DropdownField(
-                    label = "内核版本",
+                    label = stringResource(R.string.build_kernel_version),
                     value = config.kernelVersion,
                     options = KernelSupport.kernelVersions(),
                     recommendedValue = recommended?.kernelVersion,
@@ -672,7 +707,7 @@ fun BuildScreen(
                     }
                 )
                 DropdownField(
-                    label = "子版本号",
+                    label = stringResource(R.string.build_sub_level),
                     value = config.subLevel,
                     options = subLevelOptions,
                     recommendedValue = recommended
@@ -685,7 +720,7 @@ fun BuildScreen(
                     }
                 )
                 DropdownField(
-                    label = "安全补丁级别",
+                    label = stringResource(R.string.build_security_patch_level),
                     value = config.osPatchLevel,
                     options = osPatchOptions,
                     recommendedValue = recommended
@@ -704,20 +739,23 @@ fun BuildScreen(
                         value = config.revision,
                         onValueChange = { vm.updateBuildConfig(config.copy(revision = it)) },
                         label = {
-                            Text(recommended?.revision?.let { "修订版本（推荐：$it）" } ?: "修订版本 (5.10 专用)")
+                            Text(
+                                recommended?.revision?.let {
+                                    stringResource(R.string.build_revision_recommended, it)
+                                } ?: stringResource(R.string.build_revision_510)
+                            )
                         },
-                        placeholder = { Text("如: r11") },
+                        placeholder = { Text(stringResource(R.string.build_revision_placeholder)) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
                 }
             }
 
-            // ── KernelSU 配置 ────────────────────────────────────────────
-            SectionCard(title = "KernelSU 配置") {
+            SectionCard(section = BuildSection.KernelSu) {
                 val noRootScheme = config.kernelsuVariant == KSU_VARIANT_NONE
                 DropdownField(
-                    label = "KernelSU 变体",
+                    label = stringResource(R.string.build_kernelsu_variant),
                     value = config.kernelsuVariant,
                     options = ksuVariantOptions,
                     onSelect = {
@@ -726,13 +764,13 @@ fun BuildScreen(
                 )
                 if (noRootScheme) {
                     Text(
-                        text = "不注入任何 Root 授权方案；KSU 分支、SUSFS 和 KPM 会自动关闭。",
+                        text = stringResource(R.string.build_no_root_scheme_desc),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
                     DropdownField(
-                        label = "KSU 分支",
+                        label = stringResource(R.string.build_ksu_branch),
                         value = KernelSupport.normalizeKsuBranch(config.kernelsuBranch),
                         options = ksuBranchOptions,
                         onSelect = {
@@ -744,56 +782,54 @@ fun BuildScreen(
                 }
             }
 
-            // ── 功能开关 ─────────────────────────────────────────────────
-            SectionCard(title = "功能开关") {
+            SectionCard(section = BuildSection.Features) {
                 val noRootScheme = config.kernelsuVariant == KSU_VARIANT_NONE
-                SwitchRow("启用 SUSFS", !config.cancelSusfs, enabled = !noRootScheme) {
+                SwitchRow(stringResource(R.string.build_enable_susfs), !config.cancelSusfs, enabled = !noRootScheme) {
                     vm.updateBuildConfig(KernelSupport.normalize(config.copy(cancelSusfs = !it)))
                 }
-                SwitchRow("启用 ZRAM 增强算法", config.useZram) {
+                SwitchRow(stringResource(R.string.build_enable_zram), config.useZram) {
                     vm.updateBuildConfig(config.copy(useZram = it))
                 }
-                SwitchRow("启用 BBG 防格机", config.useBbg) {
+                SwitchRow(stringResource(R.string.build_enable_bbg), config.useBbg) {
                     vm.updateBuildConfig(config.copy(useBbg = it))
                 }
-                SwitchRow("启用 DDK 防格机 LSM", config.useDdk) {
+                SwitchRow(stringResource(R.string.build_enable_ddk), config.useDdk) {
                     vm.updateBuildConfig(config.copy(useDdk = it))
                 }
-                SwitchRow("启用 NTsync 补丁", config.useNtsync) {
+                SwitchRow(stringResource(R.string.build_enable_ntsync), config.useNtsync) {
                     vm.updateBuildConfig(config.copy(useNtsync = it))
                 }
-                SwitchRow("启用网络增强 (IPSet + BBR)", config.useNetworking) {
+                SwitchRow(stringResource(R.string.build_enable_networking), config.useNetworking) {
                     vm.updateBuildConfig(config.copy(useNetworking = it))
                 }
-                SwitchRow("启用 KPM 功能", config.useKpm, enabled = !noRootScheme) {
+                SwitchRow(stringResource(R.string.build_enable_kpm), config.useKpm, enabled = !noRootScheme) {
                     vm.updateBuildConfig(config.copy(useKpm = it))
                 }
-                SwitchRow("启用 Re-Kernel 驱动 (测试)", config.useRekernel) {
+                SwitchRow(stringResource(R.string.build_enable_rekernel), config.useRekernel) {
                     vm.updateBuildConfig(config.copy(useRekernel = it))
                 }
                 DropdownField(
-                    label = "虚拟化支持",
+                    label = stringResource(R.string.build_virtualization_support),
                     value = config.virtualizationSupport,
                     options = virtualizationSupportOptions,
                     onSelect = { vm.updateBuildConfig(config.copy(virtualizationSupport = it)) }
                 )
-                SwitchRow("启用一加 8E 支持", config.suppOp) {
+                SwitchRow(stringResource(R.string.build_enable_oneplus_8e), config.suppOp) {
                     vm.updateBuildConfig(config.copy(suppOp = it))
                 }
             }
 
-            // ── ZRAM 扩展选项 ────────────────────────────────────────────
             AnimatedVisibility(config.useZram) {
-                SectionCard(title = "ZRAM 扩展选项") {
-                    SwitchRow("启用完整算法支持 (LZO/LZ4/ZSTD 等)", config.zramFullAlgo) {
+                SectionCard(section = BuildSection.ZramOptions) {
+                    SwitchRow(stringResource(R.string.build_zram_full_algo), config.zramFullAlgo) {
                         vm.updateBuildConfig(config.copy(zramFullAlgo = it))
                     }
                     if (!config.zramFullAlgo) {
                         OutlinedTextField(
                             value = config.zramExtraAlgos,
                             onValueChange = { vm.updateBuildConfig(config.copy(zramExtraAlgos = it)) },
-                            label = { Text("自定义 ZRAM 算法") },
-                            placeholder = { Text("如: lzo,lz4,deflate,zstd") },
+                            label = { Text(stringResource(R.string.build_zram_custom_algo)) },
+                            placeholder = { Text(stringResource(R.string.build_zram_algo_placeholder)) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
                         )
@@ -801,23 +837,21 @@ fun BuildScreen(
                 }
             }
 
-            // ── KPM 扩展选项 ─────────────────────────────────────────────
             AnimatedVisibility(config.useKpm) {
-                SectionCard(title = "KPM 扩展选项") {
+                SectionCard(section = BuildSection.KpmOptions) {
                     OutlinedTextField(
                         value = config.kpmPassword,
                         onValueChange = { vm.updateBuildConfig(config.copy(kpmPassword = it)) },
-                        label = { Text("KPM 超级密码 (可选)") },
-                        placeholder = { Text("留空使用默认密码") },
+                        label = { Text(stringResource(R.string.build_kpm_password)) },
+                        placeholder = { Text(stringResource(R.string.build_kpm_password_placeholder)) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
                 }
             }
 
-            // ── 自定义外部模块 ───────────────────────────────────────────
-            SectionCard(title = "自定义外部模块") {
-                SwitchRow("启用自定义外部模块", config.useCustomExternalModules) {
+            SectionCard(section = BuildSection.CustomModules) {
+                SwitchRow(stringResource(R.string.build_enable_custom_modules), config.useCustomExternalModules) {
                     vm.updateBuildConfig(config.copy(useCustomExternalModules = it))
                 }
                 AnimatedVisibility(config.useCustomExternalModules) {
@@ -826,7 +860,7 @@ fun BuildScreen(
                         val manualGroups = customModuleGroups.filter { it.catalogModule == null }
                         if (catalogGroups.isNotEmpty()) {
                             Text(
-                                text = "从模块仓库添加",
+                                text = stringResource(R.string.build_add_from_module_repo),
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -839,8 +873,11 @@ fun BuildScreen(
                                         exit = fadeOut() + shrinkVertically()
                                     ) {
                                         ExpressiveListItem(
-                                            title = group.displayName(),
-                                            subtitle = group.subtitle(),
+                                            title = group.displayName(stringResource(R.string.build_external_module_default)),
+                                            subtitle = group.subtitle(
+                                                noStageLabel = stringResource(R.string.build_stage_none),
+                                                sourcePrefix = stringResource(R.string.build_source_list, "%s")
+                                            ),
                                             leadingIcon = Icons.Default.CheckCircle,
                                             trailingContent = {
                                                 Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -850,7 +887,7 @@ fun BuildScreen(
                                                             editingCustomModuleStages = group.stages
                                                         }
                                                     ) {
-                                                        Icon(Icons.Default.Edit, contentDescription = "编辑模块阶段")
+                                                        Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.build_edit_injection_stage))
                                                     }
                                                     IconButton(
                                                         onClick = {
@@ -866,7 +903,7 @@ fun BuildScreen(
                                                         },
                                                         enabled = group.key !in removingCustomModuleKeys
                                                     ) {
-                                                        Icon(Icons.Default.Delete, contentDescription = "删除模块")
+                                                        Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.build_remove_module))
                                                     }
                                                 }
                                             }
@@ -878,7 +915,7 @@ fun BuildScreen(
 
                         if (manualGroups.isNotEmpty()) {
                             Text(
-                                text = "手动添加",
+                                text = stringResource(R.string.build_manual_add),
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -891,8 +928,11 @@ fun BuildScreen(
                                         exit = fadeOut() + shrinkVertically()
                                     ) {
                                         ExpressiveListItem(
-                                            title = group.displayName(),
-                                            subtitle = group.subtitle(),
+                                            title = group.displayName(stringResource(R.string.build_external_module_default)),
+                                            subtitle = group.subtitle(
+                                                noStageLabel = stringResource(R.string.build_stage_none),
+                                                sourcePrefix = stringResource(R.string.build_source_list, "%s")
+                                            ),
                                             leadingIcon = Icons.Default.Extension,
                                             trailingContent = {
                                                 Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -902,7 +942,7 @@ fun BuildScreen(
                                                             editingCustomModuleStages = group.stages
                                                         }
                                                     ) {
-                                                        Icon(Icons.Default.Edit, contentDescription = "编辑模块阶段")
+                                                        Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.build_edit_injection_stage))
                                                     }
                                                     IconButton(
                                                         onClick = {
@@ -918,7 +958,7 @@ fun BuildScreen(
                                                         },
                                                         enabled = group.key !in removingCustomModuleKeys
                                                     ) {
-                                                        Icon(Icons.Default.Delete, contentDescription = "删除模块")
+                                                        Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.build_remove_module))
                                                     }
                                                 }
                                             }
@@ -935,7 +975,7 @@ fun BuildScreen(
                         OutlinedTextField(
                             value = customModuleUrl,
                             onValueChange = { customModuleUrl = it },
-                            label = { Text("仓库链接") },
+                            label = { Text(stringResource(R.string.build_repo_url)) },
                             placeholder = { Text("https://github.com/user/module") },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
@@ -967,7 +1007,13 @@ fun BuildScreen(
                                 contentDescription = null
                             )
                             Spacer(Modifier.width(8.dp))
-                            Text(if (state.validatingCustomExternalModule) "检查中" else "检查模块")
+                            Text(
+                                if (state.validatingCustomExternalModule) {
+                                    stringResource(R.string.build_checking)
+                                } else {
+                                    stringResource(R.string.build_check_module)
+                                }
+                            )
                         }
 
                         state.customExternalModuleError?.let { err ->
@@ -995,7 +1041,7 @@ fun BuildScreen(
                                     IconButton(onClick = { vm.clearCustomExternalModuleError() }) {
                                         Icon(
                                             Icons.Default.Close,
-                                            contentDescription = "关闭模块错误提示",
+                                            contentDescription = stringResource(R.string.close_error),
                                             tint = MaterialTheme.colorScheme.error
                                         )
                                     }
@@ -1007,12 +1053,11 @@ fun BuildScreen(
                 }
             }
 
-            // ── 可选配置 ─────────────────────────────────────────────────
-            SectionCard(title = "可选配置") {
+            SectionCard(section = BuildSection.OptionalConfig) {
                 OutlinedTextField(
                     value = config.version,
                     onValueChange = { vm.updateBuildConfig(config.copy(version = it)) },
-                    label = { Text("自定义版本名 (可选)") },
+                    label = { Text(stringResource(R.string.build_custom_version_optional)) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -1020,8 +1065,8 @@ fun BuildScreen(
                 OutlinedTextField(
                     value = config.buildTime,
                     onValueChange = { vm.updateBuildConfig(config.copy(buildTime = it)) },
-                    label = { Text("自定义构建时间 (可选)") },
-                    placeholder = { Text("留空/N=当前 UTC 时间") },
+                    label = { Text(stringResource(R.string.build_custom_time_optional)) },
+                    placeholder = { Text(stringResource(R.string.build_time_placeholder)) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -1038,7 +1083,7 @@ fun BuildScreen(
                 Spacer(Modifier.width(8.dp))
                 Text(
                     if (activeBuild || activeQueueCount > 0 || state.buildQueueProcessing) {
-                        "加入队列"
+                        stringResource(R.string.build_add_queue)
                     } else {
                         stringResource(R.string.build_submit)
                     }
@@ -1055,7 +1100,7 @@ fun BuildScreen(
                         Spacer(Modifier.width(8.dp))
                         Text(err, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.weight(1f))
                         IconButton(onClick = { vm.clearError() }) {
-                            Icon(Icons.Default.Close, contentDescription = "关闭错误提示", tint = MaterialTheme.colorScheme.error)
+                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.close_error), tint = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
@@ -1106,10 +1151,14 @@ fun BuildScreen(
                     containerColor = Color.Transparent,
                     topBar = {
                         ExpressiveTopBar(
-                            title = if (showBuildQueuePage) "构建队列" else "方案库",
+                            title = if (showBuildQueuePage) {
+                                stringResource(R.string.build_queue_title)
+                            } else {
+                                stringResource(R.string.build_plan_library)
+                            },
                             navigationIcon = {
                                 IconButton(onClick = ::closeChildPage) {
-                                    Icon(Icons.Default.ArrowBack, contentDescription = "返回构建配置")
+                                    Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.build_back_to_config))
                                 }
                             }
                         )
@@ -1122,7 +1171,7 @@ fun BuildScreen(
                             onApply = {
                                 vm.updateBuildConfig(it.config)
                                 closeChildPage()
-                                Toast.makeText(context, "队列配置已应用，可继续修改", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.build_queue_applied), Toast.LENGTH_SHORT).show()
                             },
                             onRemove = { vm.removeBuildQueueItem(it.id) },
                             onRetry = { vm.retryBuildQueueItem(it.id) },
@@ -1138,7 +1187,7 @@ fun BuildScreen(
                             onApply = {
                                 vm.applyBuildPlan(it)
                                 closeChildPage()
-                                Toast.makeText(context, "方案已应用，可继续修改", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.build_plan_applied_edit), Toast.LENGTH_SHORT).show()
                             },
                             onShare = { sharePlanTarget = it },
                             onRename = {
@@ -1205,8 +1254,8 @@ private fun BuildPlanToolsCard(
     onImport: () -> Unit
 ) {
     ExpressiveSectionCard(
-        title = "构建方案",
-        subtitle = "保存、分享或导入当前构建配置。",
+        title = stringResource(R.string.build_plan_tools_title),
+        subtitle = stringResource(R.string.build_plan_tools_desc),
         icon = Icons.Default.FolderOpen
     ) {
         Column(
@@ -1229,7 +1278,11 @@ private fun BuildPlanToolsCard(
                 IconButton(onClick = { onExpandedChange(!expanded) }) {
                     Icon(
                         imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = if (expanded) "收起构建方案" else "展开构建方案"
+                        contentDescription = if (expanded) {
+                            stringResource(R.string.build_collapse_plan_tools)
+                        } else {
+                            stringResource(R.string.build_expand_plan_tools)
+                        }
                     )
                 }
             }
@@ -1246,7 +1299,7 @@ private fun BuildPlanToolsCard(
                         ) {
                             Icon(Icons.Default.Add, null, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("保存")
+                            Text(stringResource(R.string.build_save))
                         }
                         OutlinedButton(
                             onClick = onLibrary,
@@ -1254,7 +1307,7 @@ private fun BuildPlanToolsCard(
                         ) {
                             Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("方案库")
+                            Text(stringResource(R.string.build_library))
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1264,7 +1317,7 @@ private fun BuildPlanToolsCard(
                         ) {
                             Icon(Icons.Default.Queue, null, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("队列")
+                            Text(stringResource(R.string.build_queue_short))
                         }
                         Button(
                             onClick = onShare,
@@ -1272,7 +1325,7 @@ private fun BuildPlanToolsCard(
                         ) {
                             Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("分享")
+                            Text(stringResource(R.string.build_share))
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1282,14 +1335,26 @@ private fun BuildPlanToolsCard(
                         ) {
                             Icon(Icons.Default.Download, null, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("导入")
+                            Text(stringResource(R.string.build_import))
                         }
                     }
                     Text(
                         text = buildString {
-                            append(if (plansCount > 0) "已保存 $plansCount 个方案" else "暂无已保存方案")
+                            append(
+                                if (plansCount > 0) {
+                                    stringResource(R.string.build_saved_plans_count, plansCount)
+                                } else {
+                                    stringResource(R.string.build_no_saved_plans)
+                                }
+                            )
                             append(" · ")
-                            append(if (activeQueueCount > 0) "队列 $activeQueueCount 项，待派发 $pendingQueueCount 项" else "队列为空")
+                            append(
+                                if (activeQueueCount > 0) {
+                                    stringResource(R.string.build_queue_summary, activeQueueCount, pendingQueueCount)
+                                } else {
+                                    stringResource(R.string.build_queue_empty)
+                                }
+                            )
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1310,19 +1375,19 @@ private fun SaveBuildPlanDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Add, null) },
-        title = { Text("保存方案") },
+        title = { Text(stringResource(R.string.build_save_plan)) },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = onNameChange,
-                label = { Text("方案名称") },
+                label = { Text(stringResource(R.string.build_plan_name)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
         },
         confirmButton = {
             Button(onClick = onConfirm) {
-                Text("保存")
+                Text(stringResource(R.string.build_save))
             }
         },
         dismissButton = {
@@ -1347,14 +1412,14 @@ private fun ImportBuildPlanDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Download, null) },
-        title = { Text("导入方案") },
+        title = { Text(stringResource(R.string.build_import_plan)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = code,
                     onValueChange = onCodeChange,
-                    label = { Text("ABKP2 方案码") },
-                    placeholder = { Text("粘贴 ABKP2: 开头的方案码") },
+                    label = { Text(stringResource(R.string.build_abkp2_code)) },
+                    placeholder = { Text(stringResource(R.string.build_abkp2_placeholder)) },
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 3,
                     maxLines = 5
@@ -1382,15 +1447,15 @@ private fun ImportBuildPlanDialog(
                     onClick = onParse,
                     enabled = code.isNotBlank()
                 ) {
-                    Text("解析")
+                    Text(stringResource(R.string.build_parse))
                 }
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = { onSave(preview) }) {
-                        Text("保存")
+                        Text(stringResource(R.string.build_save))
                     }
                     Button(onClick = { onApply(preview) }) {
-                        Text("应用")
+                        Text(stringResource(R.string.build_apply))
                     }
                 }
             }
@@ -1412,16 +1477,16 @@ private fun ShareBuildPlanScopeDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Share, null) },
-        title = { Text("分享方案") },
+        title = { Text(stringResource(R.string.build_share_plan)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 ExpressiveListItem(
-                    title = plan.name.ifBlank { "当前方案" },
+                    title = plan.name.ifBlank { stringResource(R.string.build_current_plan) },
                     subtitle = buildPlanSummary(plan.config),
                     leadingIcon = Icons.Default.FolderOpen
                 )
                 Text(
-                    text = "完整方案会包含 Android、内核版本、补丁级别和功能设置；仅功能设置会在导入时保留当前页面的内核版本数据。",
+                    text = stringResource(R.string.build_share_plan_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1429,12 +1494,12 @@ private fun ShareBuildPlanScopeDialog(
         },
         confirmButton = {
             Button(onClick = { onShare(BuildPlanShareScope.FULL) }) {
-                Text("完整方案")
+                Text(stringResource(R.string.build_full_plan))
             }
         },
         dismissButton = {
             TextButton(onClick = { onShare(BuildPlanShareScope.FEATURES_ONLY) }) {
-                Text("仅功能设置")
+                Text(stringResource(R.string.build_features_only))
             }
         }
     )
@@ -1457,12 +1522,12 @@ private fun BuildPlanLibraryPage(
     ) {
         if (plans.isEmpty()) {
             ExpressiveSectionCard(
-                title = "暂无方案",
-                subtitle = "先把当前构建配置保存为方案。",
+                title = stringResource(R.string.build_no_plans),
+                subtitle = stringResource(R.string.build_no_plans_desc),
                 icon = Icons.Default.FolderOpen
             ) {
                 Text(
-                    text = "保存后可以在这里应用、分享、改名或删除。",
+                    text = stringResource(R.string.build_no_plans_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1502,7 +1567,7 @@ private fun BuildPlanLibraryItem(
             ) {
                 Icon(Icons.Default.Edit, null, modifier = Modifier.size(17.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("应用/编辑")
+                Text(stringResource(R.string.build_apply_edit))
             }
             OutlinedButton(
                 onClick = onShare,
@@ -1510,7 +1575,7 @@ private fun BuildPlanLibraryItem(
             ) {
                 Icon(Icons.Default.Share, null, modifier = Modifier.size(17.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("分享")
+                Text(stringResource(R.string.build_share))
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1520,7 +1585,7 @@ private fun BuildPlanLibraryItem(
             ) {
                 Icon(Icons.Default.Edit, null, modifier = Modifier.size(17.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("改名")
+                Text(stringResource(R.string.build_rename))
             }
             OutlinedButton(
                 onClick = onDelete,
@@ -1529,7 +1594,7 @@ private fun BuildPlanLibraryItem(
             ) {
                 Icon(Icons.Default.Delete, null, modifier = Modifier.size(17.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("删除")
+                Text(stringResource(R.string.delete))
             }
         }
     }
@@ -1554,11 +1619,11 @@ private fun BuildQueuePage(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         ExpressiveSectionCard(
-            title = "队列状态",
+            title = stringResource(R.string.build_queue_status),
             subtitle = if (queue.isEmpty()) {
-                "提交构建时会自动进入队列。"
+                stringResource(R.string.build_queue_status_desc)
             } else {
-                "共 ${queue.size} 项 · 待派发 ${queue.count { it.status == BuildQueueItemStatus.PENDING }} 项"
+                stringResource(R.string.build_queue_status_count, queue.size, queue.count { it.status == BuildQueueItemStatus.PENDING })
             },
             icon = Icons.Default.Queue
         ) {
@@ -1569,11 +1634,15 @@ private fun BuildQueuePage(
                 ) {
                     Icon(Icons.Default.Delete, null, modifier = Modifier.size(17.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("清理已结束项")
+                    Text(stringResource(R.string.build_clear_finished))
                 }
             } else {
                 Text(
-                    text = if (queue.isEmpty()) "队列为空。" else "正在按顺序派发构建。",
+                    text = if (queue.isEmpty()) {
+                        stringResource(R.string.build_queue_empty)
+                    } else {
+                        stringResource(R.string.build_dispatching_in_order)
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1582,12 +1651,12 @@ private fun BuildQueuePage(
 
         if (queue.isEmpty()) {
             ExpressiveSectionCard(
-                title = "暂无队列项",
-                subtitle = "当前构建进行中时再次提交，会自动排到这里。",
+                title = stringResource(R.string.build_no_queue_items),
+                subtitle = stringResource(R.string.build_no_queue_items_desc),
                 icon = Icons.Default.Inbox
             ) {
                 Text(
-                    text = "队列项保存完整构建配置，后续修改当前页面不会影响已排队项。",
+                    text = stringResource(R.string.build_queue_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1620,7 +1689,7 @@ private fun BuildQueueItemCard(
     onCancelRun: () -> Unit
 ) {
     ExpressiveSectionCard(
-        title = "${index + 1}. ${item.name.ifBlank { "构建队列项" }}",
+        title = "${index + 1}. ${item.name.ifBlank { stringResource(R.string.build_queue_item) }}",
         subtitle = buildPlanSummary(item.config),
         icon = when (item.status) {
             BuildQueueItemStatus.PENDING -> Icons.Default.Schedule
@@ -1657,7 +1726,7 @@ private fun BuildQueueItemCard(
             ) {
                 Icon(Icons.Default.Edit, null, modifier = Modifier.size(17.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("应用")
+                Text(stringResource(R.string.build_apply))
             }
             when (item.status) {
                 BuildQueueItemStatus.PENDING -> OutlinedButton(
@@ -1667,7 +1736,7 @@ private fun BuildQueueItemCard(
                 ) {
                     Icon(Icons.Default.Delete, null, modifier = Modifier.size(17.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("移除")
+                    Text(stringResource(R.string.build_remove))
                 }
                 BuildQueueItemStatus.DISPATCHING,
                 BuildQueueItemStatus.RUNNING -> Button(
@@ -1682,7 +1751,13 @@ private fun BuildQueueItemCard(
                         Icon(Icons.Default.Cancel, null, modifier = Modifier.size(17.dp))
                     }
                     Spacer(Modifier.width(6.dp))
-                    Text(if (cancelling) "取消中" else "取消")
+                    Text(
+                        if (cancelling) {
+                            stringResource(R.string.status_cancelling)
+                        } else {
+                            stringResource(R.string.status_cancel)
+                        }
+                    )
                 }
                 BuildQueueItemStatus.FAILED,
                 BuildQueueItemStatus.CANCELLED -> Button(
@@ -1691,7 +1766,7 @@ private fun BuildQueueItemCard(
                 ) {
                     Icon(Icons.Default.Replay, null, modifier = Modifier.size(17.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("重试")
+                    Text(stringResource(R.string.retry))
                 }
                 BuildQueueItemStatus.DONE -> OutlinedButton(
                     onClick = onRemove,
@@ -1699,7 +1774,7 @@ private fun BuildQueueItemCard(
                 ) {
                     Icon(Icons.Default.Delete, null, modifier = Modifier.size(17.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("清除")
+                    Text(stringResource(R.string.clear))
                 }
             }
         }
@@ -1716,13 +1791,14 @@ private fun BuildQueueItemStatus.queueStatusColor(): Color = when (this) {
     BuildQueueItemStatus.CANCELLED -> MaterialTheme.colorScheme.outline
 }
 
+@Composable
 private fun BuildQueueItemStatus.queueStatusLabel(): String = when (this) {
-    BuildQueueItemStatus.PENDING -> "待派发"
-    BuildQueueItemStatus.DISPATCHING -> "派发中"
-    BuildQueueItemStatus.RUNNING -> "运行中"
-    BuildQueueItemStatus.DONE -> "已完成"
-    BuildQueueItemStatus.FAILED -> "失败"
-    BuildQueueItemStatus.CANCELLED -> "已取消"
+    BuildQueueItemStatus.PENDING -> stringResource(R.string.build_queue_pending)
+    BuildQueueItemStatus.DISPATCHING -> stringResource(R.string.build_queue_dispatching)
+    BuildQueueItemStatus.RUNNING -> stringResource(R.string.status_in_progress)
+    BuildQueueItemStatus.DONE -> stringResource(R.string.build_queue_done)
+    BuildQueueItemStatus.FAILED -> stringResource(R.string.status_failure)
+    BuildQueueItemStatus.CANCELLED -> stringResource(R.string.status_cancelled_label)
 }
 
 private fun BuildQueueItemStatus.isTerminalQueueStatus(): Boolean =
@@ -1738,19 +1814,19 @@ private fun RenameBuildPlanDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Edit, null) },
-        title = { Text("重命名方案") },
+        title = { Text(stringResource(R.string.build_rename_plan)) },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = onNameChange,
-                label = { Text("方案名称") },
+                label = { Text(stringResource(R.string.build_plan_name)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
         },
         confirmButton = {
             Button(onClick = onConfirm) {
-                Text("保存")
+                Text(stringResource(R.string.build_save))
             }
         },
         dismissButton = {
@@ -1770,8 +1846,8 @@ private fun DeleteBuildPlanDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Delete, null) },
-        title = { Text("删除方案") },
-        text = { Text("确定删除“${plan.name}”？此操作不会影响当前构建配置。") },
+        title = { Text(stringResource(R.string.build_delete_plan)) },
+        text = { Text(stringResource(R.string.build_delete_plan_confirm, plan.name)) },
         confirmButton = {
             Button(
                 onClick = onConfirm,
@@ -1780,7 +1856,7 @@ private fun DeleteBuildPlanDialog(
                     contentColor = MaterialTheme.colorScheme.onError
                 )
             ) {
-                Text("删除")
+                Text(stringResource(R.string.delete))
             }
         },
         dismissButton = {
@@ -1794,7 +1870,7 @@ private fun DeleteBuildPlanDialog(
 @Composable
 private fun ConfigPreviewText(preview: String) {
     ExpressiveListItem(
-        title = "配置预览",
+        title = stringResource(R.string.build_config_preview),
         subtitle = preview,
         leadingIcon = Icons.Default.Visibility,
         modifier = Modifier.fillMaxWidth()
@@ -1806,6 +1882,7 @@ private fun copyTextToClipboard(context: Context, label: String, text: String) {
     clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
 }
 
+@Composable
 private fun buildPlanSummary(config: KernelBuildConfig): String {
     val android = config.androidVersion.removePrefix("android").ifBlank { config.androidVersion }
     val enabled = mutableListOf<String>()
@@ -1814,13 +1891,13 @@ private fun buildPlanSummary(config: KernelBuildConfig): String {
     if (config.useBbg) enabled += "BBG"
     if (config.useDdk) enabled += "DDK"
     if (config.useNtsync) enabled += "NTsync"
-    if (config.useNetworking) enabled += "网络增强"
+    if (config.useNetworking) enabled += stringResource(R.string.build_feature_networking)
     if (config.useKpm) enabled += "KPM"
     if (config.useRekernel) enabled += "Re-Kernel"
     if (config.virtualizationSupport != "off") {
-        enabled += "虚拟化 ${virtualizationSupportLabel(config.virtualizationSupport)}"
+        enabled += stringResource(R.string.build_feature_virtualization, virtualizationSupportLabel(config.virtualizationSupport))
     }
-    val featureSummary = enabled.ifEmpty { listOf("基础配置") }.joinToString("、")
+    val featureSummary = enabled.ifEmpty { listOf(stringResource(R.string.build_base_config)) }.joinToString("、")
     val externalModuleCount = if (config.useCustomExternalModules) config.customExternalModules.size else 0
     val ksuSummary = if (config.kernelsuVariant == KSU_VARIANT_NONE) {
         ksuVariantDisplayName(config.kernelsuVariant)
@@ -1828,12 +1905,13 @@ private fun buildPlanSummary(config: KernelBuildConfig): String {
         "${config.kernelsuVariant} / ${config.kernelsuBranch}"
     }
     return "${config.kernelVersion}.${config.subLevel} · Android $android · ${config.osPatchLevel}\n" +
-        "$ksuSummary · $featureSummary · 外部模块 $externalModuleCount"
+        "$ksuSummary · $featureSummary · ${stringResource(R.string.build_summary_external_modules, externalModuleCount)}"
 }
 
+@Composable
 private fun buildPlanScopeLabel(scope: BuildPlanShareScope): String = when (scope) {
-    BuildPlanShareScope.FULL -> "完整方案"
-    BuildPlanShareScope.FEATURES_ONLY -> "仅功能设置"
+    BuildPlanShareScope.FULL -> stringResource(R.string.build_full_plan)
+    BuildPlanShareScope.FEATURES_ONLY -> stringResource(R.string.build_features_only)
 }
 
 @Composable
@@ -1850,7 +1928,7 @@ private fun BuildPlanHero(
 
     ExpressiveHeroCard(
         title = "${config.kernelVersion}.${config.subLevel} · ${config.androidVersion.removePrefix("android").let { "Android $it" }}",
-        subtitle = "触发 GitHub Actions 并自动整理 img、AK3、管理器和 SUSFS 模块。",
+        subtitle = stringResource(R.string.build_hero_desc),
         icon = Icons.Default.RocketLaunch,
         containerColor = MaterialTheme.colorScheme.primaryContainer,
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -1861,13 +1939,13 @@ private fun BuildPlanHero(
                 color = MaterialTheme.colorScheme.primary
             )
             ExpressiveStatusChip(
-                label = if (!config.cancelSusfs) "SUSFS 开启" else "SUSFS 关闭",
+                label = if (!config.cancelSusfs) stringResource(R.string.build_susfs_on) else stringResource(R.string.build_susfs_off),
                 icon = Icons.Default.Extension,
                 color = if (!config.cancelSusfs) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outline
             )
             if (config.virtualizationSupport != "off") {
                 ExpressiveStatusChip(
-                    label = "虚拟化支持 ${virtualizationSupportLabel(config.virtualizationSupport)}",
+                    label = stringResource(R.string.build_virtualization_chip, virtualizationSupportLabel(config.virtualizationSupport)),
                     icon = Icons.Default.Extension,
                     color = MaterialTheme.colorScheme.secondary
                 )
@@ -1881,13 +1959,13 @@ private fun BuildPlanHero(
             }
             if (config.useNetworking) {
                 ExpressiveStatusChip(
-                    label = "网络增强",
+                    label = stringResource(R.string.build_feature_networking),
                     icon = Icons.Default.Language,
                     color = MaterialTheme.colorScheme.secondary
                 )
             }
             ExpressiveStatusChip(
-                label = if (isRecommended) "设备推荐" else buildStatusLabel(status),
+                label = if (isRecommended) stringResource(R.string.build_device_recommended) else buildStatusLabel(status),
                 icon = if (isRecommended) Icons.Default.AutoAwesome else Icons.Default.RunCircle,
                 color = if (isRecommended) MaterialTheme.colorScheme.tertiary else buildStatusColor(status)
             )
@@ -1895,32 +1973,33 @@ private fun BuildPlanHero(
     )
 }
 
+@Composable
 private fun virtualizationSupportLabel(value: String): String = when (value) {
-    "off" -> "关闭"
-    "on" -> "开启"
-    "678" -> "槽位 6/7/8"
-    "123" -> "槽位 1/2/3"
-    "345" -> "槽位 3/4/5"
+    "off" -> stringResource(R.string.build_virtualization_off)
+    "on" -> stringResource(R.string.build_virtualization_on)
+    "678" -> stringResource(R.string.build_virtualization_slot_678)
+    "123" -> stringResource(R.string.build_virtualization_slot_123)
+    "345" -> stringResource(R.string.build_virtualization_slot_345)
     else -> value
 }
 
-private fun buildVersionPreview(config: KernelBuildConfig): String {
+private fun buildVersionPreview(context: Context, config: KernelBuildConfig): String {
     val compact = config.version.filterNot { it.isWhitespace() }
     if (compact.isBlank()) {
-        return "预览：留空时使用工作流默认本地版本"
+        return context.getString(R.string.build_preview_default_version)
     }
     val cleanVersion = compact.replace(Regex("""^[0-9]+\.[0-9]+\.[0-9]+"""), "")
     val preview = "${config.kernelVersion}.${config.subLevel}$cleanVersion"
-    return "预览：$preview"
+    return context.getString(R.string.build_preview_value, preview)
 }
 
-private fun buildTimePreview(buildTime: String): String {
+private fun buildTimePreview(context: Context, buildTime: String): String {
     val input = buildTime.trim()
     if (input.isBlank() || input.equals("N", ignoreCase = true)) {
         val sample = ZonedDateTime.now(ZoneOffset.UTC).format(BUILD_TIME_FORMATTER)
-        return "预览：使用工作流运行时当前 UTC（示例：$sample）"
+        return context.getString(R.string.build_preview_default_time, sample)
     }
-    return "预览：KBUILD_BUILD_TIMESTAMP=$input"
+    return context.getString(R.string.build_preview_kbuild_time, input)
 }
 
 private val BUILD_TIME_FORMATTER: DateTimeFormatter =
@@ -1938,17 +2017,25 @@ private fun BuildStatusBanner(
     val (icon, text, color) = when (status) {
         BuildStatus.QUEUED -> Triple(
             Icons.Default.Queue,
-            if (activeRunCount > 1) "$activeRunCount 个构建已排队" else "构建已排队，等待运行…",
+            if (activeRunCount > 1) {
+                stringResource(R.string.build_multiple_queued, activeRunCount)
+            } else {
+                stringResource(R.string.build_queued_waiting)
+            },
             MaterialTheme.colorScheme.tertiary
         )
         BuildStatus.IN_PROGRESS -> Triple(
             Icons.Default.RunCircle,
-            if (activeRunCount > 1) "$activeRunCount 个构建并行中…" else "构建进行中…",
+            if (activeRunCount > 1) {
+                stringResource(R.string.build_multiple_running, activeRunCount)
+            } else {
+                stringResource(R.string.build_running_ellipsis)
+            },
             MaterialTheme.colorScheme.secondary
         )
-        BuildStatus.SUCCESS -> Triple(Icons.Default.CheckCircle, "构建成功！", MaterialTheme.colorScheme.primary)
-        BuildStatus.FAILURE -> Triple(Icons.Default.Error, "构建失败", MaterialTheme.colorScheme.error)
-        BuildStatus.CANCELLED -> Triple(Icons.Default.Cancel, "构建已取消", MaterialTheme.colorScheme.outline)
+        BuildStatus.SUCCESS -> Triple(Icons.Default.CheckCircle, stringResource(R.string.build_success_bang), MaterialTheme.colorScheme.primary)
+        BuildStatus.FAILURE -> Triple(Icons.Default.Error, stringResource(R.string.build_failed), MaterialTheme.colorScheme.error)
+        BuildStatus.CANCELLED -> Triple(Icons.Default.Cancel, stringResource(R.string.build_cancelled), MaterialTheme.colorScheme.outline)
         else -> return
     }
     Card(
@@ -1990,7 +2077,13 @@ private fun BuildStatusBanner(
                         Icon(Icons.Default.Cancel, null, modifier = Modifier.size(17.dp))
                     }
                     Spacer(Modifier.width(4.dp))
-                    Text(if (cancelling) "取消中" else "取消")
+                    Text(
+                        if (cancelling) {
+                            stringResource(R.string.status_cancelling)
+                        } else {
+                            stringResource(R.string.status_cancel)
+                        }
+                    )
                 }
             }
         }
@@ -2012,7 +2105,7 @@ private fun BuildProgressCard(progress: BuildProgress) {
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Text("工作流进度", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.build_progress_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Text("${progress.percent}%", style = MaterialTheme.typography.labelLarge)
             }
             LinearProgressIndicator(
@@ -2036,7 +2129,7 @@ private fun BuildProgressCard(progress: BuildProgress) {
                     }
                     if (progress.steps.size > 8) {
                         Text(
-                            "还有 ${progress.steps.size - 8} 个步骤在后台跟踪",
+                            stringResource(R.string.build_more_steps, progress.steps.size - 8),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSecondaryContainer
                         )
@@ -2051,12 +2144,12 @@ private fun BuildProgressCard(progress: BuildProgress) {
 private fun BuildStepRow(step: BuildStepProgress) {
     val (icon, color, label) = when {
         step.status == "completed" && step.conclusion in listOf("failure", "cancelled", "timed_out") ->
-            Triple(Icons.Default.Error, MaterialTheme.colorScheme.error, "失败")
+            Triple(Icons.Default.Error, MaterialTheme.colorScheme.error, stringResource(R.string.status_failure))
         step.status == "completed" ->
-            Triple(Icons.Default.CheckCircle, MaterialTheme.colorScheme.primary, "完成")
+            Triple(Icons.Default.CheckCircle, MaterialTheme.colorScheme.primary, stringResource(R.string.build_step_done))
         step.status == "in_progress" ->
-            Triple(Icons.Default.Sync, MaterialTheme.colorScheme.tertiary, "进行中")
-        else -> Triple(Icons.Default.RadioButtonUnchecked, MaterialTheme.colorScheme.outline, "等待")
+            Triple(Icons.Default.Sync, MaterialTheme.colorScheme.tertiary, stringResource(R.string.status_in_progress))
+        else -> Triple(Icons.Default.RadioButtonUnchecked, MaterialTheme.colorScheme.outline, stringResource(R.string.build_step_waiting))
     }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Icon(icon, null, tint = color, modifier = Modifier.size(18.dp))
@@ -2124,20 +2217,21 @@ private fun groupBuildCustomExternalModules(
         }
         .sortedWith(
             compareBy<BuildCustomModuleGroup> { it.catalogModule == null }
-                .thenBy { it.displayName().lowercase(Locale.ROOT) }
+                .thenBy { it.displayName("External module").lowercase(Locale.ROOT) }
         )
 
-private fun BuildCustomModuleGroup.displayName(): String =
+private fun BuildCustomModuleGroup.displayName(defaultName: String): String =
     catalogModule?.module?.catalogModuleTitle()
-        ?: url.trim().trimEnd('/').removeSuffix(".git").substringAfterLast('/').ifBlank { "外部模块" }
+        ?: url.trim().trimEnd('/').removeSuffix(".git").substringAfterLast('/').ifBlank { defaultName }
 
-private fun BuildCustomModuleGroup.subtitle(): String {
-    val stageLabel = stages.joinToString(" + ").ifBlank { "未选择阶段" }
+private fun BuildCustomModuleGroup.subtitle(noStageLabel: String, sourcePrefix: String): String {
+    val stageLabel = stages.joinToString(" + ").ifBlank { noStageLabel }
     val catalog = catalogModule
     return if (catalog != null) {
         buildString {
             append(stageLabel)
-            append(" · 来源 ${catalog.sources.joinToString(", ")}")
+            append(" · ")
+            append(sourcePrefix.replace("%s", catalog.sources.joinToString(", ")))
             if (catalog.module.version.isNotBlank()) append(" · v${catalog.module.version}")
             appendLine()
             append(catalog.module.description.ifBlank { catalog.module.repoUrl })
@@ -2147,26 +2241,44 @@ private fun BuildCustomModuleGroup.subtitle(): String {
     }
 }
 
+private enum class BuildSection {
+    KernelVersion,
+    KernelSu,
+    Features,
+    ZramOptions,
+    KpmOptions,
+    CustomModules,
+    OptionalConfig
+}
+
 @Composable
-fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
+private fun SectionCard(section: BuildSection, content: @Composable ColumnScope.() -> Unit) {
     ExpressiveSectionCard(
-        title = title,
-        subtitle = when (title) {
-            "内核版本配置" -> "优先使用设备识别出的推荐参数，避免手动填错版本线。"
-            "KernelSU 配置" -> "选择内核权限方案和对应分支。"
-            "功能开关" -> "按需开启模块能力，越少改动越利于排查问题。"
-            "ZRAM 扩展选项" -> "为内存压缩算法加入额外内核支持。"
-            "KPM 扩展选项" -> "用于 KPM 功能的可选安全参数。"
-            "自定义外部模块" -> "按阶段执行外部仓库根目录的 setup.sh。"
-            else -> "这些字段会被保存，下次打开不会重置。"
+        title = when (section) {
+            BuildSection.KernelVersion -> stringResource(R.string.build_kernel_version_config)
+            BuildSection.KernelSu -> stringResource(R.string.build_kernelsu_config)
+            BuildSection.Features -> stringResource(R.string.build_features)
+            BuildSection.ZramOptions -> stringResource(R.string.build_zram_options)
+            BuildSection.KpmOptions -> stringResource(R.string.build_kpm_options)
+            BuildSection.CustomModules -> stringResource(R.string.build_custom_modules)
+            BuildSection.OptionalConfig -> stringResource(R.string.build_optional_config)
         },
-        icon = when (title) {
-            "内核版本配置" -> Icons.Default.Memory
-            "KernelSU 配置" -> Icons.Default.Shield
-            "功能开关" -> Icons.Default.Tune
-            "ZRAM 扩展选项" -> Icons.Default.Compress
-            "KPM 扩展选项" -> Icons.Default.Key
-            "自定义外部模块" -> Icons.Default.Extension
+        subtitle = when (section) {
+            BuildSection.KernelVersion -> stringResource(R.string.build_section_kernel_desc)
+            BuildSection.KernelSu -> stringResource(R.string.build_section_ksu_desc)
+            BuildSection.Features -> stringResource(R.string.build_section_features_desc)
+            BuildSection.ZramOptions -> stringResource(R.string.build_section_zram_desc)
+            BuildSection.KpmOptions -> stringResource(R.string.build_section_kpm_desc)
+            BuildSection.CustomModules -> stringResource(R.string.build_section_custom_modules_desc)
+            BuildSection.OptionalConfig -> stringResource(R.string.build_section_default_desc)
+        },
+        icon = when (section) {
+            BuildSection.KernelVersion -> Icons.Default.Memory
+            BuildSection.KernelSu -> Icons.Default.Shield
+            BuildSection.Features -> Icons.Default.Tune
+            BuildSection.ZramOptions -> Icons.Default.Compress
+            BuildSection.KpmOptions -> Icons.Default.Key
+            BuildSection.CustomModules -> Icons.Default.Extension
             else -> Icons.Default.Edit
         },
         content = content
@@ -2183,13 +2295,14 @@ private fun buildStatusColor(status: BuildStatus) = when (status) {
     BuildStatus.CANCELLED -> MaterialTheme.colorScheme.outline
 }
 
+@Composable
 private fun buildStatusLabel(status: BuildStatus): String = when (status) {
-    BuildStatus.IDLE -> "准备构建"
-    BuildStatus.QUEUED -> "已排队"
-    BuildStatus.IN_PROGRESS -> "构建中"
-    BuildStatus.SUCCESS -> "构建成功"
-    BuildStatus.FAILURE -> "构建失败"
-    BuildStatus.CANCELLED -> "已取消"
+    BuildStatus.IDLE -> stringResource(R.string.build_status_ready)
+    BuildStatus.QUEUED -> stringResource(R.string.build_queued)
+    BuildStatus.IN_PROGRESS -> stringResource(R.string.build_running)
+    BuildStatus.SUCCESS -> stringResource(R.string.build_success)
+    BuildStatus.FAILURE -> stringResource(R.string.build_failed)
+    BuildStatus.CANCELLED -> stringResource(R.string.build_cancelled)
 }
 
 @Composable
@@ -2207,9 +2320,10 @@ fun SwitchRow(
     )
 }
 
+@Composable
 private fun ksuVariantDisplayName(variant: String): String =
     if (variant == KSU_VARIANT_NONE) {
-        "None（无 Root 方案）"
+        stringResource(R.string.build_ksu_none)
     } else {
         variant
     }
@@ -2237,7 +2351,7 @@ fun DropdownField(
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { opt ->
-                val text = if (opt == recommendedValue) "$opt（推荐）" else opt
+                val text = if (opt == recommendedValue) "$opt${stringResource(R.string.build_recommended_suffix)}" else opt
                 DropdownMenuItem(
                     text = { Text(text) },
                     onClick = { onSelect(opt); expanded = false },

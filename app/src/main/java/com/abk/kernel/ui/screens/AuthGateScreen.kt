@@ -81,19 +81,19 @@ private fun RootCheckScreen(isLoading: Boolean, onRequestRoot: () -> Unit) {
             icon = Icons.Default.AdminPanelSettings,
             badge = {
                 ExpressiveStatusChip(
-                    label = "Root 权限必需",
+                    label = stringResource(R.string.root_required_badge),
                     icon = Icons.Default.Lock,
                     color = MaterialTheme.colorScheme.tertiary
                 )
             }
         )
         ExpressiveSectionCard(
-            title = "ABK 将在本机确认能力",
-            subtitle = "只在需要刷写、安装模块和检测 Root 相关能力时调用 Root。内核版本识别不依赖 Root。",
+            title = stringResource(R.string.root_local_capability_title),
+            subtitle = stringResource(R.string.root_local_capability_desc),
             icon = Icons.Default.Security
         ) {
             Text(
-                "授权后会自动进入 GitHub 登录和 fork 检查流程。",
+                stringResource(R.string.root_after_auth_flow),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -133,9 +133,9 @@ private fun LoginScreen(
         AlertDialog(
             onDismissRequest = { showConsentDialog = false },
             icon = { Icon(Icons.Default.VerifiedUser, null) },
-            title = { Text("授权 GitHub 访问") },
+            title = { Text(stringResource(R.string.github_auth_title)) },
             text = {
-                Text("ABK 将请求 repo 与 workflow 权限，用于检查/同步您的 fork，并触发内核构建工作流。")
+                Text(stringResource(R.string.github_auth_desc))
             },
             confirmButton = {
                 Button(onClick = {
@@ -160,7 +160,11 @@ private fun LoginScreen(
             contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
             badge = {
                 ExpressiveStatusChip(
-                    label = if (isPolling) "等待 GitHub 确认" else "需要 GitHub 授权",
+                    label = if (isPolling) {
+                        stringResource(R.string.github_waiting_confirm)
+                    } else {
+                        stringResource(R.string.github_auth_required)
+                    },
                     icon = if (isPolling) Icons.Default.Sync else Icons.Default.VerifiedUser,
                     color = if (isPolling) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.secondary
                 )
@@ -322,7 +326,7 @@ private fun ForkCheckScreen(
             icon = { Icon(Icons.Default.Sync, null) },
             title = { Text(stringResource(R.string.sync_title)) },
             text = {
-                Text("${stringResource(R.string.sync_desc)}\n\n落后 $behindBy 个提交。")
+                Text("${stringResource(R.string.sync_desc)}\n\n${stringResource(R.string.sync_behind_commits, behindBy)}")
             },
             confirmButton = {
                 Button(onClick = onSync) { Text(stringResource(R.string.sync_action)) }
@@ -336,8 +340,8 @@ private fun ForkCheckScreen(
     AuthShell {
         if (isLoading) {
             ExpressiveHeroCard(
-                title = "正在检查 Fork",
-                subtitle = "ABK 正在确认你的仓库、工作流和上游同步状态。",
+                title = stringResource(R.string.fork_checking_title),
+                subtitle = stringResource(R.string.fork_checking_desc),
                 icon = Icons.Default.Sync,
                 containerColor = MaterialTheme.colorScheme.tertiaryContainer,
                 contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
@@ -358,7 +362,7 @@ private fun ForkCheckScreen(
                 icon = Icons.Default.ForkRight,
                 badge = {
                     ExpressiveStatusChip(
-                        label = "将创建你的构建仓库",
+                        label = stringResource(R.string.fork_create_badge),
                         icon = Icons.Default.CallSplit,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -374,14 +378,22 @@ private fun ForkCheckScreen(
             }
         } else {
             ExpressiveHeroCard(
-                title = "仓库已准备",
-                subtitle = if (behindBy > 0) "你的 fork 落后上游 $behindBy 个提交，建议同步后再构建。" else "Fork、权限和工作流状态已通过检查。",
+                title = stringResource(R.string.fork_ready_title),
+                subtitle = if (behindBy > 0) {
+                    stringResource(R.string.fork_ready_behind, behindBy)
+                } else {
+                    stringResource(R.string.fork_ready_ok)
+                },
                 icon = Icons.Default.CheckCircle,
                 containerColor = MaterialTheme.colorScheme.secondaryContainer,
                 contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                 badge = {
                     ExpressiveStatusChip(
-                        label = if (behindBy > 0) "建议同步" else "可以进入主界面",
+                        label = if (behindBy > 0) {
+                            stringResource(R.string.fork_sync_recommended)
+                        } else {
+                            stringResource(R.string.fork_enter_main)
+                        },
                         icon = if (behindBy > 0) Icons.Default.Warning else Icons.Default.Verified,
                         color = if (behindBy > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary
                     )
@@ -409,7 +421,11 @@ private fun ErrorCard(error: String, onClearError: () -> Unit) {
                 modifier = Modifier.weight(1f)
             )
             IconButton(onClick = onClearError) {
-                Icon(Icons.Default.Close, contentDescription = "关闭错误提示", tint = MaterialTheme.colorScheme.error)
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = stringResource(R.string.close_error),
+                    tint = MaterialTheme.colorScheme.error
+                )
             }
         }
     }

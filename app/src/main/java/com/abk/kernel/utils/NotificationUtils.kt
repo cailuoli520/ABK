@@ -29,14 +29,14 @@ object NotificationUtils {
                 CHANNEL_BUILD,
                 context.getString(R.string.notif_channel_build),
                 NotificationManager.IMPORTANCE_DEFAULT
-            ).apply { description = "内核构建状态通知" }
+            ).apply { description = context.getString(R.string.notif_channel_build_desc) }
         )
         nm.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_DOWNLOAD,
                 context.getString(R.string.notif_channel_download),
                 NotificationManager.IMPORTANCE_LOW
-            ).apply { description = "构建产物下载进度" }
+            ).apply { description = context.getString(R.string.notif_channel_download_desc) }
         )
     }
 

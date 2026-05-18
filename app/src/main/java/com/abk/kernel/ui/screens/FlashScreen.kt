@@ -8,6 +8,7 @@ import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
+import androidx.annotation.StringRes
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
@@ -184,7 +185,7 @@ fun FlashScreen(
     var deleteRemoteWorkflowRun by remember { mutableStateOf(false) }
     var showFlashConfirm by remember { mutableStateOf(false) }
     var showTerminal by remember { mutableStateOf(false) }
-    var terminalTitle by remember { mutableStateOf("终端") }
+    var terminalTitle by remember { mutableStateOf(context.getString(R.string.flash_terminal)) }
     var terminalCanReboot by remember { mutableStateOf(false) }
     var terminalRunning by remember { mutableStateOf(false) }
     var terminalLog by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -205,8 +206,9 @@ fun FlashScreen(
             state.downloadedArtifacts
         }
     }
-    val workflowGroups = remember(remoteArtifacts, workflowDownloadedArtifacts) {
-        buildWorkflowGroups(remoteArtifacts, workflowDownloadedArtifacts)
+    val unlinkedWorkflowTitle = stringResource(R.string.workflow_unlinked)
+    val workflowGroups = remember(remoteArtifacts, workflowDownloadedArtifacts, unlinkedWorkflowTitle) {
+        buildWorkflowGroups(remoteArtifacts, workflowDownloadedArtifacts, unlinkedWorkflowTitle)
     }
     val recentRunById = remember(state.recentRuns) { state.recentRuns.associateBy { it.id } }
     val selectedGroup = selectedRunId?.let { id -> workflowGroups.firstOrNull { it.runId == id } }
@@ -274,7 +276,7 @@ fun FlashScreen(
     fun copyDownloadedFilePath(item: DownloadedArtifact) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText(item.name, item.filePath))
-        Toast.makeText(context, "已复制文件路径", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.flash_copy_path_done), Toast.LENGTH_SHORT).show()
     }
 
     fun appendTerminalOutput(line: String) {
@@ -286,16 +288,16 @@ fun FlashScreen(
     fun installManager(item: DownloadedArtifact) {
         if (!rootGranted) {
             showFailure(
-                "Root 未授权",
+                context.getString(R.string.flash_root_unauthorized),
                 listOf(
                     "${'$'} pm install -r ${item.name}",
-                    "当前处于部分激活状态，文件页只允许查看已下载文件。",
-                    "如需直接安装管理器应用，请先授予 Root 权限。"
+                    context.getString(R.string.flash_partial_files_only),
+                    context.getString(R.string.flash_grant_root_install_manager)
                 )
             )
             return
         }
-        terminalTitle = "安装管理器 APK"
+        terminalTitle = context.getString(R.string.flash_install_manager_apk)
         terminalCanReboot = false
         terminalRunning = true
         terminalSuccess = null
@@ -303,7 +305,7 @@ fun FlashScreen(
             "${'$'} pm install -r ${item.name}",
             "file: ${item.filePath}",
             "",
-            "等待 root shell 返回，请不要退出应用..."
+            context.getString(R.string.flash_wait_root_shell)
         )
         showTerminal = true
         scope.launch {
@@ -321,7 +323,13 @@ fun FlashScreen(
                 "file: ${item.filePath}",
                 ""
             ) + result.output.ifEmpty {
-                listOf(if (result.success) "命令执行完成，无输出。" else "命令执行失败，但未返回日志。")
+                listOf(
+                    if (result.success) {
+                        context.getString(R.string.flash_command_done_no_output)
+                    } else {
+                        context.getString(R.string.flash_command_failed_no_log)
+                    }
+                )
             }
         }
     }
@@ -329,16 +337,16 @@ fun FlashScreen(
     fun startFlash(item: DownloadedArtifact) {
         if (!rootGranted) {
             showFailure(
-                "Root 未授权",
+                context.getString(R.string.flash_root_unauthorized),
                 listOf(
                     "${'$'} ${flashCommandPreview(item)}",
-                    "当前处于部分激活状态，文件页只允许查看已下载文件。",
-                    "如需刷写或安装模块，请先授予 Root 权限。"
+                    context.getString(R.string.flash_partial_files_only),
+                    context.getString(R.string.flash_grant_root_flash)
                 )
             )
             return
         }
-        terminalTitle = flashOperationLabel(item.type)
+        terminalTitle = context.getString(flashOperationLabelRes(item.type))
         terminalCanReboot = true
         terminalRunning = true
         terminalSuccess = null
@@ -346,7 +354,7 @@ fun FlashScreen(
             "${'$'} ${flashCommandPreview(item)}",
             "file: ${item.filePath}",
             "",
-            "等待 root shell 返回，请不要退出应用..."
+            context.getString(R.string.flash_wait_root_shell)
         )
         showTerminal = true
         scope.launch {
@@ -357,7 +365,7 @@ fun FlashScreen(
                         ArtifactType.ANYKERNEL3 -> RootUtils.flashAnyKernel3(context, item.filePath, ::appendTerminalOutput)
                         ArtifactType.SUSFS_MODULE -> RootUtils.installModule(item.filePath, ::appendTerminalOutput)
                         ArtifactType.KSU_MANAGER -> RootUtils.installApk(context, item.filePath, ::appendTerminalOutput)
-                        else -> RootUtils.ShellResult(false, listOf("不支持此文件类型的自动刷写"))
+                        else -> RootUtils.ShellResult(false, listOf(context.getString(R.string.flash_unsupported_auto_flash)))
                     }
                 }.getOrElse { error ->
                     RootUtils.ShellResult(false, listOf(error.message ?: error::class.java.simpleName))
@@ -370,7 +378,13 @@ fun FlashScreen(
                 "file: ${item.filePath}",
                 ""
             ) + result.output.ifEmpty {
-                listOf(if (result.success) "命令执行完成，无输出。" else "命令执行失败，但未返回日志。")
+                listOf(
+                    if (result.success) {
+                        context.getString(R.string.flash_command_done_no_output)
+                    } else {
+                        context.getString(R.string.flash_command_failed_no_log)
+                    }
+                )
             }
         }
     }
@@ -401,11 +415,11 @@ fun FlashScreen(
         AlertDialog(
             onDismissRequest = { vm.clearError() },
             icon = { Icon(Icons.Default.Error, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text("操作失败") },
+            title = { Text(stringResource(R.string.flash_operation_failed)) },
             text = { Text(error) },
             confirmButton = {
                 TextButton(onClick = { vm.clearError() }) {
-                    Text("知道了")
+                    Text(stringResource(R.string.flash_got_it))
                 }
             }
         )
@@ -415,8 +429,8 @@ fun FlashScreen(
         AlertDialog(
             onDismissRequest = { deleteFileTarget = null },
             icon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text("删除文件") },
-            text = { Text("将删除本地文件记录和已下载文件：\n${item.name}") },
+            title = { Text(stringResource(R.string.flash_delete_file)) },
+            text = { Text(stringResource(R.string.flash_delete_file_msg, item.name)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -424,7 +438,7 @@ fun FlashScreen(
                         deleteFileTarget = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("删除") }
+                ) { Text(stringResource(R.string.delete)) }
             },
             dismissButton = {
                 TextButton(onClick = { deleteFileTarget = null }) { Text(stringResource(R.string.cancel)) }
@@ -436,16 +450,25 @@ fun FlashScreen(
         AlertDialog(
             onDismissRequest = { deleteWorkflowTarget = null },
             icon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text(if (group.runId == PREBUILT_GKI_RUN_ID) "删除预编译 GKI 文件" else "删除工作流记录") },
+            title = {
+                Text(
+                    if (group.runId == PREBUILT_GKI_RUN_ID) {
+                        stringResource(R.string.flash_delete_prebuilt_files)
+                    } else {
+                        stringResource(R.string.flash_delete_workflow_record)
+                    }
+                )
+            },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
                         if (group.runId == PREBUILT_GKI_RUN_ID) {
-                            "将删除本地已下载的预编译 GKI 文件。"
+                            stringResource(R.string.flash_delete_prebuilt_msg)
                         } else {
-                            "将删除此工作流在 ABK 中缓存的产物记录，并删除本地已下载文件。\n\n工作流 ${
+                            stringResource(
+                                R.string.flash_delete_workflow_msg,
                                 if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}"
-                            }"
+                            )
                         }
                     )
                     if (group.runId > 0) {
@@ -459,7 +482,7 @@ fun FlashScreen(
                                 checked = deleteRemoteWorkflowRun,
                                 onCheckedChange = { deleteRemoteWorkflowRun = it }
                             )
-                            Text("同时删除远程 GitHub Actions 工作流记录")
+                            Text(stringResource(R.string.flash_delete_remote_workflow))
                         }
                     }
                 }
@@ -475,7 +498,7 @@ fun FlashScreen(
                         deleteRemoteWorkflowRun = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) { Text("删除") }
+                ) { Text(stringResource(R.string.delete)) }
             },
             dismissButton = {
                 TextButton(onClick = {
@@ -531,7 +554,7 @@ fun FlashScreen(
             containerColor = Color.Transparent,
             topBar = {
                 ExpressiveTopBar(
-                    title = if (rootGranted) stringResource(R.string.flash_title) else "文件",
+                    title = if (rootGranted) stringResource(R.string.flash_title) else stringResource(R.string.flash_files_title),
                     scrollBehavior = scrollBehavior
                 )
             }
@@ -572,7 +595,7 @@ fun FlashScreen(
                             ) {
                                 Icon(Icons.Default.Refresh, null, modifier = Modifier.size(17.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text("联网刷新构建产物")
+                                Text(stringResource(R.string.flash_refresh_artifacts))
                             }
                         }
 
@@ -599,11 +622,15 @@ fun FlashScreen(
                         } else {
                             item {
                                 ExpressiveEmptyState(
-                                    title = if (rootGranted) "暂无可刷写产物" else "暂无可查看文件",
-                                    subtitle = if (rootGranted) {
-                                        "构建成功后，ABK 会联网同步并按工作流整理产物。"
+                                    title = if (rootGranted) {
+                                        stringResource(R.string.flash_empty_flash_title)
                                     } else {
-                                        "构建成功后，可在这里下载并查看产物文件。"
+                                        stringResource(R.string.flash_empty_files_title)
+                                    },
+                                    subtitle = if (rootGranted) {
+                                        stringResource(R.string.flash_empty_flash_desc)
+                                    } else {
+                                        stringResource(R.string.flash_empty_files_desc)
                                     },
                                     icon = Icons.Default.Inbox
                                 )
@@ -624,14 +651,14 @@ fun FlashScreen(
                             when {
                                 state.isLoadingPrebuiltGkiReleases -> {
                                     item {
-                                        LoadingRow("正在获取 Release")
+                                        LoadingRow(stringResource(R.string.flash_loading_release))
                                     }
                                 }
                                 state.prebuiltGkiReleases.isEmpty() -> {
                                     item {
                                         ExpressiveEmptyState(
-                                            title = "暂无预编译 GKI Release",
-                                            subtitle = "本仓库 Release 中暂未发现可浏览的版本。",
+                                            title = stringResource(R.string.flash_empty_prebuilt_title),
+                                            subtitle = stringResource(R.string.flash_empty_prebuilt_desc),
                                             icon = Icons.Default.CloudDownload
                                         )
                                     }
@@ -822,8 +849,8 @@ fun FlashScreen(
                         } else {
                             item {
                                 ExpressiveEmptyState(
-                                    title = "工作流记录不可用",
-                                    subtitle = "该工作流产物已被刷新或删除。",
+                                    title = stringResource(R.string.flash_workflow_unavailable),
+                                    subtitle = stringResource(R.string.flash_workflow_unavailable_desc),
                                     icon = Icons.Default.Inbox
                                 )
                             }
@@ -904,17 +931,17 @@ fun FlashScreen(
                             when {
                                 selectedPrebuiltAssetsLoading -> {
                                     item {
-                                        LoadingRow("正在获取 ${release.name} 的预编译 GKI")
+                                        LoadingRow(stringResource(R.string.flash_loading_prebuilt, release.name))
                                     }
                                 }
                                 filteredPrebuiltAssets.isEmpty() -> {
                                     item {
                                         ExpressiveEmptyState(
-                                            title = "未找到匹配资产",
+                                            title = stringResource(R.string.flash_no_matching_assets),
                                             subtitle = if (prebuiltFilter.onlyMatches) {
-                                                "当前 release 没有匹配筛选条件的 GKI、boot、img 或 AK3 资产。"
+                                                stringResource(R.string.flash_no_matching_assets_filtered)
                                             } else {
-                                                "当前 release 没有可识别的预编译 GKI 资产。"
+                                                stringResource(R.string.flash_no_recognized_prebuilt_assets)
                                             },
                                             icon = Icons.Default.Inbox
                                         )
@@ -945,8 +972,8 @@ fun FlashScreen(
                         } else {
                             item {
                                 ExpressiveEmptyState(
-                                    title = "Release 不可用",
-                                    subtitle = "该预编译 GKI Release 已被刷新或删除。",
+                                    title = stringResource(R.string.flash_release_unavailable),
+                                    subtitle = stringResource(R.string.flash_release_unavailable_desc),
                                     icon = Icons.Default.CloudDownload
                                 )
                             }
@@ -1076,34 +1103,34 @@ private fun FlashHero(
     rootGranted: Boolean
 ) {
     ExpressiveHeroCard(
-        title = if (rootGranted) "产物中心" else "文件中心",
+        title = if (rootGranted) stringResource(R.string.flash_artifact_center) else stringResource(R.string.flash_file_center),
         subtitle = if (rootGranted) {
-            "先选工作流，再处理内核、管理器和模块。"
+            stringResource(R.string.flash_artifact_center_desc)
         } else {
-            "部分激活状态下只提供产物下载和文件查看。"
+            stringResource(R.string.flash_file_center_desc)
         },
         icon = if (rootGranted) Icons.Default.FlashOn else Icons.Default.FolderOpen,
         containerColor = MaterialTheme.colorScheme.tertiaryContainer,
         contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
         badge = {
             ExpressiveStatusChip(
-                label = "$availableCount 个源产物",
+                label = stringResource(R.string.flash_source_artifacts_count, availableCount),
                 icon = Icons.Default.CloudDownload,
                 color = MaterialTheme.colorScheme.tertiary
             )
             ExpressiveStatusChip(
-                label = "$downloadedCount 个已下载",
+                label = stringResource(R.string.flash_downloaded_count, downloadedCount),
                 icon = Icons.Default.Inventory2,
                 color = MaterialTheme.colorScheme.secondary
             )
             ExpressiveStatusChip(
                 label = when (buildStatus) {
-                    BuildStatus.SUCCESS -> "构建成功"
-                    BuildStatus.IN_PROGRESS -> "构建中"
-                    BuildStatus.QUEUED -> "排队中"
-                    BuildStatus.FAILURE -> "构建失败"
-                    BuildStatus.CANCELLED -> "已取消"
-                    BuildStatus.IDLE -> "等待构建"
+                    BuildStatus.SUCCESS -> stringResource(R.string.build_success_bang)
+                    BuildStatus.IN_PROGRESS -> stringResource(R.string.build_running_ellipsis)
+                    BuildStatus.QUEUED -> stringResource(R.string.build_queued)
+                    BuildStatus.FAILURE -> stringResource(R.string.build_failed)
+                    BuildStatus.CANCELLED -> stringResource(R.string.build_cancelled)
+                    BuildStatus.IDLE -> stringResource(R.string.flash_build_waiting)
                 },
                 icon = Icons.Default.RunCircle,
                 color = when (buildStatus) {
@@ -1128,7 +1155,7 @@ private fun BuildParameterSummaryDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Tune, contentDescription = null) },
-        title = { Text("参数详情") },
+        title = { Text(stringResource(R.string.flash_parameter_details)) },
         text = {
             Column(
                 modifier = Modifier
@@ -1137,10 +1164,13 @@ private fun BuildParameterSummaryDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                ParameterSection("工作流") {
-                    ParameterRow("编号", if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}")
-                    ParameterRow("标题", group.runTitle)
-                    ParameterRow("产物", "${group.remote.size} 个源产物 / ${group.local.size} 个已下载")
+                ParameterSection(stringResource(R.string.flash_workflow)) {
+                    ParameterRow(stringResource(R.string.flash_number), if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}")
+                    ParameterRow(stringResource(R.string.flash_title_label), group.runTitle)
+                    ParameterRow(
+                        stringResource(R.string.flash_artifacts),
+                        stringResource(R.string.flash_artifact_counts, group.remote.size, group.local.size)
+                    )
                 }
                 when {
                     summary != null -> {
@@ -1152,7 +1182,7 @@ private fun BuildParameterSummaryDialog(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             LoadingIndicator(Modifier.size(24.dp))
-                            Text("正在读取构建信息摘要")
+                            Text(stringResource(R.string.flash_reading_build_summary))
                         }
                     }
                     error != null -> {
@@ -1164,7 +1194,7 @@ private fun BuildParameterSummaryDialog(
                     }
                     else -> {
                         Text(
-                            text = "暂无参数详情",
+                            text = stringResource(R.string.flash_no_parameter_details),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1173,10 +1203,10 @@ private fun BuildParameterSummaryDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("关闭") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
         },
         dismissButton = if (error != null && !loading) {
-            { TextButton(onClick = onRetry) { Text("重试") } }
+            { TextButton(onClick = onRetry) { Text(stringResource(R.string.retry)) } }
         } else {
             null
         }
@@ -1192,7 +1222,7 @@ private fun PrebuiltParameterSummaryDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Tune, contentDescription = null) },
-        title = { Text("参数详情") },
+        title = { Text(stringResource(R.string.flash_parameter_details)) },
         text = {
             Column(
                 modifier = Modifier
@@ -1202,16 +1232,26 @@ private fun PrebuiltParameterSummaryDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 ParameterSection("Release") {
-                    ParameterRow("名称", release.name)
+                    ParameterRow(stringResource(R.string.flash_name), release.name)
                     ParameterRow("Tag", release.tagName)
-                    ParameterRow("发布时间", releaseDateLabel(release.publishedAt))
-                    ParameterRow("资产", if (release.assetCount > 0) "${release.assetCount} 个资产" else "未知")
+                    ParameterRow(
+                        stringResource(R.string.flash_published_at),
+                        releaseDateLabel(release.publishedAt, stringResource(R.string.flash_unknown_date))
+                    )
+                    ParameterRow(
+                        stringResource(R.string.flash_assets),
+                        if (release.assetCount > 0) {
+                            stringResource(R.string.flash_asset_count, release.assetCount)
+                        } else {
+                            stringResource(R.string.flash_unknown)
+                        }
+                    )
                 }
                 if (summary != null) {
                     ParameterSummarySections(summary)
                 } else {
                     Text(
-                        text = "Release 内容中没有可解析的参数矩阵",
+                        text = stringResource(R.string.flash_release_no_matrix),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1219,43 +1259,43 @@ private fun PrebuiltParameterSummaryDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("关闭") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
         }
     )
 }
 
 @Composable
 private fun ParameterSummarySections(summary: BuildParameterSummary) {
-    ParameterSection("版本参数") {
-        ParameterRow("Android 版本", summary.androidVersion)
-        ParameterRow("内核版本", summary.kernelVersion)
-        ParameterRow("子版本号", summary.subLevel)
-        ParameterRow("补丁级别", summary.osPatchLevel)
-        ParameterRow("构建时间", summary.buildTime)
+    ParameterSection(stringResource(R.string.flash_version_params)) {
+        ParameterRow(stringResource(R.string.build_android_version), summary.androidVersion)
+        ParameterRow(stringResource(R.string.build_kernel_version), summary.kernelVersion)
+        ParameterRow(stringResource(R.string.build_sub_level), summary.subLevel)
+        ParameterRow(stringResource(R.string.runtime_patch_level), summary.osPatchLevel)
+        ParameterRow(stringResource(R.string.flash_build_time), summary.buildTime)
     }
     ParameterSection("KernelSU") {
-        ParameterRow("KSU 变体", summary.ksuVariant)
-        ParameterRow("KSU 分支", summary.ksuBranch)
-        ParameterRow("SUSFS 状态", summary.susfsEnabled)
+        ParameterRow(stringResource(R.string.flash_ksu_variant), summary.ksuVariant)
+        ParameterRow(stringResource(R.string.flash_ksu_branch), summary.ksuBranch)
+        ParameterRow(stringResource(R.string.flash_susfs_status), summary.susfsEnabled)
     }
-    ParameterSection("补丁与功能") {
-        ParameterRow("ZRAM 增强", summary.zramEnabled)
-        ParameterRow("ZRAM 完整算法", summary.zramFullAlgo)
-        ParameterRow("ZRAM 额外算法", summary.zramExtraAlgos)
-        ParameterRow("BBG 补丁", summary.bbgEnabled)
+    ParameterSection(stringResource(R.string.flash_patches_features)) {
+        ParameterRow(stringResource(R.string.flash_zram), summary.zramEnabled)
+        ParameterRow(stringResource(R.string.flash_zram_full_algo), summary.zramFullAlgo)
+        ParameterRow(stringResource(R.string.flash_zram_extra_algos), summary.zramExtraAlgos)
+        ParameterRow(stringResource(R.string.flash_bbg_patch), summary.bbgEnabled)
         ParameterRow("DDK LSM", summary.ddkLsm)
-        ParameterRow("NTsync 补丁", summary.ntsyncEnabled)
-        ParameterRow("网络增强", summary.networkingEnabled)
-        ParameterRow("KPM 功能", summary.kpmEnabled)
-        ParameterRow("KPM 密码", summary.kpmPassword)
+        ParameterRow(stringResource(R.string.flash_ntsync_patch), summary.ntsyncEnabled)
+        ParameterRow(stringResource(R.string.runtime_feature_networking), summary.networkingEnabled)
+        ParameterRow(stringResource(R.string.flash_kpm_feature), summary.kpmEnabled)
+        ParameterRow(stringResource(R.string.flash_kpm_password), summary.kpmPassword)
         ParameterRow("Re-Kernel", summary.reKernelEnabled)
-        ParameterRow("虚拟化支持", summary.virtualizationSupport)
-        ParameterRow("自定义注入", summary.customInjection)
+        ParameterRow(stringResource(R.string.runtime_virtualization), summary.virtualizationSupport)
+        ParameterRow(stringResource(R.string.flash_custom_injection), summary.customInjection)
         ParameterRow("Stock Config", summary.stockConfig)
     }
     val extraRows = summary.extraRows.orEmpty()
     if (extraRows.isNotEmpty()) {
-        ParameterSection("额外信息") {
+        ParameterSection(stringResource(R.string.flash_extra_info)) {
             extraRows.forEach { (label, value) ->
                 ParameterRow(label, value)
             }
@@ -1294,7 +1334,15 @@ private fun ParameterRow(label: String, value: String) {
             modifier = Modifier.width(96.dp)
         )
         Text(
-            text = parameterDisplayValue(value),
+            text = parameterDisplayValue(
+                value = value,
+                unknown = stringResource(R.string.flash_unknown),
+                enabled = stringResource(R.string.build_feature_enabled),
+                disabled = stringResource(R.string.build_virtualization_off),
+                none = stringResource(R.string.flash_value_none),
+                defaultValue = stringResource(R.string.flash_value_default),
+                set = stringResource(R.string.flash_value_set)
+            ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f)
@@ -1302,13 +1350,23 @@ private fun ParameterRow(label: String, value: String) {
     }
 }
 
-private fun parameterDisplayValue(value: String): String {
+private fun parameterDisplayValue(
+    value: String,
+    unknown: String,
+    enabled: String,
+    disabled: String,
+    none: String,
+    defaultValue: String,
+    set: String
+): String {
     val trimmed = value.trim()
     return when (trimmed.lowercase()) {
-        "" -> "未知"
-        "true" -> "启用"
-        "false" -> "关闭"
-        "none" -> "无"
+        "" -> unknown
+        "true" -> enabled
+        "false" -> disabled
+        "none" -> none
+        "default" -> defaultValue
+        "set" -> set
         else -> trimmed
     }
 }
@@ -1322,7 +1380,7 @@ private fun parsePrebuiltGkiParameterSummary(release: PrebuiltGkiRelease): Build
         if (key != null) {
             values[key] = sanitizeReleaseParameterValue(key, value)
         } else if (isReleaseExtraParameterLabel(label)) {
-            extraRows[label.trim()] = value.ifBlank { "无" }
+            extraRows[label.trim()] = value.ifBlank { "none" }
         }
     }
     if (values.isEmpty() && extraRows.isEmpty()) return null
@@ -1425,12 +1483,12 @@ private fun normalizeReleaseParameterLabel(label: String): String? {
 }
 
 private fun sanitizeReleaseParameterValue(key: String, value: String): String {
-    if (key != "kpmPassword") return value.ifBlank { "无" }
+    if (key != "kpmPassword") return value.ifBlank { "none" }
     val normalized = value.trim().lowercase()
     return when {
-        normalized.isBlank() -> "默认"
-        normalized in setOf("默认", "default", "无", "none", "not set") -> "默认"
-        else -> "已设置"
+        normalized.isBlank() -> "default"
+        normalized in setOf("默认", "default", "无", "none", "not set") -> "default"
+        else -> "set"
     }
 }
 
@@ -1523,7 +1581,7 @@ private fun FlashContentTabs(
             Tab(
                 selected = active == tab,
                 onClick = { onSelect(tab) },
-                text = { Text(tab.label) },
+                text = { Text(stringResource(tab.labelRes)) },
                 icon = {
                     Icon(
                         if (tab == FlashContentTab.Workflows) Icons.Default.FolderSpecial else Icons.Default.CloudDownload,
@@ -1545,9 +1603,9 @@ private fun PrebuiltReleaseListHeader(
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Icon(Icons.Default.CloudDownload, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
         Column(Modifier.weight(1f)) {
-            Text("预编译 GKI", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.flash_prebuilt_gki), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
-                "$releaseCount 个 Release · 进入子页面后筛选资产",
+                stringResource(R.string.flash_prebuilt_list_desc, releaseCount),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1555,7 +1613,7 @@ private fun PrebuiltReleaseListHeader(
         OutlinedButton(onClick = onRefresh, enabled = !isLoading) {
             Icon(Icons.Default.Refresh, null, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(4.dp))
-            Text("刷新")
+            Text(stringResource(R.string.refresh))
         }
     }
 }
@@ -1583,7 +1641,7 @@ private fun PrebuiltReleaseCard(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        "${release.tagName} · ${releaseDateLabel(release.publishedAt)}",
+                        "${release.tagName} · ${releaseDateLabel(release.publishedAt, stringResource(R.string.flash_unknown_date))}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -1596,11 +1654,15 @@ private fun PrebuiltReleaseCard(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 ExpressiveStatusChip(
-                    label = if (release.assetCount > 0) "${release.assetCount} 个资产" else "点进后加载资产",
+                    label = if (release.assetCount > 0) {
+                        stringResource(R.string.flash_asset_count, release.assetCount)
+                    } else {
+                        stringResource(R.string.flash_asset_load_later)
+                    },
                     color = MaterialTheme.colorScheme.primary
                 )
-                ExpressiveStatusChip(label = "手动下载", color = MaterialTheme.colorScheme.secondary)
-                ExpressiveStatusChip(label = "分 Release 筛选", color = MaterialTheme.colorScheme.tertiary)
+                ExpressiveStatusChip(label = stringResource(R.string.flash_manual_download), color = MaterialTheme.colorScheme.secondary)
+                ExpressiveStatusChip(label = stringResource(R.string.flash_filter_by_release), color = MaterialTheme.colorScheme.tertiary)
             }
         }
     }
@@ -1617,24 +1679,24 @@ private fun PrebuiltReleaseDetailHeader(
 ) {
     ExpressiveSectionCard(
         title = release.name,
-        subtitle = "${release.tagName} · ${releaseDateLabel(release.publishedAt)}",
+        subtitle = "${release.tagName} · ${releaseDateLabel(release.publishedAt, stringResource(R.string.flash_unknown_date))}",
         icon = Icons.Default.CloudDownload
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.flash_back))
             }
             Text(
-                text = "$visibleCount / $sourceCount 个可见资产",
+                text = stringResource(R.string.flash_visible_assets_count, visibleCount, sourceCount),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f)
             )
             IconButton(onClick = onShowParameters) {
-                Icon(Icons.Default.Tune, contentDescription = "参数详情")
+                Icon(Icons.Default.Tune, contentDescription = stringResource(R.string.flash_parameter_details))
             }
             IconButton(onClick = onRefresh) {
-                Icon(Icons.Default.Refresh, contentDescription = "刷新资产")
+                Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.refresh))
             }
         }
     }
@@ -1659,13 +1721,13 @@ private fun PrebuiltGkiFilterCard(
     }
 
     ExpressiveSectionCard(
-        title = "筛选器",
-        subtitle = "未选择的条件视为不限",
+        title = stringResource(R.string.flash_filters),
+        subtitle = stringResource(R.string.flash_filters_desc),
         icon = Icons.Default.Tune
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             PrebuiltDropdownField(
-                label = "Android 版本",
+                label = stringResource(R.string.build_android_version),
                 value = filter.androidVersion,
                 options = androidOptions,
                 onSelect = { updateFilter(filter.copy(androidVersion = it)) },
@@ -1673,14 +1735,14 @@ private fun PrebuiltGkiFilterCard(
             )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 PrebuiltDropdownField(
-                    label = "内核版本",
+                    label = stringResource(R.string.build_kernel_version),
                     value = filter.kernelVersion,
                     options = kernelOptions,
                     onSelect = { updateFilter(filter.copy(kernelVersion = it)) },
                     modifier = Modifier.weight(1f)
                 )
                 PrebuiltDropdownField(
-                    label = "小版本",
+                    label = stringResource(R.string.flash_minor_version),
                     value = filter.subLevel,
                     options = subLevelOptions,
                     onSelect = { updateFilter(filter.copy(subLevel = it)) },
@@ -1688,7 +1750,7 @@ private fun PrebuiltGkiFilterCard(
                 )
             }
             PrebuiltDropdownField(
-                label = "补丁级别",
+                label = stringResource(R.string.runtime_patch_level),
                 value = filter.osPatchLevel,
                 options = patchOptions,
                 onSelect = { updateFilter(filter.copy(osPatchLevel = it)) },
@@ -1704,7 +1766,7 @@ private fun PrebuiltGkiFilterCard(
                     checked = filter.onlyMatches,
                     onCheckedChange = { updateFilter(filter.copy(onlyMatches = it)) }
                 )
-                Text("只看匹配当前筛选条件的资产")
+                Text(stringResource(R.string.flash_only_matching_assets))
             }
         }
     }
@@ -1791,13 +1853,17 @@ private fun PrebuiltGkiAssetCard(
                 icon = artifactIcon(type),
                 title = asset.name,
                 subtitle = "${asset.releaseTag} · ${DownloadUtils.formatSize(asset.sizeBytes)}",
-                chip = if (recommended) "设备推荐" else "Release"
+                chip = if (recommended) stringResource(R.string.flash_device_recommended) else "Release"
             )
 
             when {
                 progress != null -> {
                     LinearProgressIndicator(progress = { animatedProgress }, modifier = Modifier.fillMaxWidth())
-                    Text("下载中 $progress%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            stringResource(R.string.flash_download_progress, progress),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                 }
                 downloadedFiles.isEmpty() -> {
                     Button(
@@ -1806,7 +1872,7 @@ private fun PrebuiltGkiAssetCard(
                     ) {
                         Icon(Icons.Default.Download, null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("下载预编译 GKI")
+                        Text(stringResource(R.string.flash_download_prebuilt_gki))
                     }
                 }
                 else -> {
@@ -1868,9 +1934,12 @@ private fun WorkflowRunCard(
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
                         text = if (group.runId == PREBUILT_GKI_RUN_ID) {
-                            "预编译 GKI"
+                            stringResource(R.string.flash_prebuilt_gki)
                         } else {
-                            "工作流 ${if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}"}"
+                            stringResource(
+                                R.string.flash_workflow_label,
+                                if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}"
+                            )
                         },
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold
@@ -1884,7 +1953,7 @@ private fun WorkflowRunCard(
                     )
                 }
                 IconButton(onClick = onShowParameters) {
-                    Icon(Icons.Default.Tune, contentDescription = "参数详情")
+                    Icon(Icons.Default.Tune, contentDescription = stringResource(R.string.flash_parameter_details))
                 }
                 if (active) {
                     IconButton(onClick = onCancel, enabled = !cancelling) {
@@ -1893,24 +1962,24 @@ private fun WorkflowRunCard(
                         } else {
                             Icon(
                                 Icons.Default.Cancel,
-                                contentDescription = "取消工作流",
+                                contentDescription = stringResource(R.string.flash_cancel_workflow),
                                 tint = MaterialTheme.colorScheme.error
                             )
                         }
                     }
                 }
                 IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = "删除工作流")
+                    Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.flash_delete_workflow))
                 }
             }
             Row(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                ExpressiveStatusChip(label = "$sourceCount 个源产物", color = MaterialTheme.colorScheme.primary)
-                ExpressiveStatusChip(label = "$downloadedCount 个已下载", color = MaterialTheme.colorScheme.secondary)
+                ExpressiveStatusChip(label = stringResource(R.string.flash_source_artifacts_count, sourceCount), color = MaterialTheme.colorScheme.primary)
+                ExpressiveStatusChip(label = stringResource(R.string.flash_downloaded_count, downloadedCount), color = MaterialTheme.colorScheme.secondary)
                 categories.forEach {
-                    ExpressiveStatusChip(label = it.label(), color = MaterialTheme.colorScheme.surfaceTint)
+                    ExpressiveStatusChip(label = stringResource(it.labelRes()), color = MaterialTheme.colorScheme.surfaceTint)
                 }
             }
         }
@@ -1926,28 +1995,31 @@ private fun WorkflowDetailHeader(
 ) {
     ExpressiveSectionCard(
         title = if (group.runId == PREBUILT_GKI_RUN_ID) {
-            "预编译 GKI"
+            stringResource(R.string.flash_prebuilt_gki)
         } else {
-            "工作流 ${if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}"}"
+            stringResource(
+                R.string.flash_workflow_label,
+                if (group.runNumber > 0) "#${group.runNumber}" else "#${group.runId}"
+            )
         },
         subtitle = group.runTitle,
         icon = Icons.Default.FolderSpecial
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.flash_back))
             }
             Text(
-                text = "${group.remote.size} 个源产物 / ${group.local.size} 个已下载",
+                text = stringResource(R.string.flash_artifact_counts, group.remote.size, group.local.size),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f)
             )
             IconButton(onClick = onShowParameters) {
-                Icon(Icons.Default.Tune, contentDescription = "参数详情")
+                Icon(Icons.Default.Tune, contentDescription = stringResource(R.string.flash_parameter_details))
             }
             IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = "删除工作流")
+                Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.flash_delete_workflow))
             }
         }
     }
@@ -1962,7 +2034,7 @@ private fun CategoryHeader(category: ArtifactCategory) {
     ) {
         Icon(category.icon(), null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
         Text(
-            category.label(),
+            stringResource(category.labelRes()),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1999,14 +2071,22 @@ private fun ArtifactSourceCard(
             ArtifactHeader(
                 icon = artifactIcon(type),
                 title = artifact.name,
-                subtitle = "${artifactTypeLabel(type)} · ${DownloadUtils.formatSize(artifact.sizeInBytes)}",
-                chip = if (autoDownloadEligible) "下次自动" else artifactTypeLabel(type)
+                subtitle = "${stringResource(artifactTypeLabelRes(type))} · ${DownloadUtils.formatSize(artifact.sizeInBytes)}",
+                chip = if (autoDownloadEligible) {
+                    stringResource(R.string.flash_auto_next)
+                } else {
+                    stringResource(artifactTypeLabelRes(type))
+                }
             )
 
             when {
                 progress != null -> {
                     LinearProgressIndicator(progress = { animatedProgress }, modifier = Modifier.fillMaxWidth())
-                    Text("下载中 $progress%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        stringResource(R.string.flash_download_progress, progress),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 downloadedFiles.isEmpty() -> {
                     Button(
@@ -2015,7 +2095,7 @@ private fun ArtifactSourceCard(
                     ) {
                         Icon(Icons.Default.Download, null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("下载")
+                        Text(stringResource(R.string.flash_download))
                     }
                 }
                 else -> {
@@ -2055,8 +2135,8 @@ private fun LocalOnlyArtifactCard(
             ArtifactHeader(
                 icon = artifactIcon(artifact.type),
                 title = artifact.name,
-                subtitle = "${artifactTypeLabel(artifact.type)} · ${DownloadUtils.formatSize(artifact.sizeBytes)}",
-                chip = "本地文件"
+                subtitle = "${stringResource(artifactTypeLabelRes(artifact.type))} · ${DownloadUtils.formatSize(artifact.sizeBytes)}",
+                chip = stringResource(R.string.flash_local_file)
             )
             DownloadedOutputRow(
                 artifact = artifact,
@@ -2130,7 +2210,7 @@ private fun DownloadedOutputRow(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    "${artifactTypeLabel(artifact.type)} · ${DownloadUtils.formatSize(artifact.sizeBytes)}",
+                    "${stringResource(artifactTypeLabelRes(artifact.type))} · ${DownloadUtils.formatSize(artifact.sizeBytes)}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -2138,7 +2218,7 @@ private fun DownloadedOutputRow(
             IconButton(onClick = onDelete) {
                 Icon(
                     Icons.Default.Delete,
-                    contentDescription = "删除文件",
+                    contentDescription = stringResource(R.string.flash_delete_file),
                     tint = MaterialTheme.colorScheme.error
                 )
             }
@@ -2150,7 +2230,7 @@ private fun DownloadedOutputRow(
             ) {
                 Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("复制路径")
+                Text(stringResource(R.string.flash_copy_path))
             }
             if (allowRootActions) {
                 when (artifact.type) {
@@ -2173,7 +2253,7 @@ private fun DownloadedOutputRow(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text(flashButtonLabel(artifact.type))
+                        Text(stringResource(flashButtonLabelRes(artifact.type)))
                     }
                     ArtifactType.KSU_MANAGER -> Button(
                         onClick = onInstall,
@@ -2181,7 +2261,7 @@ private fun DownloadedOutputRow(
                     ) {
                         Icon(Icons.Default.InstallMobile, null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("安装")
+                        Text(stringResource(R.string.flash_install))
                     }
                     else -> {}
                 }
@@ -2223,7 +2303,9 @@ private fun FlashTerminalDialog(
                 else -> Icon(Icons.Default.Terminal, null)
             }
         },
-        title = { Text(if (running) "正在执行 · $title" else title) },
+        title = {
+            Text(if (running) stringResource(R.string.flash_executing_title, title) else title)
+        },
         text = {
             Surface(
                 modifier = Modifier.fillMaxWidth().heightIn(min = 190.dp, max = 360.dp),
@@ -2256,7 +2338,7 @@ private fun FlashTerminalDialog(
         },
         confirmButton = {
             if (running) {
-                TextButton(onClick = {}, enabled = false) { Text("执行中") }
+                TextButton(onClick = {}, enabled = false) { Text(stringResource(R.string.flash_executing)) }
             } else {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = onClose) { Text(stringResource(R.string.close)) }
@@ -2267,7 +2349,7 @@ private fun FlashTerminalDialog(
                         ) {
                             Icon(Icons.Default.RestartAlt, null, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("重启")
+                            Text(stringResource(R.string.flash_reboot))
                         }
                     }
                 }
@@ -2278,7 +2360,8 @@ private fun FlashTerminalDialog(
 
 private fun buildWorkflowGroups(
     remoteArtifacts: List<BuildArtifact>,
-    downloadedArtifacts: List<DownloadedArtifact>
+    downloadedArtifacts: List<DownloadedArtifact>,
+    unlinkedWorkflowTitle: String
 ): List<WorkflowArtifactGroup> {
     val runIds = (remoteArtifacts.map { it.runId } + downloadedArtifacts.map { it.runId }).distinct()
     return runIds.map { runId ->
@@ -2290,7 +2373,7 @@ private fun buildWorkflowGroups(
             runId = runId,
             runTitle = firstRemote?.runTitle?.ifBlank { null }
                 ?: firstLocal?.runTitle?.ifBlank { null }
-                ?: "未关联工作流",
+                ?: unlinkedWorkflowTitle,
             runNumber = firstRemote?.runNumber ?: firstLocal?.runNumber ?: 0,
             remote = remote,
             local = local
@@ -2321,27 +2404,30 @@ private fun artifactIcon(type: ArtifactType) = when (type) {
     ArtifactType.OTHER -> Icons.Default.InsertDriveFile
 }
 
-private fun artifactTypeLabel(type: ArtifactType) = when (type) {
-    ArtifactType.KERNEL_PACKAGE -> "内核构建包"
-    ArtifactType.KERNEL_IMG -> "内核镜像"
-    ArtifactType.ANYKERNEL3 -> "AnyKernel3 刷写包"
-    ArtifactType.KSU_MANAGER -> "KernelSU 管理器"
-    ArtifactType.SUSFS_MODULE -> "SUSFS 模块"
-    ArtifactType.OTHER -> "其他文件"
+@StringRes
+private fun artifactTypeLabelRes(type: ArtifactType) = when (type) {
+    ArtifactType.KERNEL_PACKAGE -> R.string.flash_artifact_kernel_package
+    ArtifactType.KERNEL_IMG -> R.string.flash_artifact_kernel_img
+    ArtifactType.ANYKERNEL3 -> R.string.flash_artifact_anykernel3
+    ArtifactType.KSU_MANAGER -> R.string.flash_artifact_ksu_manager
+    ArtifactType.SUSFS_MODULE -> R.string.flash_artifact_susfs_module
+    ArtifactType.OTHER -> R.string.flash_artifact_other
 }
 
-private fun flashButtonLabel(type: ArtifactType) = when (type) {
-    ArtifactType.KERNEL_IMG -> "刷写"
-    ArtifactType.ANYKERNEL3 -> "刷入 AK3"
-    ArtifactType.SUSFS_MODULE -> "安装模块"
-    else -> "执行"
+@StringRes
+private fun flashButtonLabelRes(type: ArtifactType) = when (type) {
+    ArtifactType.KERNEL_IMG -> R.string.flash_button_flash
+    ArtifactType.ANYKERNEL3 -> R.string.flash_button_flash_ak3
+    ArtifactType.SUSFS_MODULE -> R.string.flash_button_install_module
+    else -> R.string.flash_button_execute
 }
 
-private fun flashOperationLabel(type: ArtifactType) = when (type) {
-    ArtifactType.KERNEL_IMG -> "刷写 boot 镜像"
-    ArtifactType.ANYKERNEL3 -> "刷入 AnyKernel3"
-    ArtifactType.SUSFS_MODULE -> "安装模块"
-    else -> "执行"
+@StringRes
+private fun flashOperationLabelRes(type: ArtifactType) = when (type) {
+    ArtifactType.KERNEL_IMG -> R.string.flash_operation_flash_boot
+    ArtifactType.ANYKERNEL3 -> R.string.flash_operation_flash_ak3
+    ArtifactType.SUSFS_MODULE -> R.string.flash_button_install_module
+    else -> R.string.flash_button_execute
 }
 
 private fun flashCommandPreview(item: DownloadedArtifact) = when (item.type) {
@@ -2361,9 +2447,9 @@ private fun flashWorkflowRoute(runId: Long) = "workflow/$runId"
 
 private fun flashPrebuiltRoute(releaseId: Long) = "prebuilt/$releaseId"
 
-private enum class FlashContentTab(val label: String) {
-    Workflows("构建产物"),
-    PrebuiltGki("预编译 GKI")
+private enum class FlashContentTab(@StringRes val labelRes: Int) {
+    Workflows(R.string.flash_tab_workflows),
+    PrebuiltGki(R.string.flash_prebuilt_gki)
 }
 
 private data class PrebuiltGkiFilter(
@@ -2406,7 +2492,9 @@ private fun prebuiltPatchOptions(androidVersion: String, kernelVersion: String, 
         .distinct()
         .sortedBy(::patchMonthIndexForUi)
 
-private fun prebuiltOptionLabel(value: String): String = value.ifBlank { "不限" }
+@Composable
+private fun prebuiltOptionLabel(value: String): String =
+    value.ifBlank { stringResource(R.string.flash_unlimited) }
 
 private fun patchMonthIndexForUi(value: String): Int {
     val parts = value.split("-")
@@ -2415,8 +2503,8 @@ private fun patchMonthIndexForUi(value: String): Int {
     return year * 12 + month
 }
 
-private fun releaseDateLabel(value: String): String =
-    value.takeIf { it.length >= 10 }?.take(10) ?: "未知日期"
+private fun releaseDateLabel(value: String, unknownDate: String): String =
+    value.takeIf { it.length >= 10 }?.take(10) ?: unknownDate
 
 private fun isPrebuiltGkiCandidateUi(asset: PrebuiltGkiAsset): Boolean {
     val lower = asset.name.lowercase()
@@ -2500,10 +2588,11 @@ private val artifactCategoryOrder = listOf(
     ArtifactCategory.MODULE
 )
 
-private fun ArtifactCategory.label(): String = when (this) {
-    ArtifactCategory.KERNEL -> "内核产物"
-    ArtifactCategory.MANAGER -> "管理器"
-    ArtifactCategory.MODULE -> "模块"
+@StringRes
+private fun ArtifactCategory.labelRes(): Int = when (this) {
+    ArtifactCategory.KERNEL -> R.string.flash_category_kernel
+    ArtifactCategory.MANAGER -> R.string.flash_category_manager
+    ArtifactCategory.MODULE -> R.string.flash_category_module
 }
 
 private fun ArtifactCategory.icon(): ImageVector = when (this) {

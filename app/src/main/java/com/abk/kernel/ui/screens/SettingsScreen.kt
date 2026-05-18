@@ -183,8 +183,8 @@ fun SettingsScreen(
         AlertDialog(
             onDismissRequest = { showLogoutDialog = false },
             icon = { Icon(Icons.Default.Logout, null) },
-            title = { Text("退出登录") },
-            text = { Text("确认退出 GitHub 账户吗？退出后需重新授权。") },
+            title = { Text(stringResource(R.string.settings_logout_title)) },
+            text = { Text(stringResource(R.string.settings_logout_message)) },
             confirmButton = {
                 Button(
                     onClick = { showLogoutDialog = false; vm.logout() },
@@ -278,7 +278,7 @@ fun SettingsScreen(
                             title = stringResource(R.string.settings_theme),
                             navigationIcon = {
                                 IconButton(onClick = ::closeThemeSettings) {
-                                    Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                                    Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.settings_back))
                                 }
                             }
                         )
@@ -336,15 +336,15 @@ fun SettingsScreen(
                     containerColor = Color.Transparent,
                     topBar = {
                         ExpressiveTopBar(
-                            title = "App Profile 模板",
+                            title = stringResource(R.string.settings_app_profile_templates),
                             navigationIcon = {
                                 IconButton(onClick = ::closeChildPage) {
-                                    Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                                    Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.settings_back))
                                 }
                             },
                             actions = {
                                 IconButton(onClick = { vm.refreshAppProfileTemplates() }) {
-                                    Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                                    Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.refresh))
                                 }
                             }
                         )
@@ -390,15 +390,15 @@ fun SettingsScreen(
                     containerColor = Color.Transparent,
                     topBar = {
                         ExpressiveTopBar(
-                            title = "工具",
+                            title = stringResource(R.string.settings_tools),
                             navigationIcon = {
                                 IconButton(onClick = ::closeChildPage) {
-                                    Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                                    Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.settings_back))
                                 }
                             },
                             actions = {
                                 IconButton(onClick = { vm.refreshManagerTools(force = true) }) {
-                                    Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                                    Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.refresh))
                                 }
                             }
                         )
@@ -489,19 +489,19 @@ private fun SettingsMainContent(
                         IconButton(onClick = onLogout) {
                             Icon(
                                 Icons.Default.Logout,
-                                contentDescription = "退出登录",
+                                contentDescription = stringResource(R.string.settings_logout_desc),
                                 tint = MaterialTheme.colorScheme.error
                             )
                         }
                     }
                 )
                 ExpressiveListItem(
-                    title = "Fork 仓库",
-                    subtitle = state.forkRepo?.fullName ?: "未 Fork",
+                    title = stringResource(R.string.settings_fork_repo),
+                    subtitle = state.forkRepo?.fullName ?: stringResource(R.string.settings_waiting_fork),
                     leadingIcon = Icons.Default.ForkRight
                 )
             } ?: ExpressiveListItem(
-                title = "未登录",
+                title = stringResource(R.string.settings_not_logged_in),
                 leadingIcon = Icons.Default.AccountCircle
             )
         }
@@ -510,14 +510,14 @@ private fun SettingsMainContent(
             SwitchSettingsItem(
                 icon = Icons.Default.Download,
                 title = stringResource(R.string.settings_auto_download),
-                subtitle = "仅对下一次新提交的构建生效，关闭后不会自动下载",
+                subtitle = stringResource(R.string.settings_auto_download_desc),
                 checked = state.autoDownload,
                 onCheckedChange = { vm.setAutoDownload(it) }
             )
             SwitchSettingsItem(
                 icon = Icons.Default.CloudDownload,
-                title = "预编译 GKI 获取与下载",
-                subtitle = "从本仓库 Release 获取预编译 GKI，下载需手动触发",
+                title = stringResource(R.string.settings_prebuilt_gki),
+                subtitle = stringResource(R.string.settings_prebuilt_gki_desc),
                 checked = state.prebuiltGkiEnabled,
                 onCheckedChange = { vm.setPrebuiltGkiEnabled(it) }
             )
@@ -540,17 +540,17 @@ private fun SettingsMainContent(
             SwitchSettingsItem(
                 icon = Icons.Default.Notifications,
                 title = stringResource(R.string.settings_notify_build),
-                subtitle = "在通知栏显示构建状态",
+                subtitle = stringResource(R.string.settings_notify_build_desc),
                 checked = state.notifyBuild,
                 onCheckedChange = { vm.setNotifyBuild(it) }
             )
         }
 
-        SettingsGroup(title = "导航") {
+        SettingsGroup(title = stringResource(R.string.settings_navigation)) {
             SwitchSettingsItem(
                 icon = Icons.Default.ArrowBack,
-                title = "应用内 M3E 返回动效",
-                subtitle = "使用 Material 3 Expressive 的页面返回动画，不依赖系统预测性返回",
+                title = stringResource(R.string.settings_predictive_back),
+                subtitle = stringResource(R.string.settings_predictive_back_desc),
                 checked = state.predictiveBackEnabled,
                 onCheckedChange = { vm.setPredictiveBackEnabled(it) }
             )
@@ -558,10 +558,15 @@ private fun SettingsMainContent(
 
         SettingsGroup(title = stringResource(R.string.settings_theme)) {
             ExpressiveListItem(
-                title = "颜色与外观",
+                title = stringResource(R.string.settings_color_appearance),
                 subtitle = "${themeModeLabel(state.themeMode)} · ${dynamicColorLabel(state.dynamicColorEnabled)}",
                 leadingIcon = Icons.Default.Palette,
-                trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = "进入颜色与外观") },
+                trailingContent = {
+                    Icon(
+                        Icons.Default.ChevronRight,
+                        contentDescription = stringResource(R.string.settings_enter_color_appearance)
+                    )
+                },
                 onClick = onOpenThemeSettings
             )
         }
@@ -573,10 +578,12 @@ private fun SettingsMainContent(
                 leadingIcon = Icons.Default.Info
             )
             ExpressiveListItem(
-                title = "关于",
-                subtitle = "项目入口、源码仓库、上游项目与致谢",
+                title = stringResource(R.string.settings_about),
+                subtitle = stringResource(R.string.settings_about_desc),
                 leadingIcon = Icons.Default.AutoAwesome,
-                trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = "进入关于") },
+                trailingContent = {
+                    Icon(Icons.Default.ChevronRight, contentDescription = stringResource(R.string.settings_enter_about))
+                },
                 onClick = onAbout
             )
         }
@@ -597,23 +604,23 @@ private fun ManagerInjectedSettingsGroup(
     val hasInjectedSettings = state.managerSettingsItems.isNotEmpty()
     if (!hasInjectedSettings && !state.managerSettingsLoading && state.managerSettingsError == null) return
 
-    SettingsGroup(title = state.managerSettingsTitle.ifBlank { "管理器设置" }) {
+    SettingsGroup(title = state.managerSettingsTitle.ifBlank { stringResource(R.string.settings_manager_settings) }) {
         when {
             state.managerSettingsLoading && !hasInjectedSettings -> {
                 ExpressiveListItem(
-                    title = "正在读取后端设置",
-                    subtitle = "从当前 KSU 后端加载可用功能",
+                    title = stringResource(R.string.settings_manager_loading_title),
+                    subtitle = stringResource(R.string.settings_manager_loading_desc),
                     leadingContent = { LoadingIndicator(Modifier.size(24.dp)) }
                 )
             }
             state.managerSettingsError != null -> {
                 ExpressiveListItem(
-                    title = "后端设置读取失败",
+                    title = stringResource(R.string.settings_manager_load_failed),
                     subtitle = state.managerSettingsError,
                     leadingIcon = Icons.Default.Error,
                     trailingContent = {
                         IconButton(onClick = { vm.refreshManagerSettings(force = true) }) {
-                            Icon(Icons.Default.Refresh, contentDescription = "重试")
+                            Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.retry))
                         }
                     }
                 )
@@ -628,7 +635,7 @@ private fun ManagerInjectedSettingsGroup(
                     subtitle = item.subtitle,
                     leadingIcon = managerSettingIcon(item.id),
                     enabled = item.enabled && !actionInFlight,
-                    trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = "进入") },
+                    trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = stringResource(R.string.settings_enter)) },
                     onClick = {
                         when (item.id) {
                             "app_profile_templates" -> onOpenAppProfileTemplates()
@@ -670,7 +677,7 @@ private fun ManagerModeSettingItem(
     } else {
         0
     }
-    val selectedLabel = options.getOrNull(selectedIndex) ?: "不可用"
+    val selectedLabel = options.getOrNull(selectedIndex) ?: stringResource(R.string.settings_unknown)
     val enabled = item.enabled && !actionInFlight && options.isNotEmpty()
     ExpressiveListItem(
         title = item.title,
@@ -745,21 +752,21 @@ private fun ManagerToolsSettingsScreen(
             .padding(horizontal = AbkScreenHorizontalPadding),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        SettingsGroup(title = "系统工具") {
+        SettingsGroup(title = stringResource(R.string.settings_system_tools)) {
             SwitchSettingsItem(
                 icon = Icons.Default.Security,
-                title = "SELinux 模式",
-                subtitle = "当前：${selinuxModeLabel(state.selinuxModeText)}",
+                title = stringResource(R.string.settings_selinux_mode),
+                subtitle = stringResource(R.string.settings_current_value, selinuxModeLabel(state.selinuxModeText)),
                 checked = state.selinuxEnforcing,
                 enabled = !state.managerToolsLoading && !selinuxBusy,
                 onCheckedChange = onSelinuxChange
             )
             ExpressiveListItem(
-                title = "Umount 路径管理",
+                title = stringResource(R.string.settings_umount_paths),
                 subtitle = if (state.umountPaths.isEmpty()) {
-                    "当前无自定义路径"
+                    stringResource(R.string.settings_umount_no_paths)
                 } else {
-                    "已配置 ${state.umountPaths.size} 条路径"
+                    stringResource(R.string.settings_umount_path_count, state.umountPaths.size)
                 },
                 leadingIcon = Icons.Default.FolderDelete,
                 trailingContent = {
@@ -768,31 +775,31 @@ private fun ManagerToolsSettingsScreen(
             )
         }
 
-        SettingsGroup(title = "授权列表") {
+        SettingsGroup(title = stringResource(R.string.settings_allowlist)) {
             ExpressiveListItem(
-                title = "备份允许列表",
-                subtitle = "选择位置导出允许列表",
+                title = stringResource(R.string.settings_backup_allowlist),
+                subtitle = stringResource(R.string.settings_backup_allowlist_desc),
                 leadingIcon = Icons.Default.CloudUpload,
                 enabled = !backupBusy,
                 trailingContent = {
                     if (backupBusy) {
                         LoadingIndicator(Modifier.size(22.dp))
                     } else {
-                        Icon(Icons.Default.ChevronRight, contentDescription = "导出")
+                        Icon(Icons.Default.ChevronRight, contentDescription = stringResource(R.string.settings_export))
                     }
                 },
                 onClick = { backupLauncher.launch("abk-root-allowlist.json") }
             )
             ExpressiveListItem(
-                title = "还原允许列表",
-                subtitle = "选择备份文件进行导入",
+                title = stringResource(R.string.settings_restore_allowlist),
+                subtitle = stringResource(R.string.settings_restore_allowlist_desc),
                 leadingIcon = Icons.Default.History,
                 enabled = !restoreBusy,
                 trailingContent = {
                     if (restoreBusy) {
                         LoadingIndicator(Modifier.size(22.dp))
                     } else {
-                        Icon(Icons.Default.ChevronRight, contentDescription = "导入")
+                        Icon(Icons.Default.ChevronRight, contentDescription = stringResource(R.string.settings_import))
                     }
                 },
                 onClick = { restoreLauncher.launch(arrayOf("application/json", "text/*", "*/*")) }
@@ -800,9 +807,9 @@ private fun ManagerToolsSettingsScreen(
         }
 
         if (state.managerToolsError != null) {
-            SettingsGroup(title = "工具状态") {
+            SettingsGroup(title = stringResource(R.string.settings_tool_status)) {
                 ExpressiveListItem(
-                    title = "操作未完成",
+                    title = stringResource(R.string.settings_operation_incomplete),
                     subtitle = state.managerToolsError,
                     leadingIcon = Icons.Default.Error
                 )
@@ -813,12 +820,13 @@ private fun ManagerToolsSettingsScreen(
     }
 }
 
+@Composable
 private fun selinuxModeLabel(mode: String): String =
     when (mode.trim().lowercase()) {
-        "enforcing" -> "强制执行"
-        "permissive" -> "宽容"
-        "disabled" -> "已禁用"
-        else -> mode.ifBlank { "未知" }
+        "enforcing" -> stringResource(R.string.settings_selinux_enforcing)
+        "permissive" -> stringResource(R.string.settings_selinux_permissive)
+        "disabled" -> stringResource(R.string.settings_selinux_disabled)
+        else -> mode.ifBlank { stringResource(R.string.settings_unknown) }
     }
 
 @Composable
@@ -850,32 +858,36 @@ private fun AppProfileTemplateSettingsScreen(
             .padding(horizontal = AbkScreenHorizontalPadding),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        SettingsGroup(title = "本地模板") {
+        SettingsGroup(title = stringResource(R.string.settings_local_templates)) {
             when {
                 state.appProfileTemplatesLoading -> ExpressiveListItem(
-                    title = "正在读取模板",
-                    subtitle = "从 ReSukiSU profile 存储加载",
+                    title = stringResource(R.string.settings_templates_loading),
+                    subtitle = stringResource(R.string.settings_templates_loading_desc),
                     leadingContent = { LoadingIndicator(Modifier.size(24.dp)) }
                 )
                 state.appProfileTemplates.isEmpty() -> ExpressiveListItem(
-                    title = "暂无模板",
-                    subtitle = "保存后会出现在这里",
+                    title = stringResource(R.string.settings_templates_empty),
+                    subtitle = stringResource(R.string.settings_templates_empty_desc),
                     leadingIcon = Icons.Default.Description
                 )
             }
             state.appProfileTemplates.forEach { template ->
                 ExpressiveListItem(
                     title = template.id,
-                    subtitle = if (state.selectedAppProfileTemplateId == template.id) "正在编辑" else "App Profile 模板",
+                    subtitle = if (state.selectedAppProfileTemplateId == template.id) {
+                        stringResource(R.string.settings_template_editing)
+                    } else {
+                        stringResource(R.string.settings_app_profile_templates)
+                    },
                     leadingIcon = Icons.Default.Description,
                     selected = state.selectedAppProfileTemplateId == template.id,
-                    trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = "编辑") },
+                    trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = stringResource(R.string.settings_edit)) },
                     onClick = { onSelect(template.id) }
                 )
             }
             ExpressiveListItem(
-                title = "新建模板",
-                subtitle = "创建新的 App Profile 模板 JSON",
+                title = stringResource(R.string.settings_new_template),
+                subtitle = stringResource(R.string.settings_new_template_desc),
                 leadingIcon = Icons.Default.Add,
                 onClick = {
                     creating = true
@@ -887,14 +899,14 @@ private fun AppProfileTemplateSettingsScreen(
         }
 
         if (state.appProfileTemplatesError != null) {
-            SettingsGroup(title = "状态") {
+            SettingsGroup(title = stringResource(R.string.settings_status)) {
                 ExpressiveListItem(
-                    title = "操作未完成",
+                    title = stringResource(R.string.settings_operation_incomplete),
                     subtitle = state.appProfileTemplatesError,
                     leadingIcon = Icons.Default.Error,
                     trailingContent = {
                         IconButton(onClick = onRefresh) {
-                            Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                            Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.refresh))
                         }
                     }
                 )
@@ -903,12 +915,12 @@ private fun AppProfileTemplateSettingsScreen(
 
         val hasEditor = creating || !state.selectedAppProfileTemplateId.isNullOrBlank()
         if (hasEditor) {
-            SettingsGroup(title = "编辑模板") {
+            SettingsGroup(title = stringResource(R.string.settings_edit_template)) {
                 OutlinedTextField(
                     value = editingId,
                     onValueChange = { editingId = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("模板名称") },
+                    label = { Text(stringResource(R.string.settings_template_name)) },
                     singleLine = true,
                     enabled = state.selectedAppProfileTemplateId.isNullOrBlank()
                 )
@@ -918,7 +930,7 @@ private fun AppProfileTemplateSettingsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 220.dp),
-                    label = { Text("模板 JSON") },
+                    label = { Text(stringResource(R.string.settings_template_json)) },
                     minLines = 10
                 )
                 Row(
@@ -935,14 +947,14 @@ private fun AppProfileTemplateSettingsScreen(
                             enabled = !state.appProfileTemplateSaving,
                             colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                         ) {
-                            Text("删除")
+                            Text(stringResource(R.string.delete))
                         }
                     }
                     Button(
                         onClick = { onSave(editingId, editingContent) },
                         enabled = !state.appProfileTemplateSaving && editingId.isNotBlank()
                     ) {
-                        Text("保存")
+                        Text(stringResource(R.string.save))
                     }
                 }
             }
@@ -1029,7 +1041,7 @@ private fun ThemeSettingsScreen(
             .padding(horizontal = AbkScreenHorizontalPadding),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        SettingsGroup(title = "外观模式") {
+        SettingsGroup(title = stringResource(R.string.settings_appearance_mode)) {
             themes.forEach { (key, label, icon) ->
                 val selected = themeMode == key
                 ExpressiveListItem(
@@ -1046,14 +1058,14 @@ private fun ThemeSettingsScreen(
             }
         }
 
-        SettingsGroup(title = "颜色来源") {
+        SettingsGroup(title = stringResource(R.string.settings_color_source)) {
             SwitchSettingsItem(
                 icon = Icons.Default.AutoAwesome,
-                title = "莫奈取色",
+                title = stringResource(R.string.settings_monet),
                 subtitle = if (dynamicColorAvailable) {
-                    "使用系统壁纸生成的 Material You 动态颜色"
+                    stringResource(R.string.settings_monet_desc)
                 } else {
-                    "Android 12 及以上可用，当前使用自定义色板"
+                    stringResource(R.string.settings_monet_unavailable_desc)
                 },
                 checked = effectiveDynamicColorEnabled,
                 enabled = dynamicColorAvailable,
@@ -1068,10 +1080,10 @@ private fun ThemeSettingsScreen(
         }
 
         if (!effectiveDynamicColorEnabled) {
-            SettingsGroup(title = "自定义颜色") {
+            SettingsGroup(title = stringResource(R.string.settings_custom_colors)) {
                 ThemeColorPicker(
-                    title = "主题色",
-                    subtitle = "主操作、选中状态和主要强调区域",
+                    title = stringResource(R.string.settings_theme_color),
+                    subtitle = stringResource(R.string.settings_theme_color_desc),
                     selectedColorArgb = selectedThemeColorArgb,
                     presets = themeColorPresets(),
                     onColorSelected = { color ->
@@ -1080,8 +1092,8 @@ private fun ThemeSettingsScreen(
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 ThemeColorPicker(
-                    title = "强调色",
-                    subtitle = "辅助状态、标签和次级强调区域",
+                    title = stringResource(R.string.settings_accent_color),
+                    subtitle = stringResource(R.string.settings_accent_color_desc),
                     selectedColorArgb = selectedAccentColorArgb,
                     presets = themeColorPresets(),
                     onColorSelected = { color ->
@@ -1091,29 +1103,33 @@ private fun ThemeSettingsScreen(
             }
         }
 
-        SettingsGroup(title = "背景") {
+        SettingsGroup(title = stringResource(R.string.settings_background)) {
             SwitchSettingsItem(
                 icon = Icons.Default.Image,
-                title = "自定义背景",
+                title = stringResource(R.string.settings_custom_background),
                 subtitle = if (backgroundUri.isNullOrBlank()) {
-                    "选择图片后可启用全局背景"
+                    stringResource(R.string.settings_custom_background_desc)
                 } else {
-                    "已选择背景图片"
+                    stringResource(R.string.settings_background_selected)
                 },
                 checked = backgroundImageEnabled && !backgroundUri.isNullOrBlank(),
                 enabled = !backgroundUri.isNullOrBlank(),
                 onCheckedChange = onBackgroundImageEnabledChange
             )
             ExpressiveListItem(
-                title = if (backgroundUri.isNullOrBlank()) "选择背景图片" else "更换背景图片",
-                subtitle = "从本机选择一张图片作为应用背景",
+                title = if (backgroundUri.isNullOrBlank()) {
+                    stringResource(R.string.settings_choose_background)
+                } else {
+                    stringResource(R.string.settings_change_background)
+                },
+                subtitle = stringResource(R.string.settings_choose_background_desc),
                 leadingIcon = Icons.Default.Image,
                 onClick = { backgroundPicker.launch(arrayOf("image/*")) }
             )
             if (!backgroundUri.isNullOrBlank()) {
                 ExpressiveListItem(
-                    title = "移除背景图片",
-                    subtitle = "恢复纯色 Material 主题背景",
+                    title = stringResource(R.string.settings_remove_background),
+                    subtitle = stringResource(R.string.settings_remove_background_desc),
                     leadingIcon = Icons.Default.Delete,
                     onClick = { onBackgroundImageChange(null) }
                 )
@@ -1145,7 +1161,7 @@ private fun BackgroundAlphaControl(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "界面不透明度",
+                text = stringResource(R.string.settings_ui_opacity),
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold,
                 color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
@@ -1163,7 +1179,7 @@ private fun BackgroundAlphaControl(
             enabled = enabled
         )
         Text(
-            text = "调低后卡片、顶部栏和底部栏会透出背景。",
+            text = stringResource(R.string.settings_ui_opacity_desc),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -1203,7 +1219,7 @@ private fun ThemeColorPicker(
         ) {
             if (presets.none { colorsMatch(selectedColorArgb, it.argb) }) {
                 ThemeColorSwatch(
-                    preset = ThemeColorPreset("当前", selectedColorArgb),
+                    preset = ThemeColorPreset(stringResource(R.string.settings_current_color), selectedColorArgb),
                     selected = true,
                     enabled = false,
                     onClick = {}
@@ -1260,13 +1276,14 @@ private data class ThemeColorPreset(
     val argb: Int
 )
 
+@Composable
 private fun themeColorPresets(): List<ThemeColorPreset> = listOf(
-    ThemeColorPreset("绿", 0xFF8BC34A.toInt()),
-    ThemeColorPreset("蓝", 0xFF42A5F5.toInt()),
-    ThemeColorPreset("紫", 0xFF9575CD.toInt()),
-    ThemeColorPreset("粉", 0xFFEC6A9A.toInt()),
-    ThemeColorPreset("橙", 0xFFFFA726.toInt()),
-    ThemeColorPreset("青", 0xFF26C6DA.toInt())
+    ThemeColorPreset(stringResource(R.string.settings_color_green), 0xFF8BC34A.toInt()),
+    ThemeColorPreset(stringResource(R.string.settings_color_blue), 0xFF42A5F5.toInt()),
+    ThemeColorPreset(stringResource(R.string.settings_color_purple), 0xFF9575CD.toInt()),
+    ThemeColorPreset(stringResource(R.string.settings_color_pink), 0xFFEC6A9A.toInt()),
+    ThemeColorPreset(stringResource(R.string.settings_color_orange), 0xFFFFA726.toInt()),
+    ThemeColorPreset(stringResource(R.string.settings_color_cyan), 0xFF26C6DA.toInt())
 )
 
 private fun colorsMatch(left: Int, right: Int): Boolean {
@@ -1290,9 +1307,9 @@ private fun themeModeLabel(themeMode: String): String = when (themeMode) {
 
 @Composable
 private fun dynamicColorLabel(enabled: Boolean): String = when {
-    !isDynamicColorAvailable() -> "莫奈取色不可用"
-    enabled -> "莫奈取色"
-    else -> "自定义色板"
+    !isDynamicColorAvailable() -> stringResource(R.string.settings_monet_unavailable)
+    enabled -> stringResource(R.string.settings_monet)
+    else -> stringResource(R.string.settings_custom_palette)
 }
 
 private fun isDynamicColorAvailable(): Boolean =
@@ -1303,11 +1320,11 @@ private fun AboutDialog(
     onDismiss: () -> Unit,
     onOpenUrl: (String) -> Unit
 ) {
-    val links = remember { aboutLinks() }
+    val links = aboutLinks()
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Info, null) },
-        title = { Text("关于 AnyBase Kernel") },
+        title = { Text(stringResource(R.string.settings_about_title)) },
         text = {
             Column(
                 modifier = Modifier
@@ -1317,14 +1334,14 @@ private fun AboutDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    "AnyBase Kernel 用于构建、分发和管理 GKI KernelSU / SUSFS 内核。",
+                    stringResource(R.string.settings_about_intro),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                AboutLinkRow(AboutLink("源仓库", sourceRepoUrl()), onOpenUrl)
-                AboutSectionTitle("致谢")
+                AboutLinkRow(AboutLink(stringResource(R.string.settings_source_repository), sourceRepoUrl()), onOpenUrl)
+                AboutSectionTitle(stringResource(R.string.settings_acknowledgements))
                 Text(
-                    "ABK 基于以下项目、仓库和社区工作继续开发。",
+                    stringResource(R.string.settings_acknowledgements_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1370,32 +1387,33 @@ private data class AboutLink(
     val url: String
 )
 
+@Composable
 private fun aboutLinks(): List<AboutLink> {
     return listOf(
-        AboutLink("上游仓库", BuildConfig.UPSTREAM_REPO_URL),
-        AboutLink("顶层仓库", BuildConfig.TOP_LEVEL_REPO_URL),
-        AboutLink("第三方声明", "${sourceRepoUrl()}/blob/main/THIRD_PARTY_NOTICES.md"),
+        AboutLink(stringResource(R.string.settings_upstream_repository), BuildConfig.UPSTREAM_REPO_URL),
+        AboutLink(stringResource(R.string.settings_top_level_repository), BuildConfig.TOP_LEVEL_REPO_URL),
+        AboutLink(stringResource(R.string.settings_third_party_notices), "${sourceRepoUrl()}/blob/main/THIRD_PARTY_NOTICES.md"),
         AboutLink("KernelSU", "https://github.com/tiann/KernelSU"),
         AboutLink("KernelSU Next", "https://github.com/KernelSU-Next/KernelSU-Next"),
         AboutLink("SukiSU Ultra", "https://github.com/SukiSU-Ultra/SukiSU-Ultra"),
         AboutLink("ReSukiSU", "https://github.com/ReSukiSU/ReSukiSU"),
         AboutLink("SUSFS", "https://gitlab.com/simonpunk/susfs4ksu"),
-        AboutLink("SUSFS GitHub 镜像/补丁来源", "https://github.com/ShirkNeko/susfs4ksu"),
+        AboutLink(stringResource(R.string.settings_susfs_github_source), "https://github.com/ShirkNeko/susfs4ksu"),
         AboutLink("SukiSU patch", "https://github.com/ShirkNeko/SukiSU_patch"),
         AboutLink("AnyKernel3", "https://github.com/WildKernels/AnyKernel3"),
         AboutLink("Kernel patches", "https://github.com/WildKernels/kernel_patches"),
-        AboutLink("NTsync / IPSet / BBR 来源", "https://github.com/WildKernels/kernel_patches"),
+        AboutLink(stringResource(R.string.settings_kernel_patches_source), "https://github.com/WildKernels/kernel_patches"),
         AboutLink("NTsync / IPSet / BBR PR by huime180", "https://github.com/huime180"),
         AboutLink("Action-Build", "https://github.com/Numbersf/Action-Build"),
-        AboutLink("SUSFS 模块构建来源", "https://github.com/sidex15/susfs4ksu-module"),
+        AboutLink(stringResource(R.string.settings_susfs_module_source), "https://github.com/sidex15/susfs4ksu-module"),
         AboutLink(
             "GCC prebuilts",
             "https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-gnu-6.4.1"
         ),
         AboutLink("Baseband Guard", "https://github.com/vc-teahouse/Baseband-guard"),
         AboutLink("Re-Kernel", "https://github.com/Sakion-Team/Re-Kernel"),
-        AboutLink("Droidspaces / 虚拟化支持补丁来源", "https://github.com/ravindu644/Droidspaces-OSS"),
-        AboutLink("KernelSU 官方站点", "https://kernelsu.org/")
+        AboutLink(stringResource(R.string.settings_droidspaces_source), "https://github.com/ravindu644/Droidspaces-OSS"),
+        AboutLink(stringResource(R.string.settings_kernelsu_site), "https://kernelsu.org/")
     )
 }
 
@@ -1415,23 +1433,28 @@ private fun SettingsHero(
     themeMode: String
 ) {
     ExpressiveHeroCard(
-        title = login?.let { "已连接 GitHub：$it" } ?: "AnyBase Kernel 设置中心",
-        subtitle = forkName ?: "管理构建自动化、通知、主题和仓库来源。",
+        title = login?.let { stringResource(R.string.settings_connected_github, it) }
+            ?: stringResource(R.string.settings_center_title),
+        subtitle = forkName ?: stringResource(R.string.settings_center_subtitle),
         icon = Icons.Default.Tune,
         containerColor = MaterialTheme.colorScheme.primaryContainer,
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         badge = {
             ExpressiveStatusChip(
                 label = when (themeMode) {
-                    "dark" -> "深色主题"
-                    "light" -> "浅色主题"
-                    else -> "跟随系统"
+                    "dark" -> stringResource(R.string.settings_dark_theme)
+                    "light" -> stringResource(R.string.settings_light_theme)
+                    else -> stringResource(R.string.settings_theme_system)
                 },
                 icon = Icons.Default.Palette,
                 color = MaterialTheme.colorScheme.primary
             )
             ExpressiveStatusChip(
-                label = if (forkName != null) "Fork 已连接" else "等待 Fork",
+                label = if (forkName != null) {
+                    stringResource(R.string.settings_fork_connected)
+                } else {
+                    stringResource(R.string.settings_waiting_fork)
+                },
                 icon = Icons.Default.ForkRight,
                 color = if (forkName != null) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
             )
@@ -1444,44 +1467,45 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
     ExpressiveSectionCard(
         title = title,
         subtitle = when (title) {
-            stringResource(R.string.settings_account) -> "GitHub 账户、fork 仓库和退出登录。"
-            stringResource(R.string.settings_build) -> "控制构建成功后的自动化行为。"
-            stringResource(R.string.settings_notification) -> "同步工作流状态到系统通知。"
-            "导航" -> "控制返回手势和页面切换体验。"
-            stringResource(R.string.settings_theme) -> "Material 3 Expressive 主题显示模式。"
-            "ReSukiSU" -> "按当前 ReSukiSU 后端能力动态加载。"
-            "SukiSU" -> "按当前 SukiSU 后端能力动态加载。"
-            "KernelSU" -> "按当前 KernelSU 后端能力动态加载。"
-            "管理器设置" -> "按当前 KSU 后端能力动态加载。"
-            "系统工具" -> "SELinux 和模块卸载路径相关工具。"
-            "授权列表" -> "导出或导入当前 Root 授权列表。"
-            "工具状态" -> "最近一次工具操作的执行结果。"
-            "本地模板" -> "管理保存在 ReSukiSU profile 存储中的模板。"
-            "状态" -> "最近一次模板操作的执行结果。"
-            "编辑模板" -> "直接编辑 App Profile 模板 JSON。"
-            "外观模式" -> "控制应用明暗显示方式。"
-            "颜色来源" -> "选择系统动态颜色或自定义色板。"
-            "自定义颜色" -> "莫奈关闭时使用的主题色和强调色。"
-            "背景" -> "选择背景图片并调整上层界面透明度。"
-            else -> "应用版本与源码信息。"
+            stringResource(R.string.settings_account) -> stringResource(R.string.settings_group_account_desc)
+            stringResource(R.string.settings_build) -> stringResource(R.string.settings_group_build_desc)
+            stringResource(R.string.settings_notification) -> stringResource(R.string.settings_group_notification_desc)
+            stringResource(R.string.settings_navigation) -> stringResource(R.string.settings_group_navigation_desc)
+            stringResource(R.string.settings_theme) -> stringResource(R.string.settings_group_theme_desc)
+            "ReSukiSU" -> stringResource(R.string.settings_group_backend_desc, "ReSukiSU")
+            "SukiSU" -> stringResource(R.string.settings_group_backend_desc, "SukiSU")
+            "KernelSU" -> stringResource(R.string.settings_group_backend_desc, "KernelSU")
+            stringResource(R.string.settings_manager_settings) -> stringResource(R.string.settings_group_manager_settings_desc)
+            stringResource(R.string.settings_system_tools) -> stringResource(R.string.settings_group_system_tools_desc)
+            stringResource(R.string.settings_allowlist) -> stringResource(R.string.settings_group_allowlist_desc)
+            stringResource(R.string.settings_tool_status) -> stringResource(R.string.settings_group_tool_status_desc)
+            stringResource(R.string.settings_local_templates) -> stringResource(R.string.settings_group_local_templates_desc)
+            stringResource(R.string.settings_status) -> stringResource(R.string.settings_group_status_desc)
+            stringResource(R.string.settings_edit_template) -> stringResource(R.string.settings_group_edit_template_desc)
+            stringResource(R.string.settings_appearance_mode) -> stringResource(R.string.settings_group_appearance_desc)
+            stringResource(R.string.settings_color_source) -> stringResource(R.string.settings_group_color_source_desc)
+            stringResource(R.string.settings_custom_colors) -> stringResource(R.string.settings_group_custom_colors_desc)
+            stringResource(R.string.settings_background) -> stringResource(R.string.settings_group_background_desc)
+            else -> stringResource(R.string.settings_group_about_desc)
         },
         icon = when (title) {
             stringResource(R.string.settings_account) -> Icons.Default.AccountCircle
             stringResource(R.string.settings_build) -> Icons.Default.Build
             stringResource(R.string.settings_notification) -> Icons.Default.Notifications
-            "导航" -> Icons.Default.ArrowBack
+            stringResource(R.string.settings_navigation) -> Icons.Default.ArrowBack
             stringResource(R.string.settings_theme) -> Icons.Default.Palette
-            "ReSukiSU", "SukiSU", "KernelSU", "管理器设置" -> Icons.Default.AdminPanelSettings
-            "系统工具" -> Icons.Default.Build
-            "授权列表" -> Icons.Default.VerifiedUser
-            "工具状态" -> Icons.Default.Info
-            "本地模板" -> Icons.Default.Apps
-            "状态" -> Icons.Default.Info
-            "编辑模板" -> Icons.Default.Edit
-            "外观模式" -> Icons.Default.BrightnessMedium
-            "颜色来源" -> Icons.Default.AutoAwesome
-            "自定义颜色" -> Icons.Default.Palette
-            "背景" -> Icons.Default.Image
+            "ReSukiSU", "SukiSU", "KernelSU" -> Icons.Default.AdminPanelSettings
+            stringResource(R.string.settings_manager_settings) -> Icons.Default.AdminPanelSettings
+            stringResource(R.string.settings_system_tools) -> Icons.Default.Build
+            stringResource(R.string.settings_allowlist) -> Icons.Default.VerifiedUser
+            stringResource(R.string.settings_tool_status) -> Icons.Default.Info
+            stringResource(R.string.settings_local_templates) -> Icons.Default.Apps
+            stringResource(R.string.settings_status) -> Icons.Default.Info
+            stringResource(R.string.settings_edit_template) -> Icons.Default.Edit
+            stringResource(R.string.settings_appearance_mode) -> Icons.Default.BrightnessMedium
+            stringResource(R.string.settings_color_source) -> Icons.Default.AutoAwesome
+            stringResource(R.string.settings_custom_colors) -> Icons.Default.Palette
+            stringResource(R.string.settings_background) -> Icons.Default.Image
             else -> Icons.Default.Info
         }
     ) {
@@ -1518,8 +1542,8 @@ private fun MirrorSettingsItem(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         ExpressiveListItem(
-            title = "下载镜像站",
-            subtitle = "留空直连 GitHub；填写后会先镜像到 Release 再下载",
+            title = stringResource(R.string.settings_download_mirror),
+            subtitle = stringResource(R.string.settings_download_mirror_desc),
             leadingIcon = Icons.Default.Public
         )
         OutlinedTextField(

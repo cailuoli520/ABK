@@ -2,6 +2,7 @@ package com.abk.kernel.utils
 
 import android.content.Context
 import android.os.Environment
+import com.abk.kernel.R
 import com.abk.kernel.data.model.Artifact
 import com.abk.kernel.data.model.ArtifactCategory
 import com.abk.kernel.data.model.ArtifactType
@@ -166,7 +167,8 @@ object DownloadUtils {
                     type = type,
                     sizeBytes = file.length(),
                     runId = run?.id ?: -1L,
-                    runTitle = run?.displayTitle ?: run?.name ?: run?.let { "#${it.runNumber}" } ?: "未关联工作流",
+                    runTitle = run?.displayTitle ?: run?.name ?: run?.let { "#${it.runNumber}" }
+                        ?: context.getString(R.string.workflow_unlinked),
                     runNumber = run?.runNumber ?: 0,
                     category = type.toArtifactCategory()
                 )

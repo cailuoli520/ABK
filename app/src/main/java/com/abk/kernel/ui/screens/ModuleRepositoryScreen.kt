@@ -34,11 +34,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.abk.kernel.R
 import com.abk.kernel.data.model.CustomExternalModuleStage
 import com.abk.kernel.data.model.ModuleCatalogItem
 import com.abk.kernel.data.model.ModuleCatalogRepository
@@ -154,7 +156,7 @@ fun ModuleRepositoryScreen(
                 selectedCatalogModuleStages = emptyList()
             },
             icon = { Icon(Icons.Default.Extension, null) },
-            title = { Text("选择注入阶段") },
+            title = { Text(stringResource(R.string.module_repo_select_stage)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
@@ -165,7 +167,7 @@ fun ModuleRepositoryScreen(
                     if (module.version.isNotBlank() || module.description.isNotBlank()) {
                         Text(
                             text = buildString {
-                                if (module.version.isNotBlank()) append("版本: ${module.version}")
+                                if (module.version.isNotBlank()) append(context.getString(R.string.module_repo_version, module.version))
                                 if (module.version.isNotBlank() && module.description.isNotBlank()) appendLine()
                                 if (module.description.isNotBlank()) append(module.description)
                             },
@@ -194,8 +196,8 @@ fun ModuleRepositoryScreen(
                             Text(
                                 text = buildString {
                                     append(stage)
-                                    if (stage in recommendedStages) append("（推荐）")
-                                    if (alreadyAdded) append("（已加入）")
+                                    if (stage in recommendedStages) append(stringResource(R.string.module_repo_recommended))
+                                    if (alreadyAdded) append(stringResource(R.string.module_repo_added_suffix))
                                 },
                                 style = MaterialTheme.typography.bodyMedium
                             )
@@ -209,12 +211,12 @@ fun ModuleRepositoryScreen(
                         if (vm.addCustomExternalModulesFromUrl(module.repoUrl, selectedStages)) {
                             pendingCatalogModule = null
                             selectedCatalogModuleStages = emptyList()
-                            Toast.makeText(context, "模块已加入构建配置", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.module_repo_added_to_build), Toast.LENGTH_SHORT).show()
                         }
                     },
                     enabled = selectedStages.isNotEmpty()
                 ) {
-                    Text("添加所选")
+                    Text(stringResource(R.string.module_repo_add_selected))
                 }
             },
             dismissButton = {
@@ -225,12 +227,12 @@ fun ModuleRepositoryScreen(
                             if (vm.addCustomExternalModulesFromUrl(module.repoUrl, remainingStages)) {
                                 pendingCatalogModule = null
                                 selectedCatalogModuleStages = emptyList()
-                                Toast.makeText(context, "模块已加入构建配置", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.module_repo_added_to_build), Toast.LENGTH_SHORT).show()
                             }
                         },
                         enabled = supportedStages.any { it !in addedStages }
                     ) {
-                        Text("全部阶段")
+                        Text(stringResource(R.string.module_repo_all_stages))
                     }
                     TextButton(
                         onClick = {
@@ -238,7 +240,7 @@ fun ModuleRepositoryScreen(
                             selectedCatalogModuleStages = emptyList()
                         }
                     ) {
-                        Text("取消")
+                        Text(stringResource(R.string.cancel))
                     }
                 }
             }
@@ -257,11 +259,11 @@ fun ModuleRepositoryScreen(
             containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
             topBar = {
                 ExpressiveTopBar(
-                    title = "模块仓库",
+                    title = stringResource(R.string.module_repo_title),
                     scrollBehavior = scrollBehavior,
                     actions = {
                         IconButton(onClick = ::openRepositorySettings) {
-                            Icon(Icons.Default.Dns, contentDescription = "配置模块仓库")
+                            Icon(Icons.Default.Dns, contentDescription = stringResource(R.string.module_repo_configure))
                         }
                     }
                 )
@@ -284,7 +286,7 @@ fun ModuleRepositoryScreen(
                 onOpenModule = { module ->
                     val url = module.homepage.ifBlank { module.repoUrl }
                     runCatching { uriHandler.openUri(url) }
-                        .onFailure { Toast.makeText(context, "无法打开链接", Toast.LENGTH_SHORT).show() }
+                        .onFailure { Toast.makeText(context, context.getString(R.string.module_repo_open_failed), Toast.LENGTH_SHORT).show() }
                 },
                 scrollBehavior = scrollBehavior,
                 bottomPadding = outerPadding.calculateBottomPadding()
@@ -332,10 +334,10 @@ fun ModuleRepositoryScreen(
                     containerColor = Color.Transparent,
                     topBar = {
                         ExpressiveTopBar(
-                            title = "中央仓库",
+                            title = stringResource(R.string.module_repo_central),
                             navigationIcon = {
                                 IconButton(onClick = ::closeRepositorySettings) {
-                                    Icon(Icons.Default.ArrowBack, contentDescription = "返回模块仓库")
+                                    Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.module_repo_back))
                                 }
                             }
                         )
@@ -440,10 +442,10 @@ private fun EmptyModuleRepositoryState(
         )
         Text(
             text = when {
-                hasQuery -> "没有匹配的模块"
-                repositoryCount == 0 -> "还没有中央仓库"
-                totalModules == 0 -> "刷新中央仓库后会显示模块"
-                else -> "没有可显示的模块"
+                hasQuery -> stringResource(R.string.module_repo_no_matching)
+                repositoryCount == 0 -> stringResource(R.string.module_repo_no_central)
+                totalModules == 0 -> stringResource(R.string.module_repo_refresh_hint)
+                else -> stringResource(R.string.module_repo_no_display)
             },
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface
@@ -451,7 +453,7 @@ private fun EmptyModuleRepositoryState(
         TextButton(onClick = onOpenRepositorySettings) {
             Icon(Icons.Default.Dns, null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
-            Text("管理中央仓库")
+            Text(stringResource(R.string.module_repo_manage_central))
         }
     }
 }
@@ -543,10 +545,10 @@ private fun ModuleRepositoryListItem(
                     ModuleTagChip(label = stage, secondary = true)
                 }
                 if (alreadyAdded) {
-                    ModuleTagChip(label = "已加入", secondary = true)
+                    ModuleTagChip(label = stringResource(R.string.module_repo_joined), secondary = true)
                 }
                 if (sources.size > 1) {
-                    ModuleTagChip(label = "来源 ${sources.size}", secondary = true)
+                    ModuleTagChip(label = stringResource(R.string.module_repo_source_count, sources.size), secondary = true)
                 }
             }
 
@@ -557,13 +559,17 @@ private fun ModuleRepositoryListItem(
             ) {
                 CompactModuleActionButton(
                     icon = Icons.Default.OpenInBrowser,
-                    contentDescription = "打开模块仓库",
+                    contentDescription = stringResource(R.string.module_repo_open_repo),
                     onClick = onOpen
                 )
                 Spacer(Modifier.width(6.dp))
                 CompactModuleActionButton(
                     icon = if (alreadyAdded) Icons.Default.CheckCircle else Icons.Default.Add,
-                    contentDescription = if (alreadyAdded) "已加入" else "加入构建配置",
+                    contentDescription = if (alreadyAdded) {
+                        stringResource(R.string.module_repo_joined)
+                    } else {
+                        stringResource(R.string.module_repo_add_to_build)
+                    },
                     enabled = !alreadyAdded,
                     onClick = onAdd
                 )
@@ -606,7 +612,7 @@ private fun CompactModuleSearchField(
             ) {
                 if (value.isBlank()) {
                     Text(
-                        text = "搜索模块",
+                        text = stringResource(R.string.module_repo_search),
                         style = MaterialTheme.typography.bodyMedium,
                         color = colors.onSurfaceVariant
                     )
@@ -702,14 +708,14 @@ private fun ModuleRepositorySettingsPage(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         ExpressiveSectionCard(
-            title = "中央仓库",
-            subtitle = "添加包含 abk-modules.json 的索引仓库。",
+            title = stringResource(R.string.module_repo_central),
+            subtitle = stringResource(R.string.module_repo_central_desc),
             icon = Icons.Default.Dns
         ) {
             OutlinedTextField(
                 value = repositoryUrl,
                 onValueChange = { repositoryUrl = it },
-                label = { Text("中央仓库链接") },
+                label = { Text(stringResource(R.string.module_repo_url)) },
                 placeholder = { Text("https://github.com/user/abk-module-catalog") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
@@ -725,7 +731,7 @@ private fun ModuleRepositorySettingsPage(
                 ) {
                     Icon(Icons.Default.Add, null, modifier = Modifier.size(17.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("添加")
+                    Text(stringResource(R.string.add))
                 }
                 OutlinedButton(
                     onClick = onRefreshAll,
@@ -734,19 +740,19 @@ private fun ModuleRepositorySettingsPage(
                 ) {
                     Icon(Icons.Default.Refresh, null, modifier = Modifier.size(17.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("刷新全部")
+                    Text(stringResource(R.string.refresh_all))
                 }
             }
         }
 
         if (repositories.isEmpty()) {
             ExpressiveSectionCard(
-                title = "暂无中央仓库",
-                subtitle = "添加中央仓库后，模块会在主页面合并展示。",
+                title = stringResource(R.string.module_repo_empty_title),
+                subtitle = stringResource(R.string.module_repo_empty_desc),
                 icon = Icons.Default.LibraryBooks
             ) {
                 Text(
-                    text = "删除中央仓库不会移除已经加入构建配置的单模块仓库。",
+                    text = stringResource(R.string.module_repo_delete_keep_modules),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -786,13 +792,13 @@ private fun ModuleCatalogRepositoryCard(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             ExpressiveStatusChip(
-                label = "${repository.modules.size} 个模块",
+                label = stringResource(R.string.module_repo_module_count, repository.modules.size),
                 icon = Icons.Default.Extension,
                 color = MaterialTheme.colorScheme.primary
             )
             if (repository.skippedCount > 0) {
                 ExpressiveStatusChip(
-                    label = "跳过 ${repository.skippedCount}",
+                    label = stringResource(R.string.module_repo_skipped_count, repository.skippedCount),
                     icon = Icons.Default.Link,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -825,7 +831,7 @@ private fun ModuleCatalogRepositoryCard(
                     Icon(Icons.Default.Refresh, null, modifier = Modifier.size(17.dp))
                 }
                 Spacer(Modifier.width(6.dp))
-                Text("刷新")
+                Text(stringResource(R.string.refresh))
             }
             OutlinedButton(
                 onClick = onDelete,
@@ -833,7 +839,7 @@ private fun ModuleCatalogRepositoryCard(
             ) {
                 Icon(Icons.Default.Delete, null, modifier = Modifier.size(17.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("删除")
+                Text(stringResource(R.string.delete))
             }
         }
     }
@@ -911,10 +917,11 @@ private fun MergedCatalogModule.matchesQuery(query: String): Boolean {
 private fun ModuleCatalogItem.displayName(): String =
     name.ifBlank { repoUrl.trim().trimEnd('/').substringAfterLast('/').removeSuffix(".git") }
 
+@Composable
 private fun ModuleCatalogItem.metaLine(): String =
     listOfNotNull(
-        version.takeIf { it.isNotBlank() }?.let { "版本: $it" },
-        author.takeIf { it.isNotBlank() }?.let { "作者: $it" }
+        version.takeIf { it.isNotBlank() }?.let { stringResource(R.string.module_repo_version, it) },
+        author.takeIf { it.isNotBlank() }?.let { stringResource(R.string.runtime_module_author, it) }
     ).joinToString("\n")
 
 private fun ModuleCatalogItem.normalizedSupportedStages(): List<String> =

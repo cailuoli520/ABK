@@ -82,11 +82,13 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.abk.kernel.R
 import com.abk.kernel.data.model.RootGrantApp
 import com.abk.kernel.data.model.RootGrantProfile
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
@@ -203,7 +205,7 @@ fun RootAuthorizationScreen(
             containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
             topBar = {
                 ExpressiveTopBar(
-                    title = "超级用户",
+                    title = stringResource(R.string.root_auth_title),
                     scrollBehavior = scrollBehavior,
                     actions = {
                         IconButton(
@@ -213,7 +215,7 @@ fun RootAuthorizationScreen(
                             if (state.rootGrantLoading) {
                                 LoadingIndicator(Modifier.size(22.dp))
                             } else {
-                                Icon(Icons.Default.Refresh, contentDescription = "刷新授权列表")
+                                Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.root_auth_refresh_list))
                             }
                         }
                     }
@@ -238,7 +240,7 @@ fun RootAuthorizationScreen(
                         onValueChange = { query = it },
                         modifier = Modifier.fillMaxWidth(),
                         leadingIcon = { Icon(Icons.Default.Search, null) },
-                        placeholder = { Text("搜索应用") },
+                        placeholder = { Text(stringResource(R.string.root_auth_search_apps)) },
                         singleLine = true,
                         shape = RoundedCornerShape(14.dp)
                     )
@@ -246,8 +248,8 @@ fun RootAuthorizationScreen(
 
                 item(key = "controls") {
                     ExpressiveSectionCard(
-                        title = "Root 授权",
-                        subtitle = "管理其他应用的内核权限配置",
+                        title = stringResource(R.string.root_auth_section_title),
+                        subtitle = stringResource(R.string.root_auth_section_desc),
                         icon = Icons.Default.AdminPanelSettings
                     ) {
                         Row(
@@ -256,7 +258,7 @@ fun RootAuthorizationScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "显示系统应用",
+                                text = stringResource(R.string.root_auth_show_system_apps),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -286,7 +288,11 @@ fun RootAuthorizationScreen(
                 if (!state.rootGrantLoading && apps.isEmpty()) {
                     item(key = "empty") {
                         Text(
-                            text = if (query.isBlank()) "没有可显示的应用" else "没有匹配的应用",
+                            text = if (query.isBlank()) {
+                                stringResource(R.string.root_auth_no_apps)
+                            } else {
+                                stringResource(R.string.root_auth_no_matching_apps)
+                            },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(vertical = 24.dp)
@@ -357,7 +363,7 @@ fun RootAuthorizationScreen(
                                         enabled = canLeaveDetail,
                                         onClick = ::closeDetailPage
                                     ) {
-                                        Icon(Icons.Default.ArrowBack, contentDescription = "返回授权列表")
+                                        Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.root_auth_back_to_list))
                                     }
                                 }
                             )
@@ -392,7 +398,7 @@ private fun RootGrantInitialLoading() {
         ) {
             LoadingIndicator(Modifier.size(42.dp))
             Text(
-                text = "正在构建授权列表",
+                text = stringResource(R.string.root_auth_building_list),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -411,7 +417,7 @@ private fun RootGrantRefreshingRow() {
     ) {
         LoadingIndicator(Modifier.size(24.dp))
         Text(
-            text = "正在刷新授权列表",
+            text = stringResource(R.string.root_auth_refreshing_list),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -525,10 +531,16 @@ private fun RootGrantAppCard(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                RootGrantChip(if (app.profile.allowSu) "允许 Root" else "拒绝 Root")
-                RootGrantChip(if (app.profile.rootUseDefault) "默认 Root 配置" else "自定义 Root 配置")
-                if (app.isSystemApp) RootGrantChip("系统应用")
-                if (app.profile.umountModules) RootGrantChip("卸载模块")
+                RootGrantChip(if (app.profile.allowSu) stringResource(R.string.root_auth_allow) else stringResource(R.string.root_auth_deny))
+                RootGrantChip(
+                    if (app.profile.rootUseDefault) {
+                        stringResource(R.string.root_auth_default_profile)
+                    } else {
+                        stringResource(R.string.root_auth_custom_profile)
+                    }
+                )
+                if (app.isSystemApp) RootGrantChip(stringResource(R.string.root_auth_system_app))
+                if (app.profile.umountModules) RootGrantChip(stringResource(R.string.root_auth_umount_modules))
             }
         }
     }
@@ -655,8 +667,8 @@ private fun RootGrantProfilePage(
         }
 
         ExpressiveSectionCard(
-            title = "超级用户",
-            subtitle = if (allowSu) "允许请求 Root 权限" else "拒绝 Root 权限",
+            title = stringResource(R.string.root_auth_title),
+            subtitle = if (allowSu) stringResource(R.string.root_auth_allow_request) else stringResource(R.string.root_auth_deny_request),
             icon = Icons.Default.Security
         ) {
             Row(
@@ -665,7 +677,7 @@ private fun RootGrantProfilePage(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (allowSu) "已允许" else "未允许",
+                    text = if (allowSu) stringResource(R.string.root_auth_allowed) else stringResource(R.string.root_auth_not_allowed),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -680,9 +692,13 @@ private fun RootGrantProfilePage(
         ExpressiveSectionCard(
             title = "App Profile",
             subtitle = if (allowSu) {
-                if (rootUseDefault) "默认" else "自定义"
+                if (rootUseDefault) stringResource(R.string.root_auth_default) else stringResource(R.string.root_auth_custom)
             } else {
-                if (nonRootUseDefault) "默认非 Root 配置" else "自定义非 Root 配置"
+                if (nonRootUseDefault) {
+                    stringResource(R.string.root_auth_default_non_root)
+                } else {
+                    stringResource(R.string.root_auth_custom_non_root)
+                }
             },
             icon = Icons.Default.AccountCircle
         ) {
@@ -692,7 +708,7 @@ private fun RootGrantProfilePage(
                         FilterChip(
                             selected = rootUseDefault,
                             onClick = { rootUseDefault = true },
-                            label = { Text("默认") }
+                            label = { Text(stringResource(R.string.root_auth_default)) }
                         )
                         FilterChip(
                             selected = !rootUseDefault && rootTemplate.isNotBlank(),
@@ -700,7 +716,7 @@ private fun RootGrantProfilePage(
                                 rootUseDefault = false
                                 if (rootTemplate.isBlank()) rootTemplate = "default"
                             },
-                            label = { Text("模板") }
+                            label = { Text(stringResource(R.string.root_auth_template)) }
                         )
                         FilterChip(
                             selected = !rootUseDefault && rootTemplate.isBlank(),
@@ -708,24 +724,29 @@ private fun RootGrantProfilePage(
                                 rootUseDefault = false
                                 rootTemplate = ""
                             },
-                            label = { Text("自定义") }
+                            label = { Text(stringResource(R.string.root_auth_custom)) }
                         )
                     }
                     if (!rootUseDefault && rootTemplate.isNotBlank()) {
-                        RootGrantTextField("模板", rootTemplate, { rootTemplate = it }, "模板名称")
+                        RootGrantTextField(
+                            stringResource(R.string.root_auth_template),
+                            rootTemplate,
+                            { rootTemplate = it },
+                            stringResource(R.string.root_auth_template_name)
+                        )
                     }
                     if (!rootUseDefault) {
                         RootGrantTextField("UID", uidText, { uidText = it })
                         RootGrantTextField("GID", gidText, { gidText = it })
-                        RootGrantTextField("Groups", groupsText, { groupsText = it }, "逗号分隔")
-                        RootGrantTextField("Capabilities", capabilitiesText, { capabilitiesText = it }, "逗号分隔")
+                        RootGrantTextField("Groups", groupsText, { groupsText = it }, stringResource(R.string.root_auth_comma_separated))
+                        RootGrantTextField("Capabilities", capabilitiesText, { capabilitiesText = it }, stringResource(R.string.root_auth_comma_separated))
                         RootGrantTextField("SELinux Context", contextText, { contextText = it })
-                        RootGrantTextField("Namespace", namespaceText, { namespaceText = it }, "0 继承 / 1 全局 / 2 独立")
-                        RootGrantTextField("SEPolicy Rules", rulesText, { rulesText = it }, "可留空", singleLine = false)
+                        RootGrantTextField("Namespace", namespaceText, { namespaceText = it }, stringResource(R.string.root_auth_namespace_hint))
+                        RootGrantTextField("SEPolicy Rules", rulesText, { rulesText = it }, stringResource(R.string.root_auth_optional_empty), singleLine = false)
                     }
                 } else {
-                    RootGrantSwitchRow("使用默认非 Root 配置", nonRootUseDefault) { nonRootUseDefault = it }
-                    RootGrantSwitchRow("卸载模块", umountModules) { umountModules = it }
+                    RootGrantSwitchRow(stringResource(R.string.root_auth_use_default_non_root), nonRootUseDefault) { nonRootUseDefault = it }
+                    RootGrantSwitchRow(stringResource(R.string.root_auth_umount_modules), umountModules) { umountModules = it }
                 }
             }
         }
@@ -740,7 +761,7 @@ private fun RootGrantProfilePage(
             } else {
                 Icon(Icons.Default.Done, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("保存")
+                Text(stringResource(R.string.save))
             }
         }
 
@@ -811,7 +832,7 @@ private fun RootGrantMessageCard(message: String, onRefresh: () -> Unit) {
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
             TextButton(onClick = onRefresh) {
-                Text("重新检测")
+                Text(stringResource(R.string.runtime_recheck))
             }
         }
     }

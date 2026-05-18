@@ -17,6 +17,7 @@ import android.widget.Toast
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.abk.kernel.R
 import com.abk.kernel.data.repository.PreferencesRepository
 import com.abk.kernel.utils.RootUtils
 import kotlinx.coroutines.flow.first
@@ -43,7 +44,7 @@ class ModuleWebUiActivity : Activity() {
         super.onCreate(savedInstanceState)
 
         if (moduleId.isBlank()) {
-            Toast.makeText(this, "模块不可用", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.runtime_module_unavailable), Toast.LENGTH_SHORT).show()
             finish()
             return
         }

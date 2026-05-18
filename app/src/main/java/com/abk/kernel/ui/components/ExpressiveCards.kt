@@ -34,9 +34,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.abk.kernel.R
 import com.abk.kernel.ui.theme.uiSurfaceColor
 
 @Composable
@@ -350,7 +352,7 @@ fun ExpressiveEmptyState(
         modifier = modifier
     ) {
         Text(
-            text = "等待下一次构建完成后，这里会自动整理可用产物。",
+            text = stringResource(R.string.empty_state_build_artifacts_hint),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
