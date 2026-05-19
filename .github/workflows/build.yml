@@ -2845,7 +2845,7 @@ jobs:
               return True
 
           def ensure_official_symbol_resolver_exports(ksu_dir):
-              path = ksu_dir / "infra/symbol_resolver.c"
+              path = ksu_dir / "hook/lsm_hook.c"
               if not path.exists():
                   raise SystemExit(f"未找到 {path}，无法补齐 Official SUSFS hook 符号")
 
@@ -2884,7 +2884,7 @@ jobs:
               if not additions:
                   return False
 
-              block = "\n/* ABK: Official SUSFS lsm_hook compatibility exports. */\n" + "\n".join(additions)
+              block = "\n/* ABK: Official SUSFS lsm_hook local symbol resolver exports. */\n" + "\n".join(additions)
               path.write_text(text.rstrip() + "\n" + block)
               print(f"已补齐 {path} 的 Official SUSFS hook 符号")
               return True
@@ -3680,7 +3680,7 @@ jobs:
                 return True
 
             def ensure_official_symbol_resolver_exports(ksu_dir):
-                path = ksu_dir / "infra/symbol_resolver.c"
+                path = ksu_dir / "hook/lsm_hook.c"
                 if not path.exists():
                     raise SystemExit(f"{path} not found before build")
 
@@ -3719,7 +3719,7 @@ jobs:
                 if not additions:
                     return False
 
-                block = "\n/* ABK: Official SUSFS lsm_hook compatibility exports. */\n" + "\n".join(additions)
+                block = "\n/* ABK: Official SUSFS lsm_hook local symbol resolver exports. */\n" + "\n".join(additions)
                 path.write_text(text.rstrip() + "\n" + block)
                 print(f"fixed {path}: added Official SUSFS hook symbol exports")
                 return True
@@ -3787,10 +3787,10 @@ jobs:
                 echo "::error::Official SUSFS 缺少 common/drivers/kernelsu Kbuild hook helper 对象"
                 exit 1
               fi
-              if [ -f common/drivers/kernelsu/infra/symbol_resolver.c ] \
-                && { ! grep -qF 'ksu_resolve_symbol_for_functable_hook' common/drivers/kernelsu/infra/symbol_resolver.c \
-                  || ! grep -qF 'find_kernel_symbol_exact' common/drivers/kernelsu/infra/symbol_resolver.c; }; then
-                echo "::error::Official SUSFS 缺少 symbol_resolver hook 兼容符号"
+              if [ -f common/drivers/kernelsu/hook/lsm_hook.c ] \
+                && { ! grep -qF 'ksu_resolve_symbol_for_functable_hook' common/drivers/kernelsu/hook/lsm_hook.c \
+                  || ! grep -qF 'find_kernel_symbol_exact' common/drivers/kernelsu/hook/lsm_hook.c; }; then
+                echo "::error::Official SUSFS 缺少 lsm_hook hook 兼容符号"
                 exit 1
               fi
             fi
