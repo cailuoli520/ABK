@@ -2773,6 +2773,54 @@ jobs:
                   raise SystemExit(f"include anchor not found: {anchor.strip()}")
               return text.replace(anchor, anchor + line, 1)
 
+          def patch_official_selinux_hide(ksu_dir):
+              path = ksu_dir / "feature/selinux_hide.c"
+              if not path.exists():
+                  return False
+
+              text = path.read_text()
+              original = text
+
+              dump_is_pointer = re.search(r"\(\s*\*\s*security_dump_masked_av_fn\s*\)", text) is not None
+              compute_is_pointer = re.search(r"\(\s*\*\s*context_struct_compute_av_fn\s*\)", text) is not None
+
+              if dump_is_pointer:
+                  text = re.sub(
+                      r"(?m)^([ \t]*)if \(security_dump_masked_av_fn\)\s*$",
+                      r"\1if (security_dump_masked_av_fn != NULL)",
+                      text,
+                  )
+              else:
+                  text = re.sub(
+                      r'(?m)^([ \t]*)if \(security_dump_masked_av_fn\)\n[ \t]*security_dump_masked_av_fn\(policydb, scontext, tcontext, tclass, masked, "bounds"\);\n',
+                      r'\1security_dump_masked_av_fn(policydb, scontext, tcontext, tclass, masked, "bounds");\n',
+                      text,
+                  )
+
+              if compute_is_pointer:
+                  text = re.sub(
+                      r"(?m)^([ \t]*)if \(context_struct_compute_av_fn\) \{\s*$",
+                      r"\1if (context_struct_compute_av_fn != NULL) {",
+                      text,
+                  )
+              else:
+                  text = re.sub(
+                      r"(?m)^([ \t]*)if \(context_struct_compute_av_fn\) \{\n"
+                      r"[ \t]*context_struct_compute_av_fn\(policydb, scontext, tcontext, tclass, avd, NULL\);\n"
+                      r"[ \t]*\} else \{\n"
+                      r"[ \t]*context_struct_compute_av\(policydb, scontext, tcontext, tclass, avd, NULL\);\n"
+                      r"[ \t]*\}\n",
+                      r"\1context_struct_compute_av_fn(policydb, scontext, tcontext, tclass, avd, NULL);\n",
+                      text,
+                  )
+
+              if text == original:
+                  return False
+
+              path.write_text(text)
+              print(f"已修复 {path} 的 Official selinux_hide 函数指针判断")
+              return True
+
           def ensure_official_susfs_objects(ksu_dir):
               kbuild = ksu_dir / "Kbuild"
               if not kbuild.exists():
@@ -2847,6 +2895,7 @@ jobs:
                   print(f"已移除 {include_ksu} 中的 ksu_late_loaded 声明")
 
           changed = ensure_official_susfs_objects(ksu_dir) or changed
+          changed = patch_official_selinux_hide(ksu_dir) or changed
 
           if not changed:
               print("Official SUSFS 源码兼容修复无需修改。")
@@ -3437,6 +3486,54 @@ jobs:
                     raise SystemExit(f"anchor not found: {anchor.strip()}")
                 return text.replace(anchor, anchor + line, 1)
 
+            def patch_official_selinux_hide(ksu_dir):
+                path = ksu_dir / "feature/selinux_hide.c"
+                if not path.exists():
+                    return False
+
+                text = path.read_text()
+                original = text
+
+                dump_is_pointer = re.search(r"\(\s*\*\s*security_dump_masked_av_fn\s*\)", text) is not None
+                compute_is_pointer = re.search(r"\(\s*\*\s*context_struct_compute_av_fn\s*\)", text) is not None
+
+                if dump_is_pointer:
+                    text = re.sub(
+                        r"(?m)^([ \t]*)if \(security_dump_masked_av_fn\)\s*$",
+                        r"\1if (security_dump_masked_av_fn != NULL)",
+                        text,
+                    )
+                else:
+                    text = re.sub(
+                        r'(?m)^([ \t]*)if \(security_dump_masked_av_fn\)\n[ \t]*security_dump_masked_av_fn\(policydb, scontext, tcontext, tclass, masked, "bounds"\);\n',
+                        r'\1security_dump_masked_av_fn(policydb, scontext, tcontext, tclass, masked, "bounds");\n',
+                        text,
+                    )
+
+                if compute_is_pointer:
+                    text = re.sub(
+                        r"(?m)^([ \t]*)if \(context_struct_compute_av_fn\) \{\s*$",
+                        r"\1if (context_struct_compute_av_fn != NULL) {",
+                        text,
+                    )
+                else:
+                    text = re.sub(
+                        r"(?m)^([ \t]*)if \(context_struct_compute_av_fn\) \{\n"
+                        r"[ \t]*context_struct_compute_av_fn\(policydb, scontext, tcontext, tclass, avd, NULL\);\n"
+                        r"[ \t]*\} else \{\n"
+                        r"[ \t]*context_struct_compute_av\(policydb, scontext, tcontext, tclass, avd, NULL\);\n"
+                        r"[ \t]*\}\n",
+                        r"\1context_struct_compute_av_fn(policydb, scontext, tcontext, tclass, avd, NULL);\n",
+                        text,
+                    )
+
+                if text == original:
+                    return False
+
+                path.write_text(text)
+                print(f"fixed {path}: normalized Official selinux_hide function checks")
+                return True
+
             def ensure_official_susfs_objects(ksu_dir):
                 kbuild = ksu_dir / "Kbuild"
                 if not kbuild.exists():
@@ -3499,6 +3596,7 @@ jobs:
                     print(f"fixed {include_ksu}")
 
             fixed = ensure_official_susfs_objects(ksu_dir) or fixed
+            fixed = patch_official_selinux_hide(ksu_dir) or fixed
 
             if not fixed:
                 print("Official SUSFS KernelSU init.c already fixed")
