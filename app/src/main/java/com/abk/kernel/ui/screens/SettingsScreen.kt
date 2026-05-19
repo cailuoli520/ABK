@@ -2,6 +2,7 @@
 
 package com.abk.kernel.ui.screens
 
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -48,6 +49,7 @@ import androidx.core.graphics.ColorUtils
 import coil.compose.AsyncImage
 import com.abk.kernel.BuildConfig
 import com.abk.kernel.R
+import com.abk.kernel.utils.LocaleHelper
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveListItem
@@ -553,6 +555,19 @@ private fun SettingsMainContent(
                 subtitle = stringResource(R.string.settings_predictive_back_desc),
                 checked = state.predictiveBackEnabled,
                 onCheckedChange = { vm.setPredictiveBackEnabled(it) }
+            )
+        }
+
+        SettingsGroup(title = stringResource(R.string.settings_language)) {
+            val ctx = LocalContext.current
+            val currentLang = LocaleHelper.getLanguage(ctx)
+            val activity = ctx as? Activity
+            LanguageSettingsItem(
+                current = currentLang,
+                onSelect = { lang ->
+                    LocaleHelper.setLanguage(ctx, lang)
+                    activity?.recreate()
+                }
             )
         }
 
@@ -1471,6 +1486,7 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
             stringResource(R.string.settings_build) -> stringResource(R.string.settings_group_build_desc)
             stringResource(R.string.settings_notification) -> stringResource(R.string.settings_group_notification_desc)
             stringResource(R.string.settings_navigation) -> stringResource(R.string.settings_group_navigation_desc)
+            stringResource(R.string.settings_language) -> stringResource(R.string.settings_language_desc)
             stringResource(R.string.settings_theme) -> stringResource(R.string.settings_group_theme_desc)
             "ReSukiSU" -> stringResource(R.string.settings_group_backend_desc, "ReSukiSU")
             "SukiSU" -> stringResource(R.string.settings_group_backend_desc, "SukiSU")
@@ -1493,6 +1509,7 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
             stringResource(R.string.settings_build) -> Icons.Default.Build
             stringResource(R.string.settings_notification) -> Icons.Default.Notifications
             stringResource(R.string.settings_navigation) -> Icons.Default.ArrowBack
+            stringResource(R.string.settings_language) -> Icons.Default.Language
             stringResource(R.string.settings_theme) -> Icons.Default.Palette
             "ReSukiSU", "SukiSU", "KernelSU" -> Icons.Default.AdminPanelSettings
             stringResource(R.string.settings_manager_settings) -> Icons.Default.AdminPanelSettings
@@ -1552,6 +1569,29 @@ private fun MirrorSettingsItem(
             singleLine = true,
             placeholder = { Text("https://hk.gh-proxy.org/") },
             modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun LanguageSettingsItem(
+    current: String,
+    onSelect: (String) -> Unit
+) {
+    val options = listOf(
+        Triple(LocaleHelper.LANG_ZH, stringResource(R.string.settings_language_zh), Icons.Default.Language),
+        Triple(LocaleHelper.LANG_EN, stringResource(R.string.settings_language_en), Icons.Default.Language)
+    )
+    options.forEach { (lang, label, icon) ->
+        val selected = current == lang
+        ExpressiveListItem(
+            title = label,
+            leadingIcon = icon,
+            selected = selected,
+            trailingContent = {
+                if (selected) Icon(Icons.Default.Check, null)
+            },
+            onClick = { onSelect(lang) }
         )
     }
 }
