@@ -19,6 +19,7 @@ import com.abk.kernel.data.repository.PreferencesRepository
 import com.abk.kernel.data.repository.Result
 import com.abk.kernel.utils.BuildMonitorService
 import com.abk.kernel.utils.BuildProgressUtils
+import com.abk.kernel.utils.DownloadDirectoryUtils
 import com.abk.kernel.utils.DownloadUtils
 import com.abk.kernel.utils.NotificationUtils
 import com.abk.kernel.utils.RootUtils
@@ -119,6 +120,7 @@ data class MainUiState(
     val customBackgroundUri: String? = null,
     val backgroundImageEnabled: Boolean = false,
     val uiSurfaceAlpha: Float = 1f,
+    val downloadDirectory: String = DownloadDirectoryUtils.defaultDirectoryPath(),
     val downloadMirrorBaseUrl: String = "",
     val prebuiltGkiEnabled: Boolean = true,
     val predictiveBackEnabled: Boolean = true,
@@ -316,6 +318,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         customAccentColorArgb = themePrefs.customAccentColorArgb
                     )
                 }
+            }
+        }
+        viewModelScope.launch {
+            prefs.downloadDirectory.collect { path ->
+                _uiState.update { it.copy(downloadDirectory = path) }
             }
         }
         viewModelScope.launch {
@@ -1205,6 +1212,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     customBackgroundUri = it.customBackgroundUri,
                     backgroundImageEnabled = it.backgroundImageEnabled,
                     uiSurfaceAlpha = it.uiSurfaceAlpha,
+                    downloadDirectory = it.downloadDirectory,
                     downloadMirrorBaseUrl = it.downloadMirrorBaseUrl,
                     prebuiltGkiEnabled = it.prebuiltGkiEnabled,
                     predictiveBackEnabled = it.predictiveBackEnabled,
@@ -1947,6 +1955,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun downloadPrebuiltGkiNow(asset: PrebuiltGkiAsset, progressKey: Long) {
         if (!_uiState.value.prebuiltGkiEnabled) return
         val token = prefs.accessToken.first()
+        val downloadDirectory = prefs.downloadDirectory.first()
         _uiState.update {
             it.copy(
                 isDownloading = true,
@@ -1962,7 +1971,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             asset.name,
             asset.sizeBytes,
             PREBUILT_GKI_RUN_ID,
-            text(R.string.vm_prebuilt_gki_label)
+            text(R.string.vm_prebuilt_gki_label),
+            downloadDirectory
         ) { pct ->
             NotificationUtils.notifyDownloadProgress(getApplication(), pct, asset.name)
             _uiState.update { s ->
@@ -1973,9 +1983,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(isDownloading = false, downloadProgress = it.downloadProgress - progressKey) }
             return
         }
-        if (results.isNotEmpty()) {
+        if (results.artifacts.isNotEmpty()) {
             NotificationUtils.notifyDownloadDone(getApplication(), asset.name)
-            val updated = (_uiState.value.downloadedArtifacts + results)
+            val updated = (_uiState.value.downloadedArtifacts + results.artifacts)
                 .distinctBy { it.filePath }
                 .sortedDownloadedForDisplay()
             _uiState.update { s ->
@@ -1988,12 +1998,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             prefs.saveDownloadedArtifactsJson(gson.toJson(updated))
         } else {
-            finishArtifactDownloadWithError(progressKey, text(R.string.vm_prebuilt_gki_download_failed, asset.name))
+            finishArtifactDownloadWithError(
+                progressKey,
+                results.errorMessage ?: text(R.string.vm_prebuilt_gki_download_failed, asset.name)
+            )
         }
     }
 
     private suspend fun downloadArtifactNow(artifact: BuildArtifact) {
         val token = prefs.accessToken.first()
+        val downloadDirectory = prefs.downloadDirectory.first()
         if (token.isNullOrBlank()) {
             _uiState.update { it.copy(isDownloading = false, error = text(R.string.vm_artifact_download_login_required)) }
             return
@@ -2021,7 +2035,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (downloadUrl == null) token else null,
             artifact.toArtifact(),
             artifact.toWorkflowRun(),
-            downloadUrl
+            downloadUrl,
+            downloadDirectory
         ) { pct ->
             val displayProgress = if (mirrorEnabled) {
                 (50 + pct / 2).coerceIn(50, 100)
@@ -2033,9 +2048,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 s.copy(downloadProgress = s.downloadProgress + (artifact.id to displayProgress))
             }
         }
-        if (results.isNotEmpty()) {
+        if (results.artifacts.isNotEmpty()) {
             NotificationUtils.notifyDownloadDone(getApplication(), artifact.name)
-            val updated = (_uiState.value.downloadedArtifacts + results)
+            val updated = (_uiState.value.downloadedArtifacts + results.artifacts)
                 .distinctBy { it.filePath }
                 .sortedDownloadedForDisplay()
             _uiState.update { s ->
@@ -2048,7 +2063,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             prefs.saveDownloadedArtifactsJson(gson.toJson(updated))
         } else {
-            finishArtifactDownloadWithError(artifact.id, text(R.string.vm_artifact_download_failed, artifact.name))
+            finishArtifactDownloadWithError(
+                artifact.id,
+                results.errorMessage ?: text(R.string.vm_artifact_download_failed, artifact.name)
+            )
         }
     }
 
@@ -2320,6 +2338,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setBackgroundImageEnabled(v: Boolean) = viewModelScope.launch { prefs.setBackgroundImageEnabled(v) }
     fun setUiSurfaceAlpha(alpha: Float) = viewModelScope.launch { prefs.setUiSurfaceAlpha(alpha) }
     fun acceptTerms() = viewModelScope.launch { prefs.acceptCurrentTerms() }
+    fun setDownloadDirectory(path: String) = viewModelScope.launch {
+        prefs.setDownloadDirectory(path)
+    }
     fun setDownloadMirrorBaseUrl(url: String) = viewModelScope.launch {
         prefs.setDownloadMirrorBaseUrl(url.trim())
     }

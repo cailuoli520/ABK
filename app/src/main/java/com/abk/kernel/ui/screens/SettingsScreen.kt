@@ -6,6 +6,9 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
+import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -49,6 +52,7 @@ import androidx.core.graphics.ColorUtils
 import coil.compose.AsyncImage
 import com.abk.kernel.BuildConfig
 import com.abk.kernel.R
+import com.abk.kernel.utils.DownloadDirectoryUtils
 import com.abk.kernel.utils.LocaleHelper
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ExpressiveHeroCard
@@ -640,6 +644,11 @@ private fun SettingsMainContent(
                 subtitle = stringResource(R.string.settings_prebuilt_gki_desc),
                 checked = state.prebuiltGkiEnabled,
                 onCheckedChange = { vm.setPrebuiltGkiEnabled(it) }
+            )
+            Spacer(Modifier.height(10.dp))
+            DownloadDirectorySettingsItem(
+                value = state.downloadDirectory,
+                onValueChange = { vm.setDownloadDirectory(it) }
             )
             Spacer(Modifier.height(10.dp))
             MirrorSettingsItem(
@@ -1968,6 +1977,98 @@ private fun SwitchSettingsItem(
         enabled = enabled,
         onCheckedChange = onCheckedChange
     )
+}
+
+@Composable
+private fun DownloadDirectorySettingsItem(
+    value: String,
+    onValueChange: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val defaultDirectory = remember { DownloadDirectoryUtils.defaultDirectoryPath() }
+    val needsAllFilesAccess = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()
+    val unsupportedTreeMessage = stringResource(R.string.settings_download_directory_tree_unsupported)
+    val restoredMessage = stringResource(R.string.settings_download_directory_default_restored)
+    val folderPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+            }
+            val selectedPath = DownloadDirectoryUtils.directoryPathFromTreeUri(uri)
+            if (selectedPath == null) {
+                Toast.makeText(context, unsupportedTreeMessage, Toast.LENGTH_SHORT).show()
+            } else {
+                onValueChange(selectedPath)
+            }
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        ExpressiveListItem(
+            title = stringResource(R.string.settings_download_directory),
+            subtitle = stringResource(R.string.settings_download_directory_desc),
+            leadingIcon = Icons.Default.FolderOpen
+        )
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            placeholder = { Text(defaultDirectory) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = { folderPicker.launch(null) },
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.settings_download_directory_choose))
+            }
+            TextButton(
+                onClick = {
+                    onValueChange(defaultDirectory)
+                    Toast.makeText(context, restoredMessage, Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.settings_download_directory_reset))
+            }
+        }
+        AnimatedVisibility(visible = needsAllFilesAccess) {
+            OutlinedButton(
+                onClick = { openAllFilesAccessSettings(context) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.FolderSpecial, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.settings_download_directory_storage_permission))
+            }
+        }
+    }
+}
+
+private fun openAllFilesAccessSettings(context: android.content.Context) {
+    val packageUri = Uri.parse("package:${context.packageName}")
+    val appSettings = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, packageUri)
+    runCatching {
+        context.startActivity(appSettings)
+    }.getOrElse {
+        context.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+    }
 }
 
 @Composable

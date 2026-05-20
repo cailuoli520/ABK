@@ -562,6 +562,16 @@
     <string name="settings_group_local_templates_desc">管理保存在 ReSukiSU profile 存储中的模板。</string>
     <string name="settings_group_status_desc">最近一次模板操作的执行结果。</string>
     <string name="settings_group_edit_template_desc">直接编辑 App Profile 模板 JSON。</string>
+    <string name="settings_download_directory">默认下载目录</string>
+    <string name="settings_download_directory_desc">构建产物、预编译 GKI 和模块会保存到此文件系统目录。</string>
+    <string name="settings_download_directory_choose">选择文件夹</string>
+    <string name="settings_download_directory_reset">恢复默认</string>
+    <string name="settings_download_directory_storage_permission">打开所有文件访问权限</string>
+    <string name="settings_download_directory_tree_unsupported">所选文件夹无法转换为文件系统路径，请输入绝对路径或选择本机下载目录。</string>
+    <string name="settings_download_directory_default_restored">已恢复默认下载目录</string>
+    <string name="download_directory_not_directory">下载目录不是文件夹：%1$s</string>
+    <string name="download_directory_not_writable">下载目录不可写：%1$s</string>
+    <string name="download_directory_create_failed">无法创建下载目录：%1$s</string>
     <string name="settings_download_mirror">下载镜像站</string>
     <string name="settings_download_mirror_desc">留空直连 GitHub；填写后会先镜像到 Release 再下载</string>
 

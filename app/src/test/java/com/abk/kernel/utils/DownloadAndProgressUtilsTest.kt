@@ -5,6 +5,7 @@ import com.abk.kernel.data.model.WorkflowJob
 import com.abk.kernel.data.model.WorkflowRun
 import com.abk.kernel.data.model.WorkflowStep
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DownloadAndProgressUtilsTest {
@@ -17,6 +18,11 @@ class DownloadAndProgressUtilsTest {
         assertEquals(ArtifactType.SUSFS_MODULE, DownloadUtils.classifyArtifact("susfs-module.zip"))
         assertEquals(ArtifactType.KSU_MANAGER, DownloadUtils.classifyArtifact("KernelSU-Manager.apk"))
         assertEquals(ArtifactType.OTHER, DownloadUtils.classifyArtifact("patch-rejects.zip"))
+    }
+
+    @Test
+    fun normalizesDownloadDirectoryPaths() {
+        assertTrue(DownloadDirectoryUtils.normalizeDirectoryPath("/sdcard/Download/ABK/").endsWith("/sdcard/Download/ABK"))
     }
 
     @Test

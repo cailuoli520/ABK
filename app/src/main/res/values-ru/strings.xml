@@ -562,6 +562,16 @@
     <string name="settings_group_local_templates_desc">Управление шаблонами, сохранёнными в хранилище профилей ReSukiSU.</string>
     <string name="settings_group_status_desc">Результат последней операции с шаблоном.</string>
     <string name="settings_group_edit_template_desc">Прямое редактирование JSON-шаблона App Profile.</string>
+    <string name="settings_download_directory">Каталог загрузок по умолчанию</string>
+    <string name="settings_download_directory_desc">Артефакты сборки, prebuilt GKI и модули сохраняются в эту папку файловой системы.</string>
+    <string name="settings_download_directory_choose">Выбрать папку</string>
+    <string name="settings_download_directory_reset">Сбросить</string>
+    <string name="settings_download_directory_storage_permission">Открыть доступ ко всем файлам</string>
+    <string name="settings_download_directory_tree_unsupported">Выбранную папку нельзя преобразовать в путь файловой системы. Введите абсолютный путь или выберите локальную папку Download.</string>
+    <string name="settings_download_directory_default_restored">Каталог загрузок по умолчанию восстановлен</string>
+    <string name="download_directory_not_directory">Каталог загрузок не является папкой: %1$s</string>
+    <string name="download_directory_not_writable">Каталог загрузок недоступен для записи: %1$s</string>
+    <string name="download_directory_create_failed">Не удалось создать каталог загрузок: %1$s</string>
     <string name="settings_download_mirror">Зеркало для загрузки</string>
     <string name="settings_download_mirror_desc">Если пусто — прямое подключение к GitHub. Если задано — артефакт сначала зеркалируется в Release, затем скачивается.</string>
 

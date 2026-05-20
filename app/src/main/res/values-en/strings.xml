@@ -562,6 +562,16 @@
     <string name="settings_group_local_templates_desc">Manage templates saved in ReSukiSU profile storage.</string>
     <string name="settings_group_status_desc">Result of the most recent template operation.</string>
     <string name="settings_group_edit_template_desc">Edit App Profile template JSON directly.</string>
+    <string name="settings_download_directory">Default download directory</string>
+    <string name="settings_download_directory_desc">Build artifacts, prebuilt GKI files, and modules are saved to this filesystem folder.</string>
+    <string name="settings_download_directory_choose">Choose folder</string>
+    <string name="settings_download_directory_reset">Reset default</string>
+    <string name="settings_download_directory_storage_permission">Open all files access permission</string>
+    <string name="settings_download_directory_tree_unsupported">The selected folder cannot be converted to a filesystem path. Enter an absolute path or choose the local Download folder.</string>
+    <string name="settings_download_directory_default_restored">Default download directory restored</string>
+    <string name="download_directory_not_directory">Download directory is not a folder: %1$s</string>
+    <string name="download_directory_not_writable">Download directory is not writable: %1$s</string>
+    <string name="download_directory_create_failed">Could not create download directory: %1$s</string>
     <string name="settings_download_mirror">Download mirror</string>
     <string name="settings_download_mirror_desc">Leave empty to connect directly to GitHub. If set, artifacts mirror to releases before download.</string>
 
