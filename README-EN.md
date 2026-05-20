@@ -212,29 +212,74 @@ The app is built by the [`Build ABK App`](.github/workflows/build-abk-app.yml) w
 - The workflow currently bundles `arm64-v8a`, `armeabi-v7a`, and `x86_64`; at runtime ABK prefers the APK-bundled `ksud` and falls back to `/data/adb/ksud` or a system `ksud` only when needed.
 - This repository does not check in prebuilt `ksud` binaries. Source, build provenance, and license notes are documented in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
-## Acknowledgements
+## Contributors
 
-ABK continues development on top of the following projects, repositories, and community work. This section centralizes the major repositories and projects referenced by the README, website, workflows, or release notes:
+The following list is generated from the current git history, showing only identifiable GitHub usernames/links and filtering automation accounts:
 
-- Upstream repository: [zzh20188/GKI_KernelSU_SUSFS](https://github.com/zzh20188/GKI_KernelSU_SUSFS)
-- KernelSU: [tiann/KernelSU](https://github.com/tiann/KernelSU)
-- KernelSU Next: [KernelSU-Next/KernelSU-Next](https://github.com/KernelSU-Next/KernelSU-Next)
-- SukiSU Ultra: [SukiSU-Ultra/SukiSU-Ultra](https://github.com/SukiSU-Ultra/SukiSU-Ultra)
-- ReSukiSU: [ReSukiSU/ReSukiSU](https://github.com/ReSukiSU/ReSukiSU)
-- SUSFS: [simonpunk/susfs4ksu](https://gitlab.com/simonpunk/susfs4ksu)
-- SUSFS GitHub mirror / patch source: [ShirkNeko/susfs4ksu](https://github.com/ShirkNeko/susfs4ksu)
-- SukiSU patch: [ShirkNeko/SukiSU_patch](https://github.com/ShirkNeko/SukiSU_patch)
-- AnyKernel3: [WildKernels/AnyKernel3](https://github.com/WildKernels/AnyKernel3)
-- Kernel patches: [WildKernels/kernel_patches](https://github.com/WildKernels/kernel_patches)
-- Action-Build: [Numbersf/Action-Build](https://github.com/Numbersf/Action-Build)
-- SUSFS module build source: [sidex15/susfs4ksu-module](https://github.com/sidex15/susfs4ksu-module)
-- GCC prebuilts: [LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-gnu-6.4.1](https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-gnu-6.4.1)
-- Baseband Guard: [vc-teahouse/Baseband-guard](https://github.com/vc-teahouse/Baseband-guard)
-- Re-Kernel: [Sakion-Team/Re-Kernel](https://github.com/Sakion-Team/Re-Kernel)
-- Droidspaces / virtualization patch source: [ravindu644/Droidspaces-OSS](https://github.com/ravindu644/Droidspaces-OSS)
-- KernelSU website: https://kernelsu.org/
-- NTsync，setip和BBR来源： [WildKernels/kernel_patches](https://github.com/WildKernels/kernel_patche) PR by [huime180](https://github.com/huime180)
+[@TheWildJames](https://github.com/TheWildJames), [@zzh20188](https://github.com/zzh20188), [@xingguangcuican6666](https://github.com/xingguangcuican6666), [@ShirkNeko](https://github.com/ShirkNeko), [@huime180](https://github.com/huime180), [@MiRinChan](https://github.com/MiRinChan), [@FunLay123](https://github.com/FunLay123), [@guruji-byte](https://github.com/guruji-byte), [@Xiaomichael](https://github.com/Xiaomichael), [@DreamFerry](https://github.com/DreamFerry), [@liqideqq](https://github.com/liqideqq), [@elysias123](https://github.com/elysias123), [@Fede2782](https://github.com/Fede2782), [@ReeViiS69](https://github.com/ReeViiS69), [@TheSillyOk](https://github.com/TheSillyOk), [@prpjzz](https://github.com/prpjzz), [@ukriu](https://github.com/ukriu), [@wrnxr233](https://github.com/wrnxr233), [@Tools-cx-app](https://github.com/Tools-cx-app), [@Akuma-Noko](https://github.com/Akuma-Noko), [@DebugBoard](https://github.com/DebugBoard), [@FixeQyt](https://github.com/FixeQyt), [@LX200944](https://github.com/LX200944), [@Starsun](https://github.com/Starsun), [@yx1234587](https://github.com/yx1234587).
+
+## Open Source Licenses
+
+The full notice list is maintained in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), and the app's Open source licenses page follows the same scope. Upstream license texts and extra obligations remain authoritative.
+
+### Repository and Bundled Code
+
+| Component | Source | License |
+| --- | --- | --- |
+| AnyBase Kernel | [`LICENSE`](LICENSE) | GPL-2.0 |
+| ABK Control native bridge | `app/src/main/cpp/uapi/abk_control.h` | GPL-2.0 |
+| xingguang DDK module | `ddk/xingguang-ddk/xingguang_ddk.c` | GPL |
+| DDK kernel API patch | `ddk/patches/xingguang-ddk/0001-xingguang-ddk-api.patch` | GPL-2.0 |
+| ZRAM LZ4 kernel glue | `zram/lz4/Makefile` | GPL-2.0-only |
+| LZ4 sources and headers | `zram/lz4`, `zram/include/linux/lz4.h` | BSD-2-Clause |
+
+### Upstream Projects and Workflow References
+
+| Project | URL | License |
+| --- | --- | --- |
+| zzh20188/GKI_KernelSU_SUSFS | <https://github.com/zzh20188/GKI_KernelSU_SUSFS> | Upstream repository license |
+| WildKernels/GKI_KernelSU_SUSFS | <https://github.com/WildKernels/GKI_KernelSU_SUSFS> | Upstream repository license |
+| KernelSU | <https://github.com/tiann/KernelSU> | GPL-3.0 |
+| KernelSU Next | <https://github.com/KernelSU-Next/KernelSU-Next> | GPL-3.0 |
+| SukiSU Ultra | <https://github.com/SukiSU-Ultra/SukiSU-Ultra> | GPL-3.0 |
+| ReSukiSU | <https://github.com/ReSukiSU/ReSukiSU> | GPL-3.0 |
+| SUSFS | <https://gitlab.com/simonpunk/susfs4ksu> | GPL-2.0 |
+| ShirkNeko/susfs4ksu | <https://github.com/ShirkNeko/susfs4ksu> | GPL-2.0 |
+| SukiSU_patch | <https://github.com/ShirkNeko/SukiSU_patch> | GPL-2.0 |
+| AnyKernel3 | <https://github.com/WildKernels/AnyKernel3> | GPL-2.0 |
+| WildKernels/kernel_patches | <https://github.com/WildKernels/kernel_patches> | GPL-2.0 |
+| Action-Build | <https://github.com/Numbersf/Action-Build> | Upstream repository license |
+| SUSFS module build source | <https://github.com/sidex15/susfs4ksu-module> | Upstream repository license |
+| GCC prebuilts | <https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-gnu-6.4.1> | GPL-family toolchain notices |
+| Baseband Guard | <https://github.com/vc-teahouse/Baseband-guard> | Upstream repository license |
+| Re-Kernel | <https://github.com/Sakion-Team/Re-Kernel> | Upstream repository license |
+| Droidspaces / virtualization patch source | <https://github.com/ravindu644/Droidspaces-OSS> | Upstream repository license |
+| ABK_repo module catalog | <https://github.com/xingguangcuican6666/ABK_repo> | Upstream repository license |
+| AOSP kernel/common, manifest, mkbootimg, build-tools | <https://android.googlesource.com/> | GPL-2.0 / Apache-2.0 / AOSP notices |
+| Android GKI certified boot images / command line tools | <https://dl.google.com/android/> | Android distribution terms / Android SDK License |
+
+### Android / Gradle Dependencies
+
+Android dependencies are derived from `gradle/libs.versions.toml` and `app/build.gradle.kts`. Gradle native-platform initialization fails in this local environment, so this records direct declared dependencies; transitive dependencies follow the actual Gradle resolution result.
+
+| License | Dependencies |
+| --- | --- |
+| Apache-2.0 | Android Gradle Plugin, Kotlin Gradle/Compose plugin, AndroidX Core/Lifecycle/Activity/Compose/Material3/Navigation/Work/DataStore/Test, Google Material Components, Retrofit, OkHttp, Gson, kotlinx-serialization-json, libsu, Coil |
+| EPL-1.0 | JUnit 4.13.2 |
+
+### Web npm Transitive Dependencies
+
+Web dependencies are derived from `web/package-lock.json`.
+
+| License | Packages |
+| --- | --- |
+| Apache-2.0 | `@webassemblyjs/leb128`, `@xtuc/long`, `baseline-browser-mapping`, `detect-libc` |
+| BSD-2-Clause | `eslint-scope`, `esrecurse`, `estraverse`, `glob-to-regexp`, `terser` |
+| BSD-3-Clause | `@xtuc/ieee754`, `fast-uri`, `flat`, `source-map`, `source-map-js` |
+| CC-BY-4.0 | `caniuse-lite` |
+| ISC | `electron-to-chromium`, `graceful-fs`, `icss-utils`, `isexe`, `picocolors`, `postcss-modules-extract-imports`, `postcss-modules-scope`, `postcss-modules-values`, `semver`, `which` |
+| MIT | Remaining npm transitive dependencies, including `webpack`, `webpack-cli`, `sass`, `sass-loader`, `css-loader`, `mini-css-extract-plugin`, `postcss`, `ajv`, `browserslist`, `chokidar`, `@jridgewell/*`, `@parcel/watcher*`, and MIT-licensed `@webassemblyjs/*` packages. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the full package list. |
 
 ## License
 
-This repository references multiple third-party projects, patches, and generated artifacts. Before using, redistributing, or modifying them, follow the license and terms of each upstream project. Users are responsible for any device damage, data loss, account risk, service interruption, compliance issue, or direct/indirect loss caused by using ABK, its workflows, custom modules, or generated artifacts.
+ABK is released under GPL-2.0. This repository also references third-party projects, patches, binary sources, and package dependencies. Before using, redistributing, or modifying them, follow the license and terms of each upstream project. Users are responsible for any device damage, data loss, account risk, service interruption, compliance issue, or direct/indirect loss caused by using ABK, its workflows, custom modules, or generated artifacts.

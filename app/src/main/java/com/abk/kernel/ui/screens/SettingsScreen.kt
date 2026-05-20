@@ -85,13 +85,15 @@ fun SettingsScreen(
     val state by vm.uiState.collectAsState()
     val context = LocalContext.current
     var showLogoutDialog by remember { mutableStateOf(false) }
-    var showAboutDialog by remember { mutableStateOf(false) }
     var showThemeSettings by rememberSaveable { mutableStateOf(false) }
     var showAppProfileTemplates by rememberSaveable { mutableStateOf(false) }
     var showManagerTools by rememberSaveable { mutableStateOf(false) }
+    var showAboutPage by rememberSaveable { mutableStateOf(false) }
+    var showOpenSourceLicenses by rememberSaveable { mutableStateOf(false) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     var themeBackProgress by remember { mutableFloatStateOf(0f) }
-    val showChildPage = showThemeSettings || showAppProfileTemplates || showManagerTools
+    val showChildPage = showThemeSettings || showAppProfileTemplates || showManagerTools ||
+        showAboutPage || showOpenSourceLicenses
     val motionScheme = MaterialTheme.motionScheme
     val animatedThemeBackProgress by animateFloatAsState(
         targetValue = themeBackProgress.coerceIn(0f, 1f),
@@ -135,6 +137,8 @@ fun SettingsScreen(
         onThemePageVisibleChange(true)
         showAppProfileTemplates = false
         showManagerTools = false
+        showAboutPage = false
+        showOpenSourceLicenses = false
         showThemeSettings = true
     }
 
@@ -147,6 +151,8 @@ fun SettingsScreen(
         onThemePageVisibleChange(true)
         showThemeSettings = false
         showManagerTools = false
+        showAboutPage = false
+        showOpenSourceLicenses = false
         showAppProfileTemplates = true
         vm.refreshAppProfileTemplates()
     }
@@ -156,14 +162,38 @@ fun SettingsScreen(
         onThemePageVisibleChange(true)
         showThemeSettings = false
         showAppProfileTemplates = false
+        showAboutPage = false
+        showOpenSourceLicenses = false
         showManagerTools = true
         vm.refreshManagerTools(force = true)
+    }
+
+    fun openAboutPage() {
+        themeBackProgress = 0f
+        onThemePageVisibleChange(true)
+        showThemeSettings = false
+        showAppProfileTemplates = false
+        showManagerTools = false
+        showOpenSourceLicenses = false
+        showAboutPage = true
+    }
+
+    fun openOpenSourceLicenses() {
+        themeBackProgress = 0f
+        onThemePageVisibleChange(true)
+        showThemeSettings = false
+        showAppProfileTemplates = false
+        showManagerTools = false
+        showAboutPage = false
+        showOpenSourceLicenses = true
     }
 
     fun closeChildPage() {
         showThemeSettings = false
         showAppProfileTemplates = false
         showManagerTools = false
+        showAboutPage = false
+        showOpenSourceLicenses = false
     }
 
     PredictiveBackHandler(enabled = showChildPage && state.predictiveBackEnabled) { progress ->
@@ -199,13 +229,6 @@ fun SettingsScreen(
         )
     }
 
-    if (showAboutDialog) {
-        AboutDialog(
-            onDismiss = { showAboutDialog = false },
-            onOpenUrl = { openUrl(context, it) }
-        )
-    }
-
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val childPageTopInset = outerPadding.calculateTopPadding()
         val childPageBottomInset = outerPadding.calculateBottomPadding()
@@ -233,7 +256,8 @@ fun SettingsScreen(
                 onOpenAppProfileTemplates = ::openAppProfileTemplates,
                 onOpenManagerTools = ::openManagerTools,
                 onOpenInstalledModules = onOpenInstalledModules,
-                onAbout = { showAboutDialog = true }
+                onAbout = ::openAboutPage,
+                onOpenSourceLicenses = ::openOpenSourceLicenses
             )
         }
 
@@ -417,6 +441,97 @@ fun SettingsScreen(
                 }
             }
         }
+
+        AnimatedVisibility(
+            visible = showAboutPage,
+            enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
+                slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
+            exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
+                slideOutHorizontally(animationSpec = motionScheme.fastSpatialSpec()) { width -> width },
+            modifier = childPageModifier
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        translationX = themeBackOffsetPx * visualThemeBackProgress
+                        scaleX = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
+                        scaleY = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
+                        alpha = 1f - 0.06f * visualThemeBackProgress
+                        shape = RoundedCornerShape(themeBackCorner)
+                        clip = visualThemeBackProgress > 0.01f
+                    }
+            ) {
+                SettingsPageBackground(
+                    backgroundUri = state.customBackgroundUri,
+                    backgroundImageEnabled = state.backgroundImageEnabled
+                )
+                Scaffold(
+                    containerColor = Color.Transparent,
+                    topBar = {
+                        ExpressiveTopBar(
+                            title = stringResource(R.string.settings_about_title),
+                            navigationIcon = {
+                                IconButton(onClick = ::closeChildPage) {
+                                    Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.settings_back))
+                                }
+                            }
+                        )
+                    }
+                ) {
+                    AboutRepositoryScreen(
+                        padding = it,
+                        onOpenUrl = { openUrl(context, it) },
+                        onOpenSourceLicenses = ::openOpenSourceLicenses
+                    )
+                }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showOpenSourceLicenses,
+            enter = fadeIn(animationSpec = motionScheme.defaultEffectsSpec()) +
+                slideInHorizontally(animationSpec = motionScheme.defaultSpatialSpec()) { width -> width / 4 },
+            exit = fadeOut(animationSpec = motionScheme.fastEffectsSpec()) +
+                slideOutHorizontally(animationSpec = motionScheme.fastSpatialSpec()) { width -> width },
+            modifier = childPageModifier
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        translationX = themeBackOffsetPx * visualThemeBackProgress
+                        scaleX = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
+                        scaleY = 1f - THEME_BACK_SCALE_DELTA * visualThemeBackProgress
+                        alpha = 1f - 0.06f * visualThemeBackProgress
+                        shape = RoundedCornerShape(themeBackCorner)
+                        clip = visualThemeBackProgress > 0.01f
+                    }
+            ) {
+                SettingsPageBackground(
+                    backgroundUri = state.customBackgroundUri,
+                    backgroundImageEnabled = state.backgroundImageEnabled
+                )
+                Scaffold(
+                    containerColor = Color.Transparent,
+                    topBar = {
+                        ExpressiveTopBar(
+                            title = stringResource(R.string.settings_open_source_licenses),
+                            navigationIcon = {
+                                IconButton(onClick = ::closeChildPage) {
+                                    Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.settings_back))
+                                }
+                            }
+                        )
+                    }
+                ) {
+                    OpenSourceLicensesScreen(
+                        padding = it,
+                        onOpenUrl = { openUrl(context, it) }
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -465,7 +580,8 @@ private fun SettingsMainContent(
     onOpenAppProfileTemplates: () -> Unit,
     onOpenManagerTools: () -> Unit,
     onOpenInstalledModules: () -> Unit,
-    onAbout: () -> Unit
+    onAbout: () -> Unit,
+    onOpenSourceLicenses: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -602,6 +718,18 @@ private fun SettingsMainContent(
                     Icon(Icons.Default.ChevronRight, contentDescription = stringResource(R.string.settings_enter_about))
                 },
                 onClick = onAbout
+            )
+            ExpressiveListItem(
+                title = stringResource(R.string.settings_open_source_licenses),
+                subtitle = stringResource(R.string.settings_open_source_licenses_desc),
+                leadingIcon = Icons.Default.Article,
+                trailingContent = {
+                    Icon(
+                        Icons.Default.ChevronRight,
+                        contentDescription = stringResource(R.string.settings_enter_open_source_licenses)
+                    )
+                },
+                onClick = onOpenSourceLicenses
             )
         }
 
@@ -1333,56 +1461,94 @@ private fun isDynamicColorAvailable(): Boolean =
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
 @Composable
-private fun AboutDialog(
-    onDismiss: () -> Unit,
-    onOpenUrl: (String) -> Unit
+private fun AboutRepositoryScreen(
+    padding: PaddingValues,
+    onOpenUrl: (String) -> Unit,
+    onOpenSourceLicenses: () -> Unit
 ) {
-    val links = aboutLinks()
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Default.Info, null) },
-        title = { Text(stringResource(R.string.settings_about_title)) },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 460.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(
-                    stringResource(R.string.settings_about_intro),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                AboutLinkRow(AboutLink(stringResource(R.string.settings_source_repository), sourceRepoUrl()), onOpenUrl)
-                AboutSectionTitle(stringResource(R.string.settings_acknowledgements))
-                Text(
-                    stringResource(R.string.settings_acknowledgements_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                links.forEach {
-                    AboutLinkRow(it, onOpenUrl)
-                }
+    Column(
+        modifier = Modifier
+            .padding(padding)
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = AbkScreenHorizontalPadding, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        ExpressiveHeroCard(
+            title = stringResource(R.string.app_full_name),
+            subtitle = stringResource(R.string.settings_about_intro),
+            icon = Icons.Default.Info
+        ) {
+            Text(
+                text = stringResource(R.string.settings_about_version, BuildConfig.VERSION_NAME),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+            )
+        }
+
+        SettingsGroup(title = stringResource(R.string.settings_repository_info)) {
+            repositoryLinks().forEach { link ->
+                AboutLinkRow(link, onOpenUrl)
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.close))
+            ExpressiveListItem(
+                title = stringResource(R.string.settings_open_source_licenses),
+                subtitle = stringResource(R.string.settings_open_source_licenses_desc),
+                leadingIcon = Icons.Default.Article,
+                trailingContent = { Icon(Icons.Default.ChevronRight, null) },
+                onClick = onOpenSourceLicenses
+            )
+        }
+
+        SettingsGroup(title = stringResource(R.string.settings_contributors)) {
+            Text(
+                text = stringResource(R.string.settings_contributors_desc),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+            )
+            contributors().forEach { contributor ->
+                val profileUrl = "https://github.com/${contributor.username}"
+                ExpressiveListItem(
+                    title = "@${contributor.username}",
+                    subtitle = stringResource(R.string.settings_contributor_commits, contributor.commits),
+                    leadingIcon = Icons.Default.Person,
+                    trailingContent = { Icon(Icons.Default.OpenInBrowser, null) },
+                    onClick = { onOpenUrl(profileUrl) }
+                )
             }
         }
-    )
+        Spacer(Modifier.height(80.dp))
+    }
 }
 
 @Composable
-private fun AboutSectionTitle(title: String) {
-    Text(
-        title,
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary
-    )
+private fun OpenSourceLicensesScreen(
+    padding: PaddingValues,
+    onOpenUrl: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .padding(padding)
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = AbkScreenHorizontalPadding, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        ExpressiveHeroCard(
+            title = stringResource(R.string.settings_open_source_licenses),
+            subtitle = stringResource(R.string.settings_open_source_licenses_intro),
+            icon = Icons.Default.Gavel
+        )
+
+        openSourceNoticeGroups().forEach { group ->
+            SettingsGroup(title = stringResource(group.titleRes)) {
+                group.items.forEach { notice ->
+                    OpenSourceNoticeRow(notice, onOpenUrl)
+                }
+            }
+        }
+        Spacer(Modifier.height(80.dp))
+    }
 }
 
 @Composable
@@ -1399,40 +1565,293 @@ private fun AboutLinkRow(
     )
 }
 
+@Composable
+private fun OpenSourceNoticeRow(
+    notice: OpenSourceNotice,
+    onOpenUrl: (String) -> Unit
+) {
+    val subtitle = listOfNotNull(
+        notice.license,
+        notice.source.takeIf { it.isNotBlank() }
+    ).joinToString(" · ")
+    ExpressiveListItem(
+        title = notice.name,
+        subtitle = subtitle,
+        leadingIcon = Icons.Default.Source,
+        trailingContent = {
+            if (!notice.url.isNullOrBlank()) {
+                Icon(Icons.Default.OpenInBrowser, null)
+            }
+        },
+        onClick = notice.url?.let { url -> { onOpenUrl(url) } }
+    )
+}
+
 private data class AboutLink(
     val title: String,
     val url: String
 )
 
+private data class AboutContributor(
+    val username: String,
+    val commits: Int
+)
+
+private data class OpenSourceNotice(
+    val name: String,
+    val license: String,
+    val source: String,
+    val url: String? = null
+)
+
+private data class OpenSourceNoticeGroup(
+    val titleRes: Int,
+    val items: List<OpenSourceNotice>
+)
+
 @Composable
-private fun aboutLinks(): List<AboutLink> {
-    return listOf(
-        AboutLink(stringResource(R.string.settings_upstream_repository), BuildConfig.UPSTREAM_REPO_URL),
-        AboutLink(stringResource(R.string.settings_top_level_repository), BuildConfig.TOP_LEVEL_REPO_URL),
-        AboutLink(stringResource(R.string.settings_third_party_notices), "${sourceRepoUrl()}/blob/main/THIRD_PARTY_NOTICES.md"),
-        AboutLink("KernelSU", "https://github.com/tiann/KernelSU"),
-        AboutLink("KernelSU Next", "https://github.com/KernelSU-Next/KernelSU-Next"),
-        AboutLink("SukiSU Ultra", "https://github.com/SukiSU-Ultra/SukiSU-Ultra"),
-        AboutLink("ReSukiSU", "https://github.com/ReSukiSU/ReSukiSU"),
-        AboutLink("SUSFS", "https://gitlab.com/simonpunk/susfs4ksu"),
-        AboutLink(stringResource(R.string.settings_susfs_github_source), "https://github.com/ShirkNeko/susfs4ksu"),
-        AboutLink("SukiSU patch", "https://github.com/ShirkNeko/SukiSU_patch"),
-        AboutLink("AnyKernel3", "https://github.com/WildKernels/AnyKernel3"),
-        AboutLink("Kernel patches", "https://github.com/WildKernels/kernel_patches"),
-        AboutLink(stringResource(R.string.settings_kernel_patches_source), "https://github.com/WildKernels/kernel_patches"),
-        AboutLink("NTsync / IPSet / BBR PR by huime180", "https://github.com/huime180"),
-        AboutLink("Action-Build", "https://github.com/Numbersf/Action-Build"),
-        AboutLink(stringResource(R.string.settings_susfs_module_source), "https://github.com/sidex15/susfs4ksu-module"),
-        AboutLink(
-            "GCC prebuilts",
-            "https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-gnu-6.4.1"
-        ),
-        AboutLink("Baseband Guard", "https://github.com/vc-teahouse/Baseband-guard"),
-        AboutLink("Re-Kernel", "https://github.com/Sakion-Team/Re-Kernel"),
-        AboutLink(stringResource(R.string.settings_droidspaces_source), "https://github.com/ravindu644/Droidspaces-OSS"),
-        AboutLink(stringResource(R.string.settings_kernelsu_site), "https://kernelsu.org/")
+private fun repositoryLinks(): List<AboutLink> = listOf(
+    AboutLink(stringResource(R.string.settings_source_repository), sourceRepoUrl()),
+    AboutLink("Releases", "${sourceRepoUrl()}/releases"),
+    AboutLink("Actions", "${sourceRepoUrl()}/actions"),
+    AboutLink("Pages", "https://${BuildConfig.SOURCE_REPO_OWNER}.github.io/${BuildConfig.SOURCE_REPO_NAME}/"),
+    AboutLink("README", "${sourceRepoUrl()}/blob/main/README.md"),
+    AboutLink(stringResource(R.string.settings_third_party_notices), "${sourceRepoUrl()}/blob/main/THIRD_PARTY_NOTICES.md")
+)
+
+private fun contributors(): List<AboutContributor> = listOf(
+    AboutContributor("TheWildJames", 1893),
+    AboutContributor("zzh20188", 449),
+    AboutContributor("xingguangcuican6666", 344),
+    AboutContributor("ShirkNeko", 56),
+    AboutContributor("huime180", 19),
+    AboutContributor("MiRinChan", 13),
+    AboutContributor("FunLay123", 5),
+    AboutContributor("guruji-byte", 4),
+    AboutContributor("Xiaomichael", 4),
+    AboutContributor("DreamFerry", 3),
+    AboutContributor("liqideqq", 3),
+    AboutContributor("elysias123", 2),
+    AboutContributor("Fede2782", 2),
+    AboutContributor("ReeViiS69", 2),
+    AboutContributor("TheSillyOk", 2),
+    AboutContributor("prpjzz", 2),
+    AboutContributor("ukriu", 2),
+    AboutContributor("wrnxr233", 2),
+    AboutContributor("Tools-cx-app", 2),
+    AboutContributor("Akuma-Noko", 1),
+    AboutContributor("DebugBoard", 1),
+    AboutContributor("FixeQyt", 1),
+    AboutContributor("LX200944", 1),
+    AboutContributor("Starsun", 1),
+    AboutContributor("yx1234587", 1)
+)
+
+private fun openSourceNoticeGroups(): List<OpenSourceNoticeGroup> = listOf(
+    OpenSourceNoticeGroup(
+        R.string.settings_license_group_repository,
+        listOf(
+            OpenSourceNotice("AnyBase Kernel", "GPL-2.0", "LICENSE", sourceRepoUrl()),
+            OpenSourceNotice("ABK Control native bridge", "GPL-2.0", "app/src/main/cpp/uapi/abk_control.h"),
+            OpenSourceNotice("xingguang DDK module", "GPL", "ddk/xingguang-ddk/xingguang_ddk.c"),
+            OpenSourceNotice("DDK kernel API patch", "GPL-2.0", "ddk/patches/xingguang-ddk/0001-xingguang-ddk-api.patch"),
+            OpenSourceNotice("ZRAM LZ4 kernel glue", "GPL-2.0-only", "zram/lz4/Makefile")
+        )
+    ),
+    OpenSourceNoticeGroup(
+        R.string.settings_license_group_upstream,
+        listOf(
+            OpenSourceNotice("zzh20188/GKI_KernelSU_SUSFS", "Upstream repository license", "BuildConfig.UPSTREAM_REPO_URL", BuildConfig.UPSTREAM_REPO_URL),
+            OpenSourceNotice("WildKernels/GKI_KernelSU_SUSFS", "Upstream repository license", "BuildConfig.TOP_LEVEL_REPO_URL", BuildConfig.TOP_LEVEL_REPO_URL),
+            OpenSourceNotice("KernelSU", "GPL-3.0", "workflow setup.sh source", "https://github.com/tiann/KernelSU"),
+            OpenSourceNotice("KernelSU Next", "GPL-3.0", "workflow setup.sh source", "https://github.com/KernelSU-Next/KernelSU-Next"),
+            OpenSourceNotice("SukiSU Ultra", "GPL-3.0", "kernel setup, ksud, libmagiskboot source", "https://github.com/SukiSU-Ultra/SukiSU-Ultra"),
+            OpenSourceNotice("ReSukiSU", "GPL-3.0", "workflow setup.sh source", "https://github.com/ReSukiSU/ReSukiSU"),
+            OpenSourceNotice("SUSFS", "GPL-2.0", "kernel patches and module integration", "https://gitlab.com/simonpunk/susfs4ksu"),
+            OpenSourceNotice("ShirkNeko/susfs4ksu", "GPL-2.0", "GitHub mirror / patch source", "https://github.com/ShirkNeko/susfs4ksu"),
+            OpenSourceNotice("SukiSU_patch", "GPL-2.0", "workflow patch source", "https://github.com/ShirkNeko/SukiSU_patch"),
+            OpenSourceNotice("AnyKernel3", "GPL-2.0", "flashable kernel packaging", "https://github.com/WildKernels/AnyKernel3"),
+            OpenSourceNotice("WildKernels/kernel_patches", "GPL-2.0", "NTsync, IPSet, BBR and related patches", "https://github.com/WildKernels/kernel_patches"),
+            OpenSourceNotice("Action-Build", "Repository license", "workflow integration", "https://github.com/Numbersf/Action-Build"),
+            OpenSourceNotice("sidex15/susfs4ksu-module", "Repository license", "SUSFS module build source", "https://github.com/sidex15/susfs4ksu-module"),
+            OpenSourceNotice("LineageOS GCC prebuilts", "GPL-family toolchain notices", "workflow toolchain source", "https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-gnu-6.4.1"),
+            OpenSourceNotice("Baseband Guard", "Repository license", "workflow setup source", "https://github.com/vc-teahouse/Baseband-guard"),
+            OpenSourceNotice("Re-Kernel", "Repository license", "workflow patch source", "https://github.com/Sakion-Team/Re-Kernel"),
+            OpenSourceNotice("Droidspaces-OSS", "Repository license", "virtualization support patches", "https://github.com/ravindu644/Droidspaces-OSS"),
+            OpenSourceNotice("ABK_repo", "Repository license", "official module catalog", "https://github.com/xingguangcuican6666/ABK_repo")
+        )
+    ),
+    OpenSourceNoticeGroup(
+        R.string.settings_license_group_embedded,
+        listOf(
+            OpenSourceNotice("LZ4", "BSD-2-Clause", "zram/lz4 and zram/include/linux/lz4.h", "https://github.com/lz4/lz4"),
+            OpenSourceNotice("AOSP kernel/common", "GPL-2.0 WITH Linux-syscall-note and AOSP notices", "android.googlesource.com/kernel/common", "https://android.googlesource.com/kernel/common"),
+            OpenSourceNotice("AOSP kernel manifest", "AOSP project notices", "android.googlesource.com/kernel/manifest", "https://android.googlesource.com/kernel/manifest"),
+            OpenSourceNotice("AOSP mkbootimg", "Apache-2.0", "android.googlesource.com/platform/system/tools/mkbootimg", "https://android.googlesource.com/platform/system/tools/mkbootimg"),
+            OpenSourceNotice("AOSP kernel build-tools", "AOSP project notices", "android.googlesource.com/kernel/prebuilts/build-tools", "https://android.googlesource.com/kernel/prebuilts/build-tools"),
+            OpenSourceNotice("Android GKI certified boot images", "Android image distribution terms", "dl.google.com/android/gki"),
+            OpenSourceNotice("Android command line tools", "Android SDK License", "Dockerfile.test", "https://developer.android.com/studio")
+        )
+    ),
+    OpenSourceNoticeGroup(
+        R.string.settings_license_group_android,
+        androidDependencyNotices()
+    ),
+    OpenSourceNoticeGroup(
+        R.string.settings_license_group_web,
+        webDependencyNotices()
     )
-}
+)
+
+private fun androidDependencyNotices(): List<OpenSourceNotice> = listOf(
+    OpenSourceNotice("Android Gradle Plugin 9.1.1", "Apache-2.0", "com.android.application"),
+    OpenSourceNotice("Kotlin Gradle/Compose plugin 2.3.21", "Apache-2.0", "org.jetbrains.kotlin.plugin.compose"),
+    OpenSourceNotice("androidx.core:core-ktx 1.15.0", "Apache-2.0", "Gradle direct dependency"),
+    OpenSourceNotice("androidx.lifecycle:lifecycle-runtime-ktx 2.8.7", "Apache-2.0", "Gradle direct dependency"),
+    OpenSourceNotice("androidx.lifecycle:lifecycle-viewmodel-compose 2.8.7", "Apache-2.0", "Gradle direct dependency"),
+    OpenSourceNotice("androidx.activity:activity-compose 1.9.3", "Apache-2.0", "Gradle direct dependency"),
+    OpenSourceNotice("androidx.compose:compose-bom 2026.05.00", "Apache-2.0", "Gradle direct dependency"),
+    OpenSourceNotice("androidx.compose.ui:ui", "Apache-2.0", "Gradle direct dependency"),
+    OpenSourceNotice("androidx.compose.ui:ui-graphics", "Apache-2.0", "Gradle direct dependency"),
+    OpenSourceNotice("androidx.compose.ui:ui-tooling-preview", "Apache-2.0", "Gradle direct dependency"),
+    OpenSourceNotice("androidx.compose.material3:material3 1.5.0-alpha19", "Apache-2.0", "Gradle direct dependency"),
+    OpenSourceNotice("androidx.compose.material:material-icons-extended", "Apache-2.0", "Gradle direct dependency"),
+    OpenSourceNotice("com.google.android.material:material 1.12.0", "Apache-2.0", "Gradle direct dependency"),
+    OpenSourceNotice("androidx.navigation:navigation-compose 2.8.5", "Apache-2.0", "Gradle direct dependency"),
+    OpenSourceNotice("Retrofit 2.11.0", "Apache-2.0", "com.squareup.retrofit2:retrofit"),
+    OpenSourceNotice("Retrofit Gson converter 2.11.0", "Apache-2.0", "com.squareup.retrofit2:converter-gson"),
+    OpenSourceNotice("OkHttp 4.12.0", "Apache-2.0", "com.squareup.okhttp3:okhttp"),
+    OpenSourceNotice("OkHttp logging-interceptor 4.12.0", "Apache-2.0", "com.squareup.okhttp3:logging-interceptor"),
+    OpenSourceNotice("Gson 2.11.0", "Apache-2.0", "com.google.code.gson:gson"),
+    OpenSourceNotice("kotlinx-serialization-json 1.7.3", "Apache-2.0", "org.jetbrains.kotlinx:kotlinx-serialization-json"),
+    OpenSourceNotice("libsu core 5.2.2", "Apache-2.0", "com.github.topjohnwu.libsu:core"),
+    OpenSourceNotice("libsu io 5.2.2", "Apache-2.0", "com.github.topjohnwu.libsu:io"),
+    OpenSourceNotice("Coil Compose 2.7.0", "Apache-2.0", "io.coil-kt:coil-compose"),
+    OpenSourceNotice("WorkManager runtime-ktx 2.10.0", "Apache-2.0", "androidx.work:work-runtime-ktx"),
+    OpenSourceNotice("DataStore preferences 1.1.2", "Apache-2.0", "androidx.datastore:datastore-preferences"),
+    OpenSourceNotice("JUnit 4.13.2", "EPL-1.0", "testImplementation"),
+    OpenSourceNotice("AndroidX Test JUnit 1.2.1", "Apache-2.0", "androidTestImplementation"),
+    OpenSourceNotice("Espresso Core 3.6.1", "Apache-2.0", "androidTestImplementation")
+)
+
+private fun webDependencyNotices(): List<OpenSourceNotice> = listOf(
+    OpenSourceNotice("@discoveryjs/json-ext 0.6.3", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("@jridgewell/gen-mapping 0.3.13", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("@jridgewell/resolve-uri 3.1.2", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("@jridgewell/source-map 0.3.11", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("@jridgewell/sourcemap-codec 1.5.5", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("@jridgewell/trace-mapping 0.3.31", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("@parcel/watcher 2.5.6 and platform packages", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("@types/eslint 9.6.1", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("@types/eslint-scope 3.7.7", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("@types/estree 1.0.8", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("@types/json-schema 7.0.15", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("@types/node 25.3.3", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("@webassemblyjs/* 1.13.2-1.14.1", "MIT / Apache-2.0", "web/package-lock.json"),
+    OpenSourceNotice("@webpack-cli/* 3.0.1", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("@xtuc/ieee754 1.2.0", "BSD-3-Clause", "web/package-lock.json"),
+    OpenSourceNotice("@xtuc/long 4.2.2", "Apache-2.0", "web/package-lock.json"),
+    OpenSourceNotice("acorn 8.16.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("acorn-import-phases 1.0.4", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("ajv 8.18.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("ajv-formats 2.1.1", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("ajv-keywords 5.1.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("baseline-browser-mapping 2.10.0", "Apache-2.0", "web/package-lock.json"),
+    OpenSourceNotice("browserslist 4.28.1", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("buffer-from 1.1.2", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("caniuse-lite 1.0.30001776", "CC-BY-4.0", "web/package-lock.json"),
+    OpenSourceNotice("chokidar 4.0.3", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("chrome-trace-event 1.0.4", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("clone-deep 4.0.1", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("colorette 2.0.20", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("commander 2.20.3 / 12.1.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("cross-spawn 7.0.6", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("css-loader 7.1.4", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("cssesc 3.0.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("detect-libc 2.1.2", "Apache-2.0", "web/package-lock.json"),
+    OpenSourceNotice("electron-to-chromium 1.5.307", "ISC", "web/package-lock.json"),
+    OpenSourceNotice("enhanced-resolve 5.20.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("envinfo 7.21.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("es-module-lexer 2.0.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("escalade 3.2.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("eslint-scope 5.1.1", "BSD-2-Clause", "web/package-lock.json"),
+    OpenSourceNotice("esrecurse 4.3.0", "BSD-2-Clause", "web/package-lock.json"),
+    OpenSourceNotice("estraverse 4.3.0 / 5.3.0", "BSD-2-Clause", "web/package-lock.json"),
+    OpenSourceNotice("events 3.3.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("fast-deep-equal 3.1.3", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("fast-uri 3.1.0", "BSD-3-Clause", "web/package-lock.json"),
+    OpenSourceNotice("fastest-levenshtein 1.0.16", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("find-up 4.1.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("flat 5.0.2", "BSD-3-Clause", "web/package-lock.json"),
+    OpenSourceNotice("function-bind 1.1.2", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("glob-to-regexp 0.4.1", "BSD-2-Clause", "web/package-lock.json"),
+    OpenSourceNotice("graceful-fs 4.2.11", "ISC", "web/package-lock.json"),
+    OpenSourceNotice("has-flag 4.0.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("hasown 2.0.2", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("icss-utils 5.1.0", "ISC", "web/package-lock.json"),
+    OpenSourceNotice("immutable 5.1.5", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("import-local 3.2.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("interpret 3.1.1", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("is-core-module 2.16.1", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("is-extglob 2.1.1", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("is-glob 4.0.3", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("is-plain-object 2.0.4", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("isexe 2.0.0", "ISC", "web/package-lock.json"),
+    OpenSourceNotice("isobject 3.0.1", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("jest-worker 27.5.1", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("json-parse-even-better-errors 2.3.1", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("json-schema-traverse 1.0.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("kind-of 6.0.3", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("loader-runner 4.3.1", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("locate-path 5.0.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("merge-stream 2.0.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("mime-db 1.52.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("mime-types 2.1.35", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("mini-css-extract-plugin 2.10.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("nanoid 3.3.11", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("neo-async 2.6.2", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("node-addon-api 7.1.1", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("node-releases 2.0.36", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("p-limit / p-locate / p-try", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("path-exists / path-key / path-parse", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("picocolors 1.1.1", "ISC", "web/package-lock.json"),
+    OpenSourceNotice("picomatch 4.0.3", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("pkg-dir 4.2.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("postcss 8.5.8", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("postcss-modules-*", "ISC / MIT", "web/package-lock.json"),
+    OpenSourceNotice("postcss-selector-parser 7.1.1", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("postcss-value-parser 4.2.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("readdirp 4.1.2", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("rechoir 0.8.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("require-from-string 2.0.2", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("resolve 1.22.11", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("resolve-cwd 3.0.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("resolve-from 5.0.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("sass 1.97.3", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("sass-loader 16.0.7", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("schema-utils 4.3.3", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("semver 7.7.4", "ISC", "web/package-lock.json"),
+    OpenSourceNotice("shallow-clone 3.0.1", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("shebang-command / shebang-regex", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("source-map 0.6.1", "BSD-3-Clause", "web/package-lock.json"),
+    OpenSourceNotice("source-map-js 1.2.1", "BSD-3-Clause", "web/package-lock.json"),
+    OpenSourceNotice("source-map-support 0.5.21", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("supports-color 8.1.1", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("supports-preserve-symlinks-flag 1.0.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("tapable 2.3.0", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("terser 5.46.0", "BSD-2-Clause", "web/package-lock.json"),
+    OpenSourceNotice("terser-webpack-plugin 5.3.17", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("undici-types 7.18.2", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("update-browserslist-db 1.2.3", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("util-deprecate 1.0.2", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("watchpack 2.5.1", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("webpack 5.105.4", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("webpack-cli 6.0.1", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("webpack-merge 6.0.1", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("webpack-sources 3.3.4", "MIT", "web/package-lock.json"),
+    OpenSourceNotice("which 2.0.2", "ISC", "web/package-lock.json"),
+    OpenSourceNotice("wildcard 2.0.1", "MIT", "web/package-lock.json")
+)
 
 private fun sourceRepoUrl(): String =
     "https://github.com/${BuildConfig.SOURCE_REPO_OWNER}/${BuildConfig.SOURCE_REPO_NAME}"
