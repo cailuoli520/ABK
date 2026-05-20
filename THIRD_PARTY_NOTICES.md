@@ -19,6 +19,9 @@ This document records the open source projects, embedded code, generated binarie
 | --- | --- | --- |
 | zzh20188/GKI_KernelSU_SUSFS | <https://github.com/zzh20188/GKI_KernelSU_SUSFS> | Upstream repository license |
 | WildKernels/GKI_KernelSU_SUSFS | <https://github.com/WildKernels/GKI_KernelSU_SUSFS> | Upstream repository license |
+| OnePlusOSS/kernel_manifest | <https://github.com/OnePlusOSS/kernel_manifest> | Upstream repository license / no SPDX detected |
+| Xiaomichael/kernel_manifest | <https://github.com/Xiaomichael/kernel_manifest> | Upstream repository license / no SPDX detected |
+| Xiaomichael/kernel_patches | <https://github.com/Xiaomichael/kernel_patches> | Upstream repository license / no SPDX detected |
 | KernelSU | <https://github.com/tiann/KernelSU> | GPL-3.0 |
 | KernelSU Next | <https://github.com/KernelSU-Next/KernelSU-Next> | GPL-3.0 |
 | SukiSU Ultra | <https://github.com/SukiSU-Ultra/SukiSU-Ultra> | GPL-3.0 |
@@ -27,7 +30,10 @@ This document records the open source projects, embedded code, generated binarie
 | ShirkNeko/susfs4ksu | <https://github.com/ShirkNeko/susfs4ksu> | GPL-2.0 |
 | SukiSU_patch | <https://github.com/ShirkNeko/SukiSU_patch> | GPL-2.0 |
 | AnyKernel3 | <https://github.com/WildKernels/AnyKernel3> | GPL-2.0 |
+| Xiaomichael/AnyKernel3 | <https://github.com/Xiaomichael/AnyKernel3> | Upstream repository license / NOASSERTION |
 | WildKernels/kernel_patches | <https://github.com/WildKernels/kernel_patches> | GPL-2.0 |
+| cctv18/susfs4oki | <https://github.com/cctv18/susfs4oki> | GPL-3.0 |
+| SukiSU_KernelPatch_patch | <https://github.com/SukiSU-Ultra/SukiSU_KernelPatch_patch> | Upstream repository license |
 | Action-Build | <https://github.com/Numbersf/Action-Build> | Upstream repository license |
 | sidex15/susfs4ksu-module | <https://github.com/sidex15/susfs4ksu-module> | Upstream repository license |
 | LineageOS GCC prebuilts | <https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-gnu-6.4.1> | GPL-family toolchain notices |

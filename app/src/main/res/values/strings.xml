@@ -94,6 +94,11 @@
 
     <!-- Build -->
     <string name="build_title">构建内核</string>
+    <string name="build_target_title">构建目标</string>
+    <string name="build_target_desc">选择标准 GKI 构建或 OnePlus/Oplus 机型构建。</string>
+    <string name="build_target_gki">GKI</string>
+    <string name="build_target_oneplus">OnePlus</string>
+    <string name="build_target_line">构建目标: %1$s</string>
     <string name="build_submit">提交构建</string>
     <string name="build_running">构建进行中</string>
     <string name="build_success">构建成功</string>
@@ -111,6 +116,10 @@
     <string name="build_virtualization_line">虚拟化支持: %1$s</string>
     <string name="build_external_modules_line">外部模块: %1$s</string>
     <string name="build_external_modules_count">%1$d 个</string>
+    <string name="build_oneplus_device_line">OnePlus 机型: %1$s · CPU %2$s</string>
+    <string name="build_oneplus_kernel_line">OnePlus KMI: %1$s · 内核 %2$s</string>
+    <string name="build_oneplus_feature_line">SUSFS: %1$s · lz4kd: %2$s · KPM: %3$s</string>
+    <string name="build_oneplus_network_line">BBR: %1$s · 代理优化: %2$s · Unicode 绕过: %3$s</string>
     <string name="build_active_queue_notice">当前有构建活动，此配置会加入本地队列并按顺序派发。</string>
     <string name="build_plan_saved">方案已保存</string>
     <string name="build_plan_parse_failed">方案码解析失败</string>
@@ -131,6 +140,8 @@
     <string name="build_open_actions_page">打开 Actions 页面</string>
     <string name="build_handle_later">稍后处理</string>
     <string name="build_kernel_version_config">内核版本配置</string>
+    <string name="build_oneplus_cpu">OnePlus CPU 分支</string>
+    <string name="build_oneplus_device_manifest">OnePlus 机型 manifest</string>
     <string name="build_android_version">Android 版本</string>
     <string name="build_kernel_version">内核版本</string>
     <string name="build_sub_level">子版本号</string>
@@ -144,6 +155,8 @@
     <string name="build_custom_ksu_ref">自定义 KSU commit/ref</string>
     <string name="build_custom_ksu_ref_placeholder">例如: abc123, branch:5, 或 tag</string>
     <string name="build_no_root_scheme_desc">不注入任何 Root 授权方案；KSU 分支、SUSFS 和 KPM 会自动关闭。</string>
+    <string name="build_oneplus_no_root_scheme_desc">构建无 Root 的 OnePlus 内核；SUSFS 和 KPM 会自动关闭。</string>
+    <string name="build_oneplus_ksu_branch_desc">OnePlus 构建使用对应 KernelSU 上游默认分支。</string>
     <string name="build_ksu_none">None（无 Root 方案）</string>
     <string name="build_standard">标准</string>
     <string name="build_development">开发</string>
@@ -158,6 +171,13 @@
     <string name="build_enable_rekernel">启用 Re-Kernel 驱动 (测试)</string>
     <string name="build_virtualization_support">虚拟化支持</string>
     <string name="build_enable_oneplus_8e">启用一加 8E 支持</string>
+    <string name="build_oneplus_lz4kd">启用 lz4kd</string>
+    <string name="build_oneplus_bbr">启用 BBR</string>
+    <string name="build_oneplus_proxy_optimization">启用代理优化</string>
+    <string name="build_oneplus_proxy_mtk_disabled">MTK 分支已强制关闭代理优化。</string>
+    <string name="build_oneplus_unicode_bypass">启用 Unicode 零宽绕过修复</string>
+    <string name="build_oneplus_proxy_short">代理优化</string>
+    <string name="build_oneplus_unicode_short">Unicode 绕过</string>
     <string name="build_zram_options">ZRAM 扩展选项</string>
     <string name="build_zram_full_algo">启用完整算法支持 (LZO/LZ4/ZSTD 等)</string>
     <string name="build_zram_custom_algo">自定义 ZRAM 算法</string>
@@ -234,6 +254,7 @@
     <string name="build_base_config">基础配置</string>
     <string name="build_summary_external_modules">外部模块 %1$d</string>
     <string name="build_hero_desc">触发 GitHub Actions 并自动整理 img、AK3、管理器和 SUSFS 模块。</string>
+    <string name="build_oneplus_hero_desc">使用 OnePlus/Oplus manifest 构建机型专用 AnyKernel3 包。</string>
     <string name="build_susfs_on">SUSFS 开启</string>
     <string name="build_susfs_off">SUSFS 关闭</string>
     <string name="build_virtualization_chip">虚拟化支持 %1$s</string>

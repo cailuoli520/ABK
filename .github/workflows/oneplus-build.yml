@@ -1,0 +1,513 @@
+name: OnePlus 内核构建流程
+
+permissions:
+  contents: write
+  actions: write
+
+on:
+  workflow_call:
+    inputs:
+      cpu:
+        required: true
+        type: string
+      device_manifest:
+        required: true
+        type: string
+      android_version:
+        required: true
+        type: string
+      kernel_version:
+        required: true
+        type: string
+      ksu_variant:
+        required: true
+        type: string
+      enable_susfs:
+        required: false
+        type: boolean
+        default: false
+      use_kpm:
+        required: false
+        type: boolean
+        default: false
+      use_lz4kd:
+        required: false
+        type: boolean
+        default: false
+      use_bbg:
+        required: false
+        type: boolean
+        default: true
+      use_bbr:
+        required: false
+        type: boolean
+        default: false
+      use_proxy_optimization:
+        required: false
+        type: boolean
+        default: true
+      use_unicode_bypass:
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    name: "${{ inputs.device_manifest }}-${{ inputs.kernel_version }}-${{ inputs.ksu_variant }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    env:
+      CPU: ${{ inputs.cpu }}
+      DEVICE_MANIFEST: ${{ inputs.device_manifest }}
+      ANDROID_VERSION: ${{ inputs.android_version }}
+      KERNEL_VERSION: ${{ inputs.kernel_version }}
+      KSU_VARIANT: ${{ inputs.ksu_variant }}
+      ENABLE_SUSFS: ${{ inputs.enable_susfs }}
+      USE_KPM: ${{ inputs.use_kpm }}
+      USE_LZ4KD: ${{ inputs.use_lz4kd }}
+      USE_BBG: ${{ inputs.use_bbg }}
+      USE_BBR: ${{ inputs.use_bbr }}
+      USE_PROXY_OPTIMIZATION: ${{ inputs.use_proxy_optimization }}
+      USE_UNICODE_BYPASS: ${{ inputs.use_unicode_bypass }}
+      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_HARDLINK: "true"
+      CCACHE_MAXSIZE: 8G
+
+    steps:
+      - name: 构建信息摘要
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          effective_kpm="$USE_KPM"
+          if [ "$KSU_VARIANT" != "SukiSU" ] && [ "$KSU_VARIANT" != "ReSukiSU" ]; then
+            effective_kpm="false"
+          fi
+          if [ "$KSU_VARIANT" = "None" ]; then
+            ENABLE_SUSFS="false"
+          fi
+          effective_proxy="$USE_PROXY_OPTIMIZATION"
+          if [[ "$CPU" == mt* ]]; then
+            effective_proxy="false"
+          fi
+
+          {
+            echo "EFFECTIVE_KPM=$effective_kpm"
+            echo "EFFECTIVE_PROXY_OPTIMIZATION=$effective_proxy"
+            echo "EFFECTIVE_ENABLE_SUSFS=$ENABLE_SUSFS"
+          } >> "$GITHUB_ENV"
+
+          echo "========================================"
+          echo "       内核构建配置摘要"
+          echo "========================================"
+          echo "构建目标      : OnePlus"
+          echo "CPU 分支      : $CPU"
+          echo "手机型号      : $DEVICE_MANIFEST"
+          echo "Android 版本  : $ANDROID_VERSION"
+          echo "内核版本      : $KERNEL_VERSION"
+          echo "子版本号      : OnePlus manifest"
+          echo "补丁级别      : OnePlus manifest"
+          echo "KSU 变体      : $KSU_VARIANT"
+          echo "KSU 分支      : OnePlus upstream"
+          echo "构建时间      : OnePlus upstream"
+          echo "SUSFS 状态    : $ENABLE_SUSFS"
+          echo "ZRAM 增强     : $USE_LZ4KD"
+          echo "ZRAM 完整算法 : false"
+          echo "ZRAM 额外算法 : lz4kd=$USE_LZ4KD"
+          echo "BBG 补丁      : $USE_BBG"
+          echo "DDK LSM       : false"
+          echo "NTsync 补丁   : false"
+          echo "Networking 增强: BBR=$USE_BBR, proxy=$effective_proxy"
+          echo "KPM 功能      : $effective_kpm"
+          echo "KPM 密码      : 默认"
+          echo "Re-Kernel     : false"
+          echo "虚拟化支持   : off"
+          echo "自定义注入    : 无"
+          echo "Stock Config  : OnePlus manifest"
+          echo "Unicode 绕过  : $USE_UNICODE_BYPASS"
+          echo "========================================"
+
+      - name: 校验 OnePlus 输入
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$KERNEL_VERSION" in
+            5.10|5.15|6.1|6.6) ;;
+            *) echo "::error::不支持的 OnePlus 内核版本: $KERNEL_VERSION"; exit 1 ;;
+          esac
+          case "$ANDROID_VERSION/$KERNEL_VERSION" in
+            android12/5.10|android13/5.15|android14/6.1|android15/6.6) ;;
+            *) echo "::warning::Android/KMI 与内核版本不是推荐组合: $ANDROID_VERSION/$KERNEL_VERSION" ;;
+          esac
+          if [[ "$CPU" == mt* && "$USE_PROXY_OPTIMIZATION" = "true" ]]; then
+            echo "::warning::MTK 分支已强制关闭代理相关网络优化。"
+          fi
+          if [ "$USE_KPM" = "true" ] && [ "$KSU_VARIANT" != "SukiSU" ] && [ "$KSU_VARIANT" != "ReSukiSU" ]; then
+            echo "::warning::KPM 仅支持 SukiSU/ReSukiSU，当前构建已关闭 KPM。"
+          fi
+
+      - name: 最大化构建空间
+        if: ${{ inputs.kernel_version == '5.10' || inputs.kernel_version == '5.15' }}
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 8192
+          temp-reserve-mb: 4096
+          remove-dotnet: "true"
+          remove-android: "true"
+          remove-haskell: "true"
+          remove-codeql: "true"
+
+      - name: 安装依赖
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends \
+            python3 git curl ccache libelf-dev build-essential flex bison libssl-dev \
+            libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip gawk \
+            dos2unix zip gcc-aarch64-linux-gnu
+          if ! command -v repo >/dev/null 2>&1; then
+            curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo -o repo
+            chmod a+x repo
+            sudo mv repo /usr/local/bin/repo
+          fi
+
+      - name: 配置 ccache
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CCACHE_DIR="$HOME/.ccache_${DEVICE_MANIFEST}_${KSU_VARIANT}"
+          echo "CCACHE_DIR=$CCACHE_DIR" >> "$GITHUB_ENV"
+          mkdir -p "$CCACHE_DIR"
+          ccache -M "$CCACHE_MAXSIZE"
+          ccache -z
+
+      - name: 恢复 ccache
+        uses: actions/cache@v5
+        with:
+          path: ~/.ccache_${{ inputs.device_manifest }}_${{ inputs.ksu_variant }}
+          key: oneplus-ccache-${{ runner.os }}-${{ inputs.device_manifest }}-${{ inputs.ksu_variant }}-${{ inputs.enable_susfs }}
+          restore-keys: |
+            oneplus-ccache-${{ runner.os }}-${{ inputs.device_manifest }}-${{ inputs.ksu_variant }}-
+            oneplus-ccache-${{ runner.os }}-
+
+      - name: 同步 OnePlus 内核源码
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global user.name "abk-builder"
+          git config --global user.email "abk-builder@users.noreply.github.com"
+          rm -rf oneplus_workspace
+          mkdir -p oneplus_workspace/kernel_workspace
+          cd oneplus_workspace/kernel_workspace
+          repo init -u https://github.com/Xiaomichael/kernel_manifest.git \
+            -b "refs/heads/oneplus/${CPU}" \
+            -m "${DEVICE_MANIFEST}.xml" \
+            --depth=1
+          repo sync -c -j"$(nproc --all)" --no-tags --no-clone-bundle --force-sync
+
+      - name: 准备 KernelSU 和补丁
+        shell: bash
+        run: |
+          set -euo pipefail
+          WORKSPACE="$GITHUB_WORKSPACE/oneplus_workspace"
+          KERNEL_ROOT="$WORKSPACE/kernel_workspace/kernel_platform"
+          COMMON_ROOT="$KERNEL_ROOT/common"
+
+          rm -f "$COMMON_ROOT"/android/abi_gki_protected_exports_* || true
+          rm -f "$KERNEL_ROOT"/msm-kernel/android/abi_gki_protected_exports_* || true
+          for script in \
+            "$COMMON_ROOT/scripts/setlocalversion" \
+            "$KERNEL_ROOT/msm-kernel/scripts/setlocalversion" \
+            "$KERNEL_ROOT/external/dtc/scripts/setlocalversion"; do
+            [ -f "$script" ] || continue
+            sed -i 's/ -dirty//g' "$script"
+          done
+
+          if [ "$KSU_VARIANT" != "None" ]; then
+            cd "$KERNEL_ROOT"
+            case "$KSU_VARIANT" in
+              Official)
+                curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/refs/heads/main/kernel/setup.sh" | bash -s main
+                ;;
+              Next)
+                curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
+                ;;
+              SukiSU)
+                curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/builtin/kernel/setup.sh" | bash -s builtin
+                ;;
+              ReSukiSU)
+                curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s main
+                ;;
+              *)
+                echo "::error::未知 KSU 变体: $KSU_VARIANT"
+                exit 1
+                ;;
+            esac
+          fi
+
+          cd "$WORKSPACE"
+          rm -rf kernel_patches SukiSU_patch susfs4oki
+          git clone https://github.com/Xiaomichael/kernel_patches.git --depth=1
+          git clone https://github.com/ShirkNeko/SukiSU_patch.git --depth=1
+          if [ "$EFFECTIVE_ENABLE_SUSFS" = "true" ]; then
+            git clone https://github.com/cctv18/susfs4oki.git \
+              -b "oki-${ANDROID_VERSION}-${KERNEL_VERSION}" \
+              --depth=1
+          fi
+
+          if [ "$USE_BBG" = "true" ] && [ "$EFFECTIVE_KPM" = "false" ]; then
+            cd "$COMMON_ROOT"
+            curl -fsSL https://github.com/vc-teahouse/Baseband-guard/raw/main/setup.sh -o setup-bbg.sh
+            bash setup-bbg.sh
+          fi
+
+          cd "$KERNEL_ROOT"
+          if [ "$EFFECTIVE_ENABLE_SUSFS" = "true" ]; then
+            cp "$WORKSPACE/susfs4oki/kernel_patches/50_add_susfs_in_gki-${ANDROID_VERSION}-${KERNEL_VERSION}.patch" "$COMMON_ROOT/" || true
+            cp "$WORKSPACE"/susfs4oki/kernel_patches/fs/* "$COMMON_ROOT/fs/" || true
+            cp "$WORKSPACE"/susfs4oki/kernel_patches/include/linux/* "$COMMON_ROOT/include/linux/" || true
+          elif [ "$KSU_VARIANT" = "SukiSU" ] || [ "$KSU_VARIANT" = "ReSukiSU" ] || [ "$KSU_VARIANT" = "Next" ]; then
+            cp "$WORKSPACE/kernel_patches/sukisu/scope_min_manual_hooks_v1.9.patch" "$COMMON_ROOT/" || \
+              cp "$WORKSPACE/kernel_patches/sukisu/scope_min_manual_hooks_v1.6.patch" "$COMMON_ROOT/" || true
+          fi
+          cp "$WORKSPACE/kernel_patches/zram_patches/001-lz4.patch" "$COMMON_ROOT/" || true
+          cp "$WORKSPACE/kernel_patches/zram_patches/002-zstd.patch" "$COMMON_ROOT/" || true
+          cp "$WORKSPACE/kernel_patches/zram_patches/lz4armv8.S" "$COMMON_ROOT/lib/" || true
+
+          if [ "$USE_UNICODE_BYPASS" = "true" ]; then
+            if [ "$KERNEL_VERSION" = "6.1" ] || [ "$KERNEL_VERSION" = "6.6" ]; then
+              cp "$WORKSPACE/kernel_patches/common/unicode_bypass_fix_6.1+.patch" "$COMMON_ROOT/unicode_bypass_fix.patch" || true
+            else
+              cp "$WORKSPACE/kernel_patches/common/unicode_bypass_fix_6.1-.patch" "$COMMON_ROOT/unicode_bypass_fix.patch" || true
+            fi
+          fi
+
+          if [ "$USE_LZ4KD" = "true" ]; then
+            cp -r "$WORKSPACE"/SukiSU_patch/other/zram/lz4k/include/linux/* "$COMMON_ROOT/include/linux/" || true
+            cp -r "$WORKSPACE"/SukiSU_patch/other/zram/lz4k/lib/* "$COMMON_ROOT/lib/" || true
+            cp -r "$WORKSPACE"/SukiSU_patch/other/zram/lz4k/crypto/* "$COMMON_ROOT/crypto/" || true
+            cp -r "$WORKSPACE"/SukiSU_patch/other/zram/lz4k_oplus "$COMMON_ROOT/lib/" || true
+          fi
+
+          cd "$COMMON_ROOT"
+          for patch_file in 001-lz4.patch 002-zstd.patch scope_min_manual_hooks_v1.9.patch scope_min_manual_hooks_v1.6.patch unicode_bypass_fix.patch; do
+            [ -f "$patch_file" ] && patch -p1 < "$patch_file" || true
+          done
+          if [ "$USE_LZ4KD" = "true" ]; then
+            cp "$WORKSPACE/SukiSU_patch/other/zram/zram_patch/${KERNEL_VERSION}/lz4kd.patch" ./ || true
+            cp "$WORKSPACE/SukiSU_patch/other/zram/zram_patch/${KERNEL_VERSION}/lz4k_oplus.patch" ./ || true
+            [ -f lz4kd.patch ] && patch -p1 < lz4kd.patch || true
+            [ -f lz4k_oplus.patch ] && patch -p1 < lz4k_oplus.patch || true
+          fi
+          if [ "$EFFECTIVE_ENABLE_SUSFS" = "true" ]; then
+            [ -f "50_add_susfs_in_gki-${ANDROID_VERSION}-${KERNEL_VERSION}.patch" ] && \
+              patch -p1 < "50_add_susfs_in_gki-${ANDROID_VERSION}-${KERNEL_VERSION}.patch" || true
+          fi
+
+      - name: 配置 defconfig
+        shell: bash
+        run: |
+          set -euo pipefail
+          WORKSPACE="$GITHUB_WORKSPACE/oneplus_workspace"
+          COMMON_ROOT="$WORKSPACE/kernel_workspace/kernel_platform/common"
+          DEFCONFIG_PATH="$COMMON_ROOT/arch/arm64/configs/gki_defconfig"
+          test -f "$DEFCONFIG_PATH"
+
+          if [ "$KSU_VARIANT" != "None" ]; then
+            if [ "$EFFECTIVE_ENABLE_SUSFS" = "true" ]; then
+              cat >> "$DEFCONFIG_PATH" <<'EOF'
+CONFIG_KSU_SUSFS=y
+CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y
+CONFIG_KSU_SUSFS_SUS_PATH=y
+CONFIG_KSU_SUSFS_SUS_MOUNT=y
+CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
+CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y
+CONFIG_KSU_SUSFS_SUS_KSTAT=y
+CONFIG_KSU_SUSFS_SUS_OVERLAYFS=y
+CONFIG_KSU_SUSFS_TRY_UMOUNT=y
+CONFIG_KSU_SUSFS_SPOOF_UNAME=y
+CONFIG_KSU_SUSFS_ENABLE_LOG=y
+CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+CONFIG_KSU_SUSFS_SUS_MAP=y
+EOF
+            else
+              cat >> "$DEFCONFIG_PATH" <<'EOF'
+CONFIG_KSU_SUSFS=n
+CONFIG_KSU_MANUAL_HOOK=y
+EOF
+            fi
+          fi
+
+          cat >> "$DEFCONFIG_PATH" <<'EOF'
+CONFIG_TMPFS_XATTR=y
+CONFIG_TMPFS_POSIX_ACL=y
+CONFIG_HEADERS_INSTALL=n
+EOF
+
+          if [ "$EFFECTIVE_KPM" = "true" ]; then echo "CONFIG_KPM=y" >> "$DEFCONFIG_PATH"; fi
+          if [ "$USE_BBG" = "true" ] && [ "$EFFECTIVE_KPM" = "false" ]; then
+            cat >> "$DEFCONFIG_PATH" <<'EOF'
+CONFIG_BBG=y
+CONFIG_LSM="landlock,lockdown,yama,loadpin,safesetid,integrity,selinux,smack,tomoyo,apparmor,bpf,baseband_guard"
+EOF
+          fi
+          if [ "$USE_BBR" = "true" ]; then
+            cat >> "$DEFCONFIG_PATH" <<'EOF'
+CONFIG_TCP_CONG_ADVANCED=y
+CONFIG_TCP_CONG_BBR=y
+CONFIG_NET_SCH_FQ=y
+CONFIG_TCP_CONG_BIC=n
+CONFIG_TCP_CONG_WESTWOOD=n
+CONFIG_TCP_CONG_HTCP=n
+EOF
+          fi
+          if [ "$USE_LZ4KD" = "true" ]; then
+            cat >> "$DEFCONFIG_PATH" <<'EOF'
+CONFIG_CRYPTO_LZ4KD=y
+CONFIG_CRYPTO_LZ4K_OPLUS=y
+CONFIG_ZRAM_WRITEBACK=y
+EOF
+          fi
+          if [ "$KERNEL_VERSION" = "6.1" ] || [ "$KERNEL_VERSION" = "6.6" ]; then
+            echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y" >> "$DEFCONFIG_PATH"
+          fi
+          if [ "$EFFECTIVE_PROXY_OPTIMIZATION" = "true" ]; then
+            cat >> "$DEFCONFIG_PATH" <<'EOF'
+CONFIG_BPF_STREAM_PARSER=y
+CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y
+CONFIG_NETFILTER_XT_SET=y
+CONFIG_IP_SET=y
+CONFIG_IP_SET_MAX=65534
+CONFIG_IP_SET_BITMAP_IP=y
+CONFIG_IP_SET_BITMAP_IPMAC=y
+CONFIG_IP_SET_BITMAP_PORT=y
+CONFIG_IP_SET_HASH_IP=y
+CONFIG_IP_SET_HASH_IPMARK=y
+CONFIG_IP_SET_HASH_IPPORT=y
+CONFIG_IP_SET_HASH_IPPORTIP=y
+CONFIG_IP_SET_HASH_IPPORTNET=y
+CONFIG_IP_SET_HASH_IPMAC=y
+CONFIG_IP_SET_HASH_MAC=y
+CONFIG_IP_SET_HASH_NETPORTNET=y
+CONFIG_IP_SET_HASH_NET=y
+CONFIG_IP_SET_HASH_NETNET=y
+CONFIG_IP_SET_HASH_NETPORT=y
+CONFIG_IP_SET_HASH_NETIFACE=y
+CONFIG_IP_SET_LIST_SET=y
+CONFIG_IP6_NF_NAT=y
+CONFIG_IP6_NF_TARGET_MASQUERADE=y
+EOF
+          fi
+          if [ "$KERNEL_VERSION" = "5.10" ] || [ "$KERNEL_VERSION" = "5.15" ]; then
+            sed -i 's/^CONFIG_LTO=n/CONFIG_LTO=y/' "$DEFCONFIG_PATH" || true
+            sed -i 's/^CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_THIN=y/' "$DEFCONFIG_PATH" || true
+            sed -i 's/^CONFIG_LTO_CLANG_NONE=y/CONFIG_LTO_CLANG_THIN=y/' "$DEFCONFIG_PATH" || true
+            grep -q '^CONFIG_LTO_CLANG_THIN=y' "$DEFCONFIG_PATH" || echo 'CONFIG_LTO_CLANG_THIN=y' >> "$DEFCONFIG_PATH"
+          fi
+          sed -i 's/check_defconfig//' "$COMMON_ROOT/build.config.gki" || true
+
+      - name: 编译内核
+        shell: bash
+        run: |
+          set -euo pipefail
+          WORKSPACE="$GITHUB_WORKSPACE/oneplus_workspace"
+          COMMON_ROOT="$WORKSPACE/kernel_workspace/kernel_platform/common"
+          cd "$COMMON_ROOT"
+
+          export PATH="/usr/lib/ccache:$PATH"
+          export KBUILD_BUILD_USER="abk"
+          export KBUILD_BUILD_HOST="abk"
+          export KBUILD_BUILD_VERSION=1
+
+          MAKE_COMMON=(make -j"$(nproc --all)" LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC="ccache clang" RUSTC=../../prebuilts/rust/linux-x86/1.73.0b/bin/rustc PAHOLE=../../prebuilts/kernel-build-tools/linux-x86/bin/pahole LD=ld.lld HOSTLD=ld.lld O=out gki_defconfig all)
+          case "$KERNEL_VERSION" in
+            6.1)
+              export KBUILD_BUILD_TIMESTAMP="Tue Mar 10 03:53:33 UTC 2026"
+              export PATH="$WORKSPACE/kernel_workspace/kernel_platform/prebuilts/clang/host/linux-x86/clang-r487747c/bin:$PATH"
+              "${MAKE_COMMON[@]}" KCFLAGS+=-O2
+              ;;
+            6.6)
+              export PATH="$WORKSPACE/kernel_workspace/kernel_platform/prebuilts/clang/host/linux-x86/clang-r510928/bin:$PATH"
+              "${MAKE_COMMON[@]}" KCFLAGS+=-O2
+              ;;
+            5.15)
+              export PATH="$WORKSPACE/kernel_workspace/kernel_platform/prebuilts/clang/host/linux-x86/clang-r450784e/bin:$PATH"
+              "${MAKE_COMMON[@]}"
+              ;;
+            5.10)
+              export PATH="$WORKSPACE/kernel_workspace/kernel_platform/prebuilts-master/clang/host/linux-x86/clang-r416183b/bin:$PATH"
+              make -j"$(nproc --all)" LLVM_IAS=1 LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC="ccache clang" RUSTC=../../prebuilts/rust/linux-x86/1.73.0b/bin/rustc PAHOLE=../../prebuilts/kernel-build-tools/linux-x86/bin/pahole LD=ld.lld HOSTLD=ld.lld O=out gki_defconfig all
+              ;;
+          esac
+          ccache -s
+
+      - name: 打包 AnyKernel3
+        shell: bash
+        run: |
+          set -euo pipefail
+          WORKSPACE="$GITHUB_WORKSPACE/oneplus_workspace"
+          cd "$WORKSPACE"
+          git clone https://github.com/Xiaomichael/AnyKernel3 --depth=1
+          rm -rf AnyKernel3/.git
+
+          IMAGE_PATH="$(find "$WORKSPACE/kernel_workspace/kernel_platform/common/out" -name Image | head -n 1)"
+          if [ -z "$IMAGE_PATH" ]; then
+            echo "::error::编译完成后未找到 Image"
+            exit 1
+          fi
+          cp "$IMAGE_PATH" AnyKernel3/Image
+          cp "$IMAGE_PATH" Image
+
+          if [ "$EFFECTIVE_KPM" = "true" ]; then
+            mkdir -p kpm_patch_temp
+            cd kpm_patch_temp
+            curl -LO https://github.com/SukiSU-Ultra/SukiSU_KernelPatch_patch/releases/download/0.13.0/patch_linux
+            chmod +x patch_linux
+            cp "$WORKSPACE/AnyKernel3/Image" ./Image
+            ./patch_linux
+            mv oImage "$WORKSPACE/AnyKernel3/Image"
+            cd "$WORKSPACE"
+            rm -rf kpm_patch_temp
+          fi
+
+          case "$KSU_VARIANT" in
+            None) variant_label="Kernel_Only" ;;
+            SukiSU) variant_label="SukiSU_Ultra" ;;
+            *) variant_label="$KSU_VARIANT" ;;
+          esac
+          if [ "$USE_LZ4KD" = "true" ]; then
+            algo_label="lz4kd"
+          elif [ "$KERNEL_VERSION" = "6.1" ]; then
+            algo_label="lz4_zstd"
+          elif [ "$KERNEL_VERSION" = "6.6" ]; then
+            algo_label="lz4"
+          else
+            algo_label="base"
+          fi
+          artifact_name="${DEVICE_MANIFEST}_${variant_label}_${algo_label}"
+          if [ "$EFFECTIVE_ENABLE_SUSFS" = "true" ]; then
+            artifact_name="${artifact_name}_SUSFS"
+          fi
+          cd AnyKernel3
+          zip -q -r9 "../${artifact_name}.zip" ./*
+          cd "$WORKSPACE"
+          echo "ONEPLUS_ARTIFACT_NAME=$artifact_name" >> "$GITHUB_ENV"
+
+      - name: 上传 AnyKernel3 产物
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ env.ONEPLUS_ARTIFACT_NAME }}
+          path: oneplus_workspace/*.zip
+          if-no-files-found: error
+
+      - name: 上传内核 Image
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ env.ONEPLUS_ARTIFACT_NAME }}-Image
+          path: oneplus_workspace/Image
+          if-no-files-found: warn

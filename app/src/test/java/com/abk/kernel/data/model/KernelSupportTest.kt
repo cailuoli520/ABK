@@ -76,4 +76,34 @@ class KernelSupportTest {
         assertEquals(listOf("off", "on"), KernelSupport.virtualizationSupportOptions("6.12"))
         assertEquals(listOf("off", "678", "123", "345"), KernelSupport.virtualizationSupportOptions("6.1"))
     }
+
+    @Test
+    fun normalizeOnePlusConfigUsesOnePlusDefaultsAndDisablesMtkProxy() {
+        val normalized = KernelSupport.normalize(
+            KernelBuildConfig(
+                buildTarget = BUILD_TARGET_ONEPLUS,
+                androidVersion = "android16",
+                kernelVersion = "6.12",
+                kernelsuVariant = KSU_VARIANT_NEXT,
+                onePlusCpu = "mt6991",
+                onePlusDeviceManifest = "oneplus_13_b",
+                onePlusUseProxyOptimization = true,
+                useKpm = true,
+                useDdk = true,
+                useCustomExternalModules = true,
+                customExternalModules = listOf(CustomExternalModule("https://github.com/example/module"))
+            )
+        )
+
+        assertEquals(BUILD_TARGET_ONEPLUS, normalized.buildTarget)
+        assertEquals("android14", normalized.androidVersion)
+        assertEquals("6.1", normalized.kernelVersion)
+        assertEquals(KSU_VARIANT_NEXT, normalized.kernelsuVariant)
+        assertEquals("mt6991", normalized.onePlusCpu)
+        assertEquals("oneplus_13_b", normalized.onePlusDeviceManifest)
+        assertFalse(normalized.onePlusUseProxyOptimization)
+        assertFalse(normalized.useKpm)
+        assertFalse(normalized.useDdk)
+        assertTrue(normalized.customExternalModules.isEmpty())
+    }
 }

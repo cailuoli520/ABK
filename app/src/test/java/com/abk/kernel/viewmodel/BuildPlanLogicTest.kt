@@ -2,9 +2,12 @@ package com.abk.kernel.viewmodel
 
 import com.abk.kernel.data.model.CustomExternalModule
 import com.abk.kernel.data.model.CustomExternalModuleStage
+import com.abk.kernel.data.model.BUILD_TARGET_GKI
+import com.abk.kernel.data.model.BUILD_TARGET_ONEPLUS
 import com.abk.kernel.data.model.KSU_BRANCH_CUSTOM
 import com.abk.kernel.data.model.KSU_BRANCH_STABLE
 import com.abk.kernel.data.model.KSU_VARIANT_NONE
+import com.abk.kernel.data.model.KSU_VARIANT_RESUKISU
 import com.abk.kernel.data.model.KSU_VARIANT_SUKISU
 import com.abk.kernel.data.model.KernelBuildConfig
 import com.abk.kernel.data.model.KernelSupport
@@ -146,5 +149,91 @@ class BuildPlanLogicTest {
         assertEquals(KSU_VARIANT_NONE, inputs["kernelsu_variant"])
         assertEquals(KSU_BRANCH_STABLE, inputs["kernelsu_branch"])
         assertEquals("", inputs["custom_ref"])
+    }
+
+    @Test
+    fun onePlusWorkflowInputMapUsesOnePlusWorkflowFields() {
+        val inputs = KernelBuildConfig(
+            buildTarget = BUILD_TARGET_ONEPLUS,
+            androidVersion = "android14",
+            kernelVersion = "6.1",
+            kernelsuVariant = KSU_VARIANT_SUKISU,
+            cancelSusfs = false,
+            useKpm = true,
+            useBbg = true,
+            onePlusCpu = "sm8650",
+            onePlusDeviceManifest = "oneplus_12_b",
+            onePlusUseLz4kd = true,
+            onePlusUseBbr = true,
+            onePlusUseProxyOptimization = true,
+            onePlusUseUnicodeBypass = true
+        ).toInputMap()
+
+        assertEquals("sm8650", inputs["cpu"])
+        assertEquals("oneplus_12_b", inputs["device_manifest"])
+        assertEquals("android14", inputs["android_version"])
+        assertEquals("6.1", inputs["kernel_version"])
+        assertEquals(KSU_VARIANT_SUKISU, inputs["ksu_variant"])
+        assertEquals("true", inputs["enable_susfs"])
+        assertEquals("true", inputs["use_kpm"])
+        assertEquals("true", inputs["use_lz4kd"])
+        assertEquals("true", inputs["use_bbr"])
+        assertEquals("true", inputs["use_proxy_optimization"])
+        assertEquals("true", inputs["use_unicode_bypass"])
+    }
+
+    @Test
+    fun onePlusBuildPlanPayloadRoundTripsTargetAndDeviceFields() {
+        val config = KernelSupport.normalize(
+            KernelBuildConfig(
+                buildTarget = BUILD_TARGET_ONEPLUS,
+                androidVersion = "android15",
+                kernelVersion = "6.6",
+                kernelsuVariant = KSU_VARIANT_SUKISU,
+                onePlusCpu = "sm8750",
+                onePlusDeviceManifest = "oneplus_13_b",
+                onePlusUseLz4kd = true,
+                onePlusUseBbr = true,
+                onePlusUseProxyOptimization = true,
+                onePlusUseUnicodeBypass = true
+            )
+        )
+
+        val payload = encodeBuildPlanPayload(config, "OnePlus", BuildPlanShareScope.FULL)
+        val decoded = decodeBuildPlanPayload(payload, KernelBuildConfig())
+
+        assertEquals(BUILD_TARGET_ONEPLUS, decoded.config.buildTarget)
+        assertEquals("sm8750", decoded.config.onePlusCpu)
+        assertEquals("oneplus_13_b", decoded.config.onePlusDeviceManifest)
+        assertEquals(config.onePlusUseLz4kd, decoded.config.onePlusUseLz4kd)
+        assertEquals(config.onePlusUseBbr, decoded.config.onePlusUseBbr)
+        assertEquals(config.onePlusUseProxyOptimization, decoded.config.onePlusUseProxyOptimization)
+        assertEquals(config.onePlusUseUnicodeBypass, decoded.config.onePlusUseUnicodeBypass)
+    }
+
+    @Test
+    fun onePlusFeaturesOnlyPayloadKeepsBaseBuildTarget() {
+        val baseConfig = KernelSupport.normalize(
+            KernelBuildConfig(
+                buildTarget = BUILD_TARGET_GKI,
+                kernelsuVariant = KSU_VARIANT_RESUKISU
+            )
+        )
+        val sharedFeatures = KernelSupport.normalize(
+            KernelBuildConfig(
+                buildTarget = BUILD_TARGET_ONEPLUS,
+                kernelsuVariant = KSU_VARIANT_SUKISU,
+                onePlusUseLz4kd = true,
+                onePlusUseBbr = true
+            )
+        )
+
+        val payload = encodeBuildPlanPayload(sharedFeatures, "features", BuildPlanShareScope.FEATURES_ONLY)
+        val decoded = decodeBuildPlanPayload(payload, baseConfig)
+
+        assertEquals(BUILD_TARGET_GKI, decoded.config.buildTarget)
+        assertEquals(baseConfig.onePlusDeviceManifest, decoded.config.onePlusDeviceManifest)
+        assertEquals(false, decoded.config.onePlusUseLz4kd)
+        assertEquals(false, decoded.config.onePlusUseBbr)
     }
 }

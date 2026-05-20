@@ -17,7 +17,7 @@ An automation repository and Android app for building, distributing, and managin
 
 ## Purpose
 
-ABK exists to turn the manual workflow of forking, enabling Actions, filling GKI parameters, starting builds, downloading artifacts, and flashing/installing outputs into a more direct process.
+ABK exists to turn the manual workflow of forking, enabling Actions, filling GKI or OnePlus/Oplus parameters, starting builds, downloading artifacts, and flashing/installing outputs into a more direct process.
 
 The repository provides GitHub Actions kernel build workflows. The Android app handles root checks, GitHub authorization, fork checks/sync, build dispatch, progress notifications, artifact downloads, and flashing/install entry points.
 
@@ -31,9 +31,9 @@ The repository provides GitHub Actions kernel build workflows. The Android app h
 
 ## Scope
 
-- Android 12 / 13 / 14 / 15 / 16 GKI build workflows.
+- Android 12 / 13 / 14 / 15 / 16 GKI build workflows, plus OnePlus/Oplus device build workflows.
 - KernelSU Official, KernelSU Next, SukiSU, and ReSukiSU variants.
-- Optional SUSFS, ZRAM, BBG, KPM, Re-Kernel, and OnePlus 8E support.
+- Optional SUSFS, ZRAM, BBG, KPM, Re-Kernel, lz4kd, BBR, proxy optimization, Unicode bypass, and OnePlus 8E support.
 - Artifact handling for AnyKernel3 packages, kernel images, KernelSU managers, and SUSFS modules.
 
 Actual compatibility depends on the device, kernel version, upstream branch state, and current patch compatibility.
@@ -50,6 +50,12 @@ Actual compatibility depends on the device, kernel version, upstream branch stat
 8. Flash or install only after confirming the risk.
 
 You can also run the workflows manually from GitHub Actions.
+
+## OnePlus/Oplus Device Builds
+
+The app's Build tab can switch between `GKI` and `OnePlus` targets. Selecting `OnePlus` dispatches [`oneplus-custom.yml`](.github/workflows/oneplus-custom.yml), which syncs the selected CPU branch and device XML from the OnePlus/Oplus manifest.
+
+The first OnePlus build target supports `android12/5.10`, `android13/5.15`, `android14/6.1`, and `android15/6.6`, with KernelSU Official, KernelSU Next, SukiSU, ReSukiSU, or rootless builds. OnePlus-specific switches include SUSFS, KPM, lz4kd, BBG, BBR, proxy optimization, and the Unicode zero-width bypass fix; MTK CPU branches force proxy optimization off.
 
 ## Risk Notice
 
@@ -239,6 +245,9 @@ The full notice list is maintained in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOT
 | --- | --- | --- |
 | zzh20188/GKI_KernelSU_SUSFS | <https://github.com/zzh20188/GKI_KernelSU_SUSFS> | Upstream repository license |
 | WildKernels/GKI_KernelSU_SUSFS | <https://github.com/WildKernels/GKI_KernelSU_SUSFS> | Upstream repository license |
+| OnePlusOSS/kernel_manifest | <https://github.com/OnePlusOSS/kernel_manifest> | Upstream repository license / no SPDX detected |
+| Xiaomichael/kernel_manifest | <https://github.com/Xiaomichael/kernel_manifest> | Upstream repository license / no SPDX detected |
+| Xiaomichael/kernel_patches | <https://github.com/Xiaomichael/kernel_patches> | Upstream repository license / no SPDX detected |
 | KernelSU | <https://github.com/tiann/KernelSU> | GPL-3.0 |
 | KernelSU Next | <https://github.com/KernelSU-Next/KernelSU-Next> | GPL-3.0 |
 | SukiSU Ultra | <https://github.com/SukiSU-Ultra/SukiSU-Ultra> | GPL-3.0 |
@@ -247,7 +256,10 @@ The full notice list is maintained in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOT
 | ShirkNeko/susfs4ksu | <https://github.com/ShirkNeko/susfs4ksu> | GPL-2.0 |
 | SukiSU_patch | <https://github.com/ShirkNeko/SukiSU_patch> | GPL-2.0 |
 | AnyKernel3 | <https://github.com/WildKernels/AnyKernel3> | GPL-2.0 |
+| Xiaomichael/AnyKernel3 | <https://github.com/Xiaomichael/AnyKernel3> | Upstream repository license / NOASSERTION |
 | WildKernels/kernel_patches | <https://github.com/WildKernels/kernel_patches> | GPL-2.0 |
+| cctv18/susfs4oki | <https://github.com/cctv18/susfs4oki> | GPL-3.0 |
+| SukiSU_KernelPatch_patch | <https://github.com/SukiSU-Ultra/SukiSU_KernelPatch_patch> | Upstream repository license |
 | Action-Build | <https://github.com/Numbersf/Action-Build> | Upstream repository license |
 | SUSFS module build source | <https://github.com/sidex15/susfs4ksu-module> | Upstream repository license |
 | GCC prebuilts | <https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-gnu-6.4.1> | GPL-family toolchain notices |

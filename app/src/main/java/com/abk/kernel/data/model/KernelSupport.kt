@@ -15,12 +15,72 @@ data class KernelVersionLine(
 )
 
 object KernelSupport {
+    val buildTargets = listOf(BUILD_TARGET_GKI, BUILD_TARGET_ONEPLUS)
+
     val lines = listOf(
         KernelVersionLine("android12", "5.10"),
         KernelVersionLine("android13", "5.15"),
         KernelVersionLine("android14", "6.1"),
         KernelVersionLine("android15", "6.6"),
         KernelVersionLine("android16", "6.12")
+    )
+
+    val onePlusLines = listOf(
+        KernelVersionLine("android12", "5.10"),
+        KernelVersionLine("android13", "5.15"),
+        KernelVersionLine("android14", "6.1"),
+        KernelVersionLine("android15", "6.6")
+    )
+
+    val onePlusCpuOptions = listOf(
+        "sm8750",
+        "sm8735",
+        "mt6991",
+        "sm8650",
+        "mt6989",
+        "sm8635",
+        "sm8550",
+        "sm8450",
+        "sm8475",
+        "sm7675",
+        "sm7635",
+        "sm7550",
+        "sm6375"
+    )
+
+    val onePlusDeviceManifestOptions = listOf(
+        "oneplus_13_b",
+        "oneplus_13s_b",
+        "oneplus_13t_b",
+        "oneplus_ace5_pro_b",
+        "oneplus_ace_6",
+        "oneplus_pad_2_pro_b",
+        "oneplus_pad_3_b",
+        "oneplus_ace5_ultra_b",
+        "oneplus_turbo_6",
+        "oneplus_12_b",
+        "oneplus_ace3_pro_b",
+        "oneplus_ace5_b",
+        "oneplus_13r_b",
+        "oneplus_pad2_b",
+        "oneplus_pad_pro_b",
+        "oneplus_ace5_race_b",
+        "oneplus_nord_5_b",
+        "oneplus_11_b",
+        "oneplus_12r_b",
+        "oneplus_ace2_pro_b",
+        "oneplus_ace3_b",
+        "oneplus_open_b",
+        "oneplus_10t_v",
+        "oneplus_11r_b",
+        "oneplus_ace2_b",
+        "oneplus_ace_pro_v",
+        "oneplus_10_pro_b",
+        "oneplus_ace_3v_b",
+        "oneplus_turbo_6v",
+        "oneplus_nord_4_b",
+        "oneplus_nord_ce4_lite_5g",
+        "oneplus_nord_ce4_b"
     )
 
     val entries = listOf(
@@ -158,9 +218,27 @@ object KernelSupport {
     fun androidForKernel(kernelVersion: String): String =
         lines.firstOrNull { it.kernelVersion == kernelVersion }?.androidVersion ?: lines.first().androidVersion
 
+    fun onePlusAndroidVersions(): List<String> = onePlusLines.map { it.androidVersion }
+
+    fun onePlusKernelVersions(): List<String> = onePlusLines.map { it.kernelVersion }
+
+    fun onePlusKernelForAndroid(androidVersion: String): String =
+        onePlusLines.firstOrNull { it.androidVersion == androidVersion }?.kernelVersion
+            ?: onePlusLines.first().kernelVersion
+
+    fun onePlusAndroidForKernel(kernelVersion: String): String =
+        onePlusLines.firstOrNull { it.kernelVersion == kernelVersion }?.androidVersion
+            ?: onePlusLines.first().androidVersion
+
     fun normalize(config: KernelBuildConfig): KernelBuildConfig {
-        val line = lineFor(config.androidVersion, config.kernelVersion)
-        val ksuVariant = normalizeKsuVariant(config.kernelsuVariant)
+        val target = normalizeBuildTarget(config.buildTarget)
+        val isOnePlus = target == BUILD_TARGET_ONEPLUS
+        val line = if (isOnePlus) {
+            onePlusLineFor(config.androidVersion, config.kernelVersion)
+        } else {
+            lineFor(config.androidVersion, config.kernelVersion)
+        }
+        val ksuVariant = normalizeKsuVariant(config.kernelsuVariant, target)
         val subLevel = when {
             config.subLevel == "X" -> "X"
             subLevels(line).contains(config.subLevel) -> config.subLevel
@@ -171,44 +249,94 @@ object KernelSupport {
             config.osPatchLevel in patchOptions -> config.osPatchLevel
             else -> patchOptions.maxByOrNull(::patchMonthIndex) ?: latestEntry(line).osPatchLevel
         }
+        val onePlusCpu = config.onePlusCpu.orEmpty().trim().lowercase()
+            .takeIf { it in onePlusCpuOptions }
+            ?: "sm8650"
+        val onePlusDeviceManifest = config.onePlusDeviceManifest.orEmpty().trim().lowercase()
+            .takeIf { it in onePlusDeviceManifestOptions }
+            ?: "oneplus_12_b"
+        val onePlusKpmSupported = ksuVariant in setOf(KSU_VARIANT_SUKISU, KSU_VARIANT_RESUKISU)
+        val onePlusProxyAllowed = !onePlusCpu.startsWith("mt")
         return config.copy(
+            buildTarget = target,
             androidVersion = line.androidVersion,
             kernelVersion = line.kernelVersion,
             subLevel = subLevel,
             osPatchLevel = osPatch,
             kernelsuVariant = ksuVariant,
             kernelsuBranch = normalizeKsuBranch(
-                if (ksuVariant == KSU_VARIANT_NONE) KSU_BRANCH_STABLE else config.kernelsuBranch
+                if (isOnePlus || ksuVariant == KSU_VARIANT_NONE) KSU_BRANCH_STABLE else config.kernelsuBranch
             ),
-            customRef = config.customRef.trim(),
-            useKpm = if (ksuVariant == KSU_VARIANT_NONE) false else config.useKpm,
+            customRef = if (isOnePlus) "" else config.customRef.trim(),
+            version = if (isOnePlus) "" else config.version,
+            buildTime = if (isOnePlus) "" else config.buildTime,
+            useZram = if (isOnePlus) false else config.useZram,
+            useDdk = if (isOnePlus) false else config.useDdk,
+            useNtsync = if (isOnePlus) false else config.useNtsync,
+            useNetworking = if (isOnePlus) false else config.useNetworking,
+            useRekernel = if (isOnePlus) false else config.useRekernel,
+            useKpm = when {
+                ksuVariant == KSU_VARIANT_NONE -> false
+                isOnePlus -> onePlusKpmSupported && config.useKpm
+                else -> config.useKpm
+            },
             cancelSusfs = if (ksuVariant == KSU_VARIANT_NONE) true else config.cancelSusfs,
-            kpmPassword = if (ksuVariant == KSU_VARIANT_NONE) "" else config.kpmPassword,
-            virtualizationSupport = normalizeVirtualizationSupport(line.kernelVersion, config.virtualizationSupport),
-            customExternalModules = config.customExternalModules.orEmpty()
-                .mapNotNull { module ->
-                    val url = module.url.trim()
-                    if (url.isBlank()) {
-                        null
-                    } else {
-                        module.copy(
-                            url = url,
-                            stage = CustomExternalModuleStage.normalize(module.stage)
-                        )
-                    }
+            kpmPassword = if (isOnePlus || ksuVariant == KSU_VARIANT_NONE) "" else config.kpmPassword,
+            virtualizationSupport = if (isOnePlus) "off" else normalizeVirtualizationSupport(line.kernelVersion, config.virtualizationSupport),
+            useCustomExternalModules = if (isOnePlus) false else config.useCustomExternalModules,
+            customExternalModules = if (isOnePlus) {
+                emptyList()
+            } else {
+                config.customExternalModules.orEmpty()
+                    .mapNotNull { module ->
+                        val url = module.url.trim()
+                        if (url.isBlank()) {
+                            null
+                        } else {
+                            module.copy(
+                                url = url,
+                                stage = CustomExternalModuleStage.normalize(module.stage)
+                            )
+                        }
                 }
-                .distinctBy { it.url.lowercase() to CustomExternalModuleStage.normalize(it.stage) }
+                    .distinctBy { it.url.lowercase() to CustomExternalModuleStage.normalize(it.stage) }
+            },
+            onePlusCpu = if (isOnePlus) onePlusCpu else "sm8650",
+            onePlusDeviceManifest = if (isOnePlus) onePlusDeviceManifest else "oneplus_12_b",
+            onePlusUseLz4kd = if (isOnePlus) config.onePlusUseLz4kd else false,
+            onePlusUseBbr = if (isOnePlus) config.onePlusUseBbr else false,
+            onePlusUseProxyOptimization = if (isOnePlus) {
+                onePlusProxyAllowed && config.onePlusUseProxyOptimization
+            } else {
+                true
+            },
+            onePlusUseUnicodeBypass = if (isOnePlus) config.onePlusUseUnicodeBypass else false
         )
     }
 
+    fun normalizeBuildTarget(value: String?): String =
+        value.orEmpty().trim().lowercase().takeIf { it in buildTargets } ?: BUILD_TARGET_GKI
+
     fun ksuVariantOptions(): List<String> = KSU_VARIANT_OPTIONS
 
-    fun normalizeKsuVariant(value: String): String = when (value.trim().lowercase()) {
-        KSU_VARIANT_OFFICIAL.lowercase() -> KSU_VARIANT_OFFICIAL
-        KSU_VARIANT_SUKISU.lowercase() -> KSU_VARIANT_SUKISU
-        KSU_VARIANT_RESUKISU.lowercase() -> KSU_VARIANT_RESUKISU
-        KSU_VARIANT_NONE.lowercase(), "无" -> KSU_VARIANT_NONE
-        else -> KSU_VARIANT_RESUKISU
+    fun onePlusKsuVariantOptions(): List<String> = ONEPLUS_KSU_VARIANT_OPTIONS
+
+    fun normalizeKsuVariant(value: String?): String = normalizeKsuVariant(value, BUILD_TARGET_GKI)
+
+    fun normalizeKsuVariant(value: String?, buildTarget: String?): String {
+        val normalized = when (value.orEmpty().trim().lowercase()) {
+            KSU_VARIANT_OFFICIAL.lowercase() -> KSU_VARIANT_OFFICIAL
+            KSU_VARIANT_NEXT.lowercase() -> KSU_VARIANT_NEXT
+            KSU_VARIANT_SUKISU.lowercase() -> KSU_VARIANT_SUKISU
+            KSU_VARIANT_RESUKISU.lowercase() -> KSU_VARIANT_RESUKISU
+            KSU_VARIANT_NONE.lowercase(), "无" -> KSU_VARIANT_NONE
+            else -> KSU_VARIANT_RESUKISU
+        }
+        return if (normalizeBuildTarget(buildTarget) == BUILD_TARGET_ONEPLUS) {
+            normalized.takeIf { it in ONEPLUS_KSU_VARIANT_OPTIONS } ?: KSU_VARIANT_SUKISU
+        } else {
+            normalized.takeIf { it in KSU_VARIANT_OPTIONS } ?: KSU_VARIANT_RESUKISU
+        }
     }
 
     fun ksuBranchOptions(): List<String> = KSU_BRANCH_STANDARD_OPTIONS
@@ -262,6 +390,16 @@ object KernelSupport {
         return lines.firstOrNull { it.androidVersion == androidVersion }
             ?: lines.firstOrNull { it.kernelVersion == kernelVersion }
             ?: lines.first()
+    }
+
+    private fun onePlusLineFor(androidVersion: String, kernelVersion: String): KernelVersionLine {
+        val byPair = onePlusLines.firstOrNull {
+            it.androidVersion == androidVersion && it.kernelVersion == kernelVersion
+        }
+        if (byPair != null) return byPair
+        return onePlusLines.firstOrNull { it.androidVersion == androidVersion }
+            ?: onePlusLines.firstOrNull { it.kernelVersion == kernelVersion }
+            ?: KernelVersionLine("android14", "6.1")
     }
 
     private fun detectLine(kernelRelease: String): KernelVersionLine {

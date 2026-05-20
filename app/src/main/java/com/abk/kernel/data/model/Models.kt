@@ -346,8 +346,11 @@ const val KSU_BRANCH_DEV = "Dev(开发)"
 const val KSU_BRANCH_CUSTOM = "Custom(自定义)"
 const val KSU_VARIANT_NONE = "None"
 const val KSU_VARIANT_OFFICIAL = "Official"
+const val KSU_VARIANT_NEXT = "Next"
 const val KSU_VARIANT_SUKISU = "SukiSU"
 const val KSU_VARIANT_RESUKISU = "ReSukiSU"
+const val BUILD_TARGET_GKI = "gki"
+const val BUILD_TARGET_ONEPLUS = "oneplus"
 
 val KSU_BRANCH_STANDARD_OPTIONS = listOf(KSU_BRANCH_STABLE, KSU_BRANCH_DEV, KSU_BRANCH_CUSTOM)
 val KSU_BRANCH_BUILD_PLAN_OPTIONS = KSU_BRANCH_STANDARD_OPTIONS
@@ -357,9 +360,17 @@ val KSU_VARIANT_OPTIONS = listOf(
     KSU_VARIANT_RESUKISU,
     KSU_VARIANT_NONE
 )
+val ONEPLUS_KSU_VARIANT_OPTIONS = listOf(
+    KSU_VARIANT_OFFICIAL,
+    KSU_VARIANT_NEXT,
+    KSU_VARIANT_SUKISU,
+    KSU_VARIANT_RESUKISU,
+    KSU_VARIANT_NONE
+)
 
 // App-level build config model (mirrors kernel-custom.yml inputs)
 data class KernelBuildConfig(
+    val buildTarget: String = BUILD_TARGET_GKI,
     val androidVersion: String = "android12",
     val kernelVersion: String = "5.10",
     val subLevel: String = "66",
@@ -384,7 +395,13 @@ data class KernelBuildConfig(
     val kpmPassword: String = "",
     val virtualizationSupport: String = "off",
     val useCustomExternalModules: Boolean = false,
-    val customExternalModules: List<CustomExternalModule> = emptyList()
+    val customExternalModules: List<CustomExternalModule> = emptyList(),
+    val onePlusCpu: String = "sm8650",
+    val onePlusDeviceManifest: String = "oneplus_12_b",
+    val onePlusUseLz4kd: Boolean = false,
+    val onePlusUseBbr: Boolean = false,
+    val onePlusUseProxyOptimization: Boolean = true,
+    val onePlusUseUnicodeBypass: Boolean = false
 )
 
 data class AbkRuntimeStatus(
