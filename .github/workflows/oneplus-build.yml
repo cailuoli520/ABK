@@ -76,12 +76,16 @@ jobs:
       CCACHE_MAXSIZE: 8G
 
     steps:
+      - name: 检出 ABK 补丁仓库
+        uses: actions/checkout@v6
+
       - name: 构建信息摘要
         shell: bash
         run: |
           set -euo pipefail
 
           effective_kpm="$USE_KPM"
+          effective_lz4kd="$USE_LZ4KD"
           if [ "$KSU_VARIANT" != "SukiSU" ] && [ "$KSU_VARIANT" != "ReSukiSU" ]; then
             effective_kpm="false"
           fi
@@ -133,6 +137,10 @@ jobs:
             oneplus_nord_ce4_b) device_name="OnePlus Nord CE4"; system_version="ColorOS/OxygenOS 16" ;;
             *) device_name="$DEVICE_MANIFEST"; system_version="未知系统版本" ;;
           esac
+          if [ "$effective_lz4kd" = "true" ] && [ "$KERNEL_VERSION" != "5.10" ] && [ "$KERNEL_VERSION" != "5.15" ] && [ "$KERNEL_VERSION" != "6.1" ] && [ "$KERNEL_VERSION" != "6.6" ]; then
+            echo "::warning::当前 OnePlus 内核版本不在 lz4kd 支持矩阵内，已关闭 lz4kd。"
+            effective_lz4kd="false"
+          fi
           device_label="${device_name} · ${system_version} · ${ANDROID_VERSION}/${KERNEL_VERSION} · ${CPU}"
           device_artifact_id="$(
             printf '%s' "$device_label" |
@@ -141,6 +149,7 @@ jobs:
 
           {
             echo "EFFECTIVE_KPM=$effective_kpm"
+            echo "EFFECTIVE_USE_LZ4KD=$effective_lz4kd"
             echo "EFFECTIVE_PROXY_OPTIMIZATION=$effective_proxy"
             echo "EFFECTIVE_ENABLE_SUSFS=$ENABLE_SUSFS"
             echo "DEVICE_LABEL=$device_label"
@@ -162,9 +171,9 @@ jobs:
           echo "KSU 分支      : OnePlus upstream"
           echo "构建时间      : OnePlus upstream"
           echo "SUSFS 状态    : $ENABLE_SUSFS"
-          echo "ZRAM 增强     : $USE_LZ4KD"
+          echo "ZRAM 增强     : $effective_lz4kd"
           echo "ZRAM 完整算法 : false"
-          echo "ZRAM 额外算法 : lz4kd=$USE_LZ4KD"
+          echo "ZRAM 额外算法 : lz4kd=$effective_lz4kd"
           echo "BBG 补丁      : $USE_BBG"
           echo "DDK LSM       : false"
           echo "NTsync 补丁   : false"
@@ -195,6 +204,9 @@ jobs:
           fi
           if [ "$USE_KPM" = "true" ] && [ "$KSU_VARIANT" != "SukiSU" ] && [ "$KSU_VARIANT" != "ReSukiSU" ]; then
             echo "::warning::KPM 仅支持 SukiSU/ReSukiSU，当前构建已关闭 KPM。"
+          fi
+          if [ "$USE_LZ4KD" = "true" ] && [ "$KERNEL_VERSION" != "5.10" ] && [ "$KERNEL_VERSION" != "5.15" ] && [ "$KERNEL_VERSION" != "6.1" ] && [ "$KERNEL_VERSION" != "6.6" ]; then
+            echo "::warning::当前 OnePlus 内核版本不在 lz4kd 支持矩阵内，已关闭 lz4kd。"
           fi
 
       - name: 最大化构建空间
@@ -314,6 +326,19 @@ jobs:
           fi
 
           cd "$KERNEL_ROOT"
+          if [ "$EFFECTIVE_USE_LZ4KD" = "true" ]; then
+            mkdir -p "$COMMON_ROOT/lib/lz4"
+            cp -r "$GITHUB_WORKSPACE/zram/lz4/." "$COMMON_ROOT/lib/lz4/"
+            cp -r "$GITHUB_WORKSPACE/zram/include/linux/"* "$COMMON_ROOT/include/linux/" || true
+            (cd "$COMMON_ROOT" && bash "$GITHUB_WORKSPACE/zram/apply_lz4_neon.sh")
+            cp -r "$WORKSPACE"/SukiSU_patch/other/zram/lz4k/include/linux/* "$COMMON_ROOT/include/linux/" || true
+            cp -r "$WORKSPACE"/SukiSU_patch/other/zram/lz4k/lib/* "$COMMON_ROOT/lib/" || true
+            cp -r "$WORKSPACE"/SukiSU_patch/other/zram/lz4k/crypto/* "$COMMON_ROOT/crypto/" || true
+            cp -r "$WORKSPACE"/SukiSU_patch/other/zram/lz4k_oplus "$COMMON_ROOT/lib/" || true
+            cp "$WORKSPACE/SukiSU_patch/other/zram/zram_patch/${KERNEL_VERSION}/lz4kd.patch" "$COMMON_ROOT/" || true
+            cp "$WORKSPACE/SukiSU_patch/other/zram/zram_patch/${KERNEL_VERSION}/lz4k_oplus.patch" "$COMMON_ROOT/" || true
+          fi
+
           if [ "$EFFECTIVE_ENABLE_SUSFS" = "true" ]; then
             cp "$WORKSPACE/susfs4oki/kernel_patches/50_add_susfs_in_gki-${ANDROID_VERSION}-${KERNEL_VERSION}.patch" "$COMMON_ROOT/" || true
             cp "$WORKSPACE"/susfs4oki/kernel_patches/fs/* "$COMMON_ROOT/fs/" || true
@@ -322,9 +347,6 @@ jobs:
             cp "$WORKSPACE/kernel_patches/sukisu/scope_min_manual_hooks_v1.9.patch" "$COMMON_ROOT/" || \
               cp "$WORKSPACE/kernel_patches/sukisu/scope_min_manual_hooks_v1.6.patch" "$COMMON_ROOT/" || true
           fi
-          cp "$WORKSPACE/kernel_patches/zram_patches/001-lz4.patch" "$COMMON_ROOT/" || true
-          cp "$WORKSPACE/kernel_patches/zram_patches/002-zstd.patch" "$COMMON_ROOT/" || true
-          cp "$WORKSPACE/kernel_patches/zram_patches/lz4armv8.S" "$COMMON_ROOT/lib/" || true
 
           if [ "$USE_UNICODE_BYPASS" = "true" ]; then
             if [ "$KERNEL_VERSION" = "6.1" ] || [ "$KERNEL_VERSION" = "6.6" ]; then
@@ -334,20 +356,11 @@ jobs:
             fi
           fi
 
-          if [ "$USE_LZ4KD" = "true" ]; then
-            cp -r "$WORKSPACE"/SukiSU_patch/other/zram/lz4k/include/linux/* "$COMMON_ROOT/include/linux/" || true
-            cp -r "$WORKSPACE"/SukiSU_patch/other/zram/lz4k/lib/* "$COMMON_ROOT/lib/" || true
-            cp -r "$WORKSPACE"/SukiSU_patch/other/zram/lz4k/crypto/* "$COMMON_ROOT/crypto/" || true
-            cp -r "$WORKSPACE"/SukiSU_patch/other/zram/lz4k_oplus "$COMMON_ROOT/lib/" || true
-          fi
-
           cd "$COMMON_ROOT"
-          for patch_file in 001-lz4.patch 002-zstd.patch scope_min_manual_hooks_v1.9.patch scope_min_manual_hooks_v1.6.patch unicode_bypass_fix.patch; do
+          for patch_file in scope_min_manual_hooks_v1.9.patch scope_min_manual_hooks_v1.6.patch unicode_bypass_fix.patch; do
             [ -f "$patch_file" ] && patch -p1 < "$patch_file" || true
           done
-          if [ "$USE_LZ4KD" = "true" ]; then
-            cp "$WORKSPACE/SukiSU_patch/other/zram/zram_patch/${KERNEL_VERSION}/lz4kd.patch" ./ || true
-            cp "$WORKSPACE/SukiSU_patch/other/zram/zram_patch/${KERNEL_VERSION}/lz4k_oplus.patch" ./ || true
+          if [ "$EFFECTIVE_USE_LZ4KD" = "true" ]; then
             [ -f lz4kd.patch ] && patch -p1 < lz4kd.patch || true
             [ -f lz4k_oplus.patch ] && patch -p1 < lz4k_oplus.patch || true
           fi
@@ -355,6 +368,52 @@ jobs:
             [ -f "50_add_susfs_in_gki-${ANDROID_VERSION}-${KERNEL_VERSION}.patch" ] && \
               patch -p1 < "50_add_susfs_in_gki-${ANDROID_VERSION}-${KERNEL_VERSION}.patch" || true
           fi
+
+      - name: 修复 SukiSU/ReSukiSU sulog 兼容
+        if: ${{ inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          WORKSPACE="$GITHUB_WORKSPACE/oneplus_workspace"
+          KERNEL_ROOT="$WORKSPACE/kernel_workspace/kernel_platform"
+
+          KSU_BUILD_DIR=""
+          for dir in common/drivers/kernelsu drivers/kernelsu KernelSU/kernel; do
+            if [ -d "$KERNEL_ROOT/$dir" ]; then
+              KSU_BUILD_DIR="$KERNEL_ROOT/$dir"
+              break
+            fi
+          done
+
+          if [ -z "$KSU_BUILD_DIR" ]; then
+            echo "::warning::未找到 SukiSU/ReSukiSU 编译目录，跳过 sulog 兼容修复。"
+            exit 0
+          fi
+
+          python3 - "$KSU_BUILD_DIR/sulog/event.c" <<'PY'
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          if not path.exists():
+              raise SystemExit(0)
+
+          text = path.read_text()
+          old = "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, USER_ARG_NULL, gfp);"
+          new = "\n".join([
+              "    /* ABK: builtin SUSFS ksu_sulog_capture() expects argv_user as a pointer. */",
+              "#ifdef CONFIG_KSU_SUSFS",
+              "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, NULL, gfp);",
+              "#else",
+              "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, USER_ARG_NULL, gfp);",
+              "#endif",
+          ])
+          if old in text and "builtin SUSFS ksu_sulog_capture()" not in text:
+              path.write_text(text.replace(old, new, 1))
+              print(f"patched {path}")
+          else:
+              print(f"no change for {path}")
+          PY
 
       - name: 配置 defconfig
         shell: bash
@@ -415,7 +474,7 @@ jobs:
           CONFIG_TCP_CONG_HTCP=n
           EOF
           fi
-          if [ "$USE_LZ4KD" = "true" ]; then
+          if [ "$EFFECTIVE_USE_LZ4KD" = "true" ]; then
               cat >> "$DEFCONFIG_PATH" <<'EOF'
           CONFIG_CRYPTO_LZ4KD=y
           CONFIG_CRYPTO_LZ4K_OPLUS=y
@@ -529,12 +588,8 @@ jobs:
             SukiSU) variant_label="SukiSU_Ultra" ;;
             *) variant_label="$KSU_VARIANT" ;;
           esac
-          if [ "$USE_LZ4KD" = "true" ]; then
+          if [ "$EFFECTIVE_USE_LZ4KD" = "true" ]; then
             algo_label="lz4kd"
-          elif [ "$KERNEL_VERSION" = "6.1" ]; then
-            algo_label="lz4_zstd"
-          elif [ "$KERNEL_VERSION" = "6.6" ]; then
-            algo_label="lz4"
           else
             algo_label="base"
           fi
