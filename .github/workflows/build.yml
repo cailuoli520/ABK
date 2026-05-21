@@ -3039,6 +3039,13 @@ jobs:
               print("Official SUSFS 源码兼容修复无需修改。")
           PY
 
+      - name: 补齐 SukiSU SUSFS 内联 hook 符号
+        if: inputs.ksu_variant == 'SukiSU' && inputs.enable_susfs
+        working-directory: ${{ env.KERNEL_ROOT }}
+        run: |
+          set -euo pipefail
+          python3 "$GITHUB_WORKSPACE/.github/scripts/fix_sukisu_susfs.py" "$KERNEL_ROOT"
+
       - name: 最终修复 SukiSU/ReSukiSU 源码兼容
         if: inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU'
         working-directory: ${{ env.KERNEL_ROOT }}
