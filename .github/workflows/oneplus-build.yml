@@ -54,7 +54,7 @@ on:
 jobs:
   build:
     name: "${{ inputs.device_manifest }}-${{ inputs.kernel_version }}-${{ inputs.ksu_variant }}"
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 120
 
     env:
