@@ -140,7 +140,7 @@ on:
 jobs:
   prepare-variant-matrix:
     name: 准备管理器矩阵
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     outputs:
       matrix: ${{ steps.variant-matrix.outputs.matrix }}
       count: ${{ steps.variant-matrix.outputs.count }}
