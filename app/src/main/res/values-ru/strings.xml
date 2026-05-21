@@ -260,7 +260,7 @@
     <string name="build_external_module_default">Внешний модуль</string>
     <string name="build_stage_none">Этап не выбран</string>
     <string name="build_source_list">Источник %1$s</string>
-    <string name="build_section_kernel_desc">Используйте рекомендуемые параметры, определённые устройством, — это снижает риск ошибиться с линейкой версий.</string>
+    <string name="build_section_kernel_desc">Выберите Android, KMI и дату патча безопасности для текущей системы; если не уверены, используйте рекомендацию устройства.</string>
     <string name="build_section_ksu_desc">Выберите схему прав ядра и соответствующую ветку.</string>
     <string name="build_section_features_desc">Включайте только нужные возможности — чем меньше изменений, тем проще отлаживать.</string>
     <string name="build_section_zram_desc">Добавьте в ядро дополнительные алгоритмы сжатия памяти.</string>
@@ -518,8 +518,7 @@
     <string name="settings_about_version">Текущая версия: %1$s</string>
     <string name="settings_repository_info">Информация о репозитории</string>
     <string name="settings_contributors">Участники</string>
-    <string name="settings_contributors_desc">Сформировано по текущей истории git; показаны только распознанные имена GitHub/ссылки, автоматические аккаунты исключены.</string>
-    <string name="settings_contributor_commits">%1$d коммит(ов)</string>
+    <string name="settings_contributors_desc">Список отсортирован по имени пользователя GitHub. Показаны только распознанные аккаунты участников, автоматические аккаунты исключены.</string>
     <string name="settings_open_source_licenses_intro">Список получен из файлов репозитория, workflow, каталога версий Gradle и npm lockfile. Лицензии upstream-проектов остаются основным источником.</string>
     <string name="settings_license_group_repository">Репозиторий и встроенный код</string>
     <string name="settings_license_group_upstream">Upstream-проекты и ссылки workflow</string>

@@ -283,7 +283,7 @@
     <string name="build_external_module_default">External module</string>
     <string name="build_stage_none">No stage selected</string>
     <string name="build_source_list">Source %1$s</string>
-    <string name="build_section_kernel_desc">Prefer device-detected recommended parameters to avoid choosing the wrong version line.</string>
+    <string name="build_section_kernel_desc">Match the Android version, KMI, and security patch date to the current system; use the device recommendation when unsure.</string>
     <string name="build_section_ksu_desc">Choose the kernel permission solution and matching branch.</string>
     <string name="build_section_features_desc">Enable only the module capabilities you need to keep debugging simpler.</string>
     <string name="build_section_zram_desc">Add extra kernel support for memory compression algorithms.</string>
@@ -541,8 +541,7 @@
     <string name="settings_about_version">Current version: %1$s</string>
     <string name="settings_repository_info">Repository information</string>
     <string name="settings_contributors">Contributors</string>
-    <string name="settings_contributors_desc">Generated from the current git history, showing only identifiable GitHub usernames/links and filtering automation accounts.</string>
-    <string name="settings_contributor_commits">%1$d commits</string>
+    <string name="settings_contributors_desc">Sorted alphabetically by GitHub username. Only identifiable contributor accounts are shown, with automation accounts filtered out.</string>
     <string name="settings_open_source_licenses_intro">This list is derived from repository files, workflows, the Gradle version catalog, and the npm lockfile. Upstream project licenses remain authoritative.</string>
     <string name="settings_license_group_repository">Repository and bundled code</string>
     <string name="settings_license_group_upstream">Upstream projects and workflow references</string>

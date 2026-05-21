@@ -283,7 +283,7 @@
     <string name="build_external_module_default">外部模块</string>
     <string name="build_stage_none">未选择阶段</string>
     <string name="build_source_list">来源 %1$s</string>
-    <string name="build_section_kernel_desc">优先使用设备识别出的推荐参数，避免手动填错版本线。</string>
+    <string name="build_section_kernel_desc">选择与当前系统匹配的 Android、KMI 和安全补丁日期；不确定时使用设备推荐。</string>
     <string name="build_section_ksu_desc">选择内核权限方案和对应分支。</string>
     <string name="build_section_features_desc">按需开启模块能力，越少改动越利于排查问题。</string>
     <string name="build_section_zram_desc">为内存压缩算法加入额外内核支持。</string>
@@ -541,8 +541,7 @@
     <string name="settings_about_version">当前版本：%1$s</string>
     <string name="settings_repository_info">仓库信息</string>
     <string name="settings_contributors">贡献者</string>
-    <string name="settings_contributors_desc">按当前 git 历史统计，仅展示可识别的 GitHub 用户名/链接，并过滤自动化账号。</string>
-    <string name="settings_contributor_commits">%1$d 个提交</string>
+    <string name="settings_contributors_desc">名单按 GitHub 用户名首字母排序；仅展示可识别的贡献者账号，并过滤自动化账号。</string>
     <string name="settings_open_source_licenses_intro">以下清单来自仓库文件、工作流、Gradle 版本目录和 npm lockfile；上游许可证以对应项目为准。</string>
     <string name="settings_license_group_repository">本仓库和内置代码</string>
     <string name="settings_license_group_upstream">上游项目与工作流引用</string>
