@@ -2490,6 +2490,7 @@ jobs:
 
       - name: 添加 SUSFS 配置
         if: inputs.enable_susfs && inputs.ksu_variant != 'None'
+        working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           if [ "${{ inputs.ksu_variant }}" == "SukiSU" ]; then
             KSU_SOURCE_DIR=""
@@ -2501,9 +2502,9 @@ jobs:
             done
 
             if [ -z "$KSU_SOURCE_DIR" ] \
-              || ! grep -qF 'ksu_resolve_symbol_for_functable_hook(const char *symbol_name)' "$KSU_SOURCE_DIR/infra/symbol_resolver.c" \
-              || ! grep -qF 'find_kernel_symbol_exact(const char *symbol_name)' "$KSU_SOURCE_DIR/infra/symbol_resolver.c" \
-              || ! grep -qF 'ksu_init_symbol_resolver(void)' "$KSU_SOURCE_DIR/infra/symbol_resolver.c"; then
+              || ! grep -qF 'ksu_resolve_symbol_for_functable_hook' "$KSU_SOURCE_DIR/infra/symbol_resolver.c" \
+              || ! grep -qF 'find_kernel_symbol_exact' "$KSU_SOURCE_DIR/infra/symbol_resolver.c" \
+              || ! grep -qF 'ksu_init_symbol_resolver' "$KSU_SOURCE_DIR/infra/symbol_resolver.c"; then
               echo "::warning::SukiSU 源码仍缺少完整 SUSFS 导出符号，跳过 CONFIG_KSU_SUSFS* 写入以避免链接失败"
               exit 0
             fi
