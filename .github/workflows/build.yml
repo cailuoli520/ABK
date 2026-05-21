@@ -382,13 +382,13 @@ jobs:
           variant_input="${{ inputs.ksu_variant }}"
           custom_ref_input="${{ inputs.custom_ref }}"
           OFFICIAL_STABLE_REF="3f388ef137c78e1ca0c92c0ada3b8717cdcc4302"
-          SUKISU_STABLE_REF="a992f224f5ea5a69b56ba20e925379c9a226f2b2"
+          SUKISU_STABLE_REF="c5af9eadac43b1f0b9751471be78e6eef681554b"
           RESUKISU_STABLE_REF="b6706363b95525acd4007da19edadb1d41b2ea27"
           SUKISU_REPO="SukiSU-Ultra/SukiSU-Ultra"
 
           # Dev 固定引用先完整复制 Stable 配置，后续只改这里的 *_DEV_REF 即可。
           OFFICIAL_DEV_REF="290609c945728fc93d85735918793567588103c1"
-          SUKISU_DEV_REF="4610456736ba3a3c9a00ad618aa0f4ccc4db5b70"
+          SUKISU_DEV_REF="c5af9eadac43b1f0b9751471be78e6eef681554b"
           RESUKISU_DEV_REF="fb771414f249ab886c09f2cfcbbf91c4b4dab2d1"
 
           get_success_action_sha() {
@@ -2492,8 +2492,21 @@ jobs:
         if: inputs.enable_susfs && inputs.ksu_variant != 'None'
         run: |
           if [ "${{ inputs.ksu_variant }}" == "SukiSU" ]; then
-            echo "::warning::SukiSU 固定源码缺少完整 SUSFS 导出符号，跳过 CONFIG_KSU_SUSFS* 写入以避免链接失败"
-            exit 0
+            KSU_SOURCE_DIR=""
+            for dir in common/drivers/kernelsu drivers/kernelsu KernelSU/kernel kernel; do
+              if [ -f "$dir/infra/symbol_resolver.c" ]; then
+                KSU_SOURCE_DIR="$dir"
+                break
+              fi
+            done
+
+            if [ -z "$KSU_SOURCE_DIR" ] \
+              || ! grep -qF 'ksu_resolve_symbol_for_functable_hook(const char *symbol_name)' "$KSU_SOURCE_DIR/infra/symbol_resolver.c" \
+              || ! grep -qF 'find_kernel_symbol_exact(const char *symbol_name)' "$KSU_SOURCE_DIR/infra/symbol_resolver.c" \
+              || ! grep -qF 'ksu_init_symbol_resolver(void)' "$KSU_SOURCE_DIR/infra/symbol_resolver.c"; then
+              echo "::warning::SukiSU 源码仍缺少完整 SUSFS 导出符号，跳过 CONFIG_KSU_SUSFS* 写入以避免链接失败"
+              exit 0
+            fi
           fi
 
           cat >> "$DEFCONFIG" << 'EOF'
