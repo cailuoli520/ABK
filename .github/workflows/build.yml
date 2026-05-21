@@ -1287,7 +1287,94 @@ jobs:
               echo "ReSukiSU 使用内置 SUSFS 支持"
               ;;
             "SukiSU")
-              echo "SukiSU 跳过 SUSFS Kconfig，仅保留按版本收窄的源码兼容处理"
+              KSU_KERNEL_DIR=""
+              for dir in ./common/drivers/kernelsu ./drivers/kernelsu ./KernelSU/kernel ./kernel; do
+                if [ -f "$dir/Kconfig" ]; then
+                  KSU_KERNEL_DIR="$dir"
+                  break
+                fi
+              done
+              if [ -z "$KSU_KERNEL_DIR" ]; then
+                echo "::error::未找到 SukiSU Kconfig，无法注入 SUSFS Kconfig 符号"
+                exit 1
+              fi
+              python3 - "$KSU_KERNEL_DIR/Kconfig" <<'PY'
+          from pathlib import Path
+          import sys
+
+          path = Path(sys.argv[1])
+          text = path.read_text()
+          if "config KSU_SUSFS" in text:
+              print(f"{path} 已包含 SUSFS Kconfig 符号")
+              raise SystemExit(0)
+
+          block = r'''
+
+          menu "KernelSU - SUSFS"
+          config KSU_SUSFS
+            bool "KernelSU addon - SUSFS"
+            depends on KSU
+            depends on THREAD_INFO_IN_TASK
+            default y
+            help
+              Patch and Enable SUSFS to kernel with KernelSU.
+
+          config KSU_SUSFS_SUS_PATH
+            bool "Enable to hide suspicious path"
+            depends on KSU_SUSFS
+            default y
+
+          config KSU_SUSFS_SUS_MOUNT
+            bool "Enable to hide suspicious mounts"
+            depends on KSU_SUSFS
+            default y
+
+          config KSU_SUSFS_SUS_KSTAT
+            bool "Enable to spoof suspicious kstat"
+            depends on KSU_SUSFS
+            default y
+
+          config KSU_SUSFS_SPOOF_UNAME
+            bool "Enable to spoof uname"
+            depends on KSU_SUSFS
+            default y
+
+          config KSU_SUSFS_ENABLE_LOG
+            bool "Enable logging susfs log to kernel"
+            depends on KSU_SUSFS
+            default y
+
+          config KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+            bool "Enable to automatically hide ksu and susfs symbols from /proc/kallsyms"
+            depends on KSU_SUSFS
+            default y
+
+          config KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+            bool "Enable to spoof /proc/bootconfig (gki) or /proc/cmdline (non-gki)"
+            depends on KSU_SUSFS
+            default y
+
+          config KSU_SUSFS_OPEN_REDIRECT
+            bool "Enable to redirect a path to be opened with another path"
+            depends on KSU_SUSFS
+            default y
+
+          config KSU_SUSFS_SUS_MAP
+            bool "Enable to hide some mmapped real file from different proc maps interfaces"
+            depends on KSU_SUSFS
+            default y
+
+          endmenu
+          '''.strip("\n")
+
+          marker = "\nendmenu\n"
+          if marker in text:
+              text = text.rsplit(marker, 1)[0].rstrip() + "\n\n" + block + marker
+          else:
+              text = text.rstrip() + "\n\n" + block + "\n"
+          path.write_text(text)
+          print(f"已注入 {path} 的 SukiSU SUSFS Kconfig 符号")
+          PY
               ;;
           esac
 
