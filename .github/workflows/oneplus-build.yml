@@ -322,32 +322,12 @@ jobs:
             bash setup-bbg.sh
           fi
 
+          cp "$WORKSPACE/kernel_patches/zram_patches/001-lz4.patch" "$COMMON_ROOT/"
+          cp "$WORKSPACE/kernel_patches/zram_patches/lz4armv8.S" "$COMMON_ROOT/lib/"
+          cp "$WORKSPACE/kernel_patches/zram_patches/002-zstd.patch" "$COMMON_ROOT/"
+
           cd "$KERNEL_ROOT"
           if [ "$EFFECTIVE_USE_LZ4KD" = "true" ]; then
-            mkdir -p "$COMMON_ROOT/lib/lz4"
-            cp -r "$GITHUB_WORKSPACE/zram/lz4/." "$COMMON_ROOT/lib/lz4/"
-            cp -r "$GITHUB_WORKSPACE/zram/include/linux/"* "$COMMON_ROOT/include/linux/" || true
-            (cd "$COMMON_ROOT" && bash "$GITHUB_WORKSPACE/zram/apply_lz4_neon.sh")
-            if [ -f "$COMMON_ROOT/fs/f2fs/lz4armv8/lz4accel.h" ] && \
-              ! grep -qF 'ABK_F2FS_LZ4_ACCEL_H' "$COMMON_ROOT/fs/f2fs/lz4armv8/lz4accel.h"; then
-              python3 - "$COMMON_ROOT/fs/f2fs/lz4armv8/lz4accel.h" <<'PY'
-          from pathlib import Path
-          import sys
-
-          path = Path(sys.argv[1])
-          text = path.read_text()
-          guard = "ABK_F2FS_LZ4_ACCEL_H"
-          if f"#ifndef {guard}" in text:
-              raise SystemExit(0)
-
-          path.write_text(
-              f"#ifndef {guard}\n"
-              f"#define {guard}\n\n"
-              f"{text.rstrip()}\n\n"
-              f"#endif /* {guard} */\n"
-          )
-          PY
-            fi
             cp -r "$WORKSPACE"/SukiSU_patch/other/zram/lz4k/include/linux/* "$COMMON_ROOT/include/linux/" || true
             cp -r "$WORKSPACE"/SukiSU_patch/other/zram/lz4k/lib/* "$COMMON_ROOT/lib/" || true
             cp -r "$WORKSPACE"/SukiSU_patch/other/zram/lz4k/crypto/* "$COMMON_ROOT/crypto/" || true
@@ -380,6 +360,11 @@ jobs:
           if [ "$EFFECTIVE_USE_LZ4KD" = "true" ]; then
             [ -f lz4kd.patch ] && patch -p1 < lz4kd.patch || true
             [ -f lz4k_oplus.patch ] && patch -p1 < lz4k_oplus.patch || true
+          elif [ "$KERNEL_VERSION" = "6.1" ]; then
+            [ -f 001-lz4.patch ] && git apply -p1 < 001-lz4.patch || true
+            [ -f 002-zstd.patch ] && patch -p1 < 002-zstd.patch || true
+          elif [ "$KERNEL_VERSION" = "6.6" ]; then
+            [ -f 001-lz4.patch ] && git apply -p1 < 001-lz4.patch || true
           fi
           if [ "$EFFECTIVE_ENABLE_SUSFS" = "true" ]; then
             [ -f "50_add_susfs_in_gki-${ANDROID_VERSION}-${KERNEL_VERSION}.patch" ] && \
