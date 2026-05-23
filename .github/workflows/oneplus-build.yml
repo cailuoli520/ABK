@@ -393,7 +393,72 @@ jobs:
           set -euo pipefail
           WORKSPACE="$GITHUB_WORKSPACE/oneplus_workspace"
           KERNEL_ROOT="$WORKSPACE/kernel_workspace/kernel_platform"
-          python3 "$GITHUB_WORKSPACE/.github/scripts/fix_sukisu_susfs.py" "$KERNEL_ROOT"
+
+          if [ "$EFFECTIVE_ENABLE_SUSFS" != "true" ]; then
+            echo "SUSFS 未启用，跳过 SukiSU SUSFS 兼容修复。"
+            exit 0
+          fi
+
+          KSU_BUILD_DIR=""
+          for dir in common/drivers/kernelsu drivers/kernelsu KernelSU/kernel kernel; do
+            if [ -d "$KERNEL_ROOT/$dir" ]; then
+              KSU_BUILD_DIR="$KERNEL_ROOT/$dir"
+              break
+            fi
+          done
+
+          if [ -z "$KSU_BUILD_DIR" ]; then
+            echo "::error::未找到 SukiSU 源码目录，无法修复 SUSFS 兼容。"
+            exit 1
+          fi
+
+          python3 - "$KSU_BUILD_DIR/feature/selinux_hide.c" <<'PY'
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          if not path.exists():
+              raise SystemExit(f"{path} not found")
+
+          text = path.read_text()
+          original = text
+          replacements = [
+              ("static struct selinux_state fake_state;", "struct selinux_state fake_state;"),
+              (
+                  "static bool ksu_selinux_hide_running __read_mostly = false;",
+                  "bool ksu_selinux_hide_running __read_mostly = false;",
+              ),
+              ("static int security_context_to_sid_with_policy(", "int security_context_to_sid_with_policy("),
+              ("static int security_sid_to_context_with_policy(", "int security_sid_to_context_with_policy("),
+              (
+                  "static void __nocfi security_compute_av_user_with_policy(",
+                  "void __nocfi security_compute_av_user_with_policy(",
+              ),
+              ("static void security_compute_av_user_with_policy(", "void security_compute_av_user_with_policy("),
+              ("static struct selinux_policy *backup_sepolicy;", "struct selinux_policy *backup_sepolicy;"),
+          ]
+          for old, new in replacements:
+              text = text.replace(old, new)
+
+          if text != original:
+              path.write_text(text)
+              print(f"patched {path}")
+          else:
+              print(f"no change for {path}")
+
+          final_text = path.read_text()
+          forbidden = (
+              "static struct selinux_state fake_state;",
+              "static bool ksu_selinux_hide_running __read_mostly = false;",
+              "static int security_context_to_sid_with_policy(",
+              "static int security_sid_to_context_with_policy(",
+              "static void __nocfi security_compute_av_user_with_policy(",
+              "static void security_compute_av_user_with_policy(",
+          )
+          present = [marker for marker in forbidden if marker in final_text]
+          if present:
+              raise SystemExit(f"{path} still contains non-exported SELinux compatibility symbols: {present}")
+          PY
 
       - name: 修复 SukiSU/ReSukiSU sulog 兼容
         if: ${{ inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'ReSukiSU' }}

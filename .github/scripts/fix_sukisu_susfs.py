@@ -396,10 +396,6 @@ def patch_selinux_hide(path, changed_files):
 
     text = text.replace("static struct selinux_state fake_state;", "struct selinux_state fake_state;")
     text = text.replace(
-        "static struct selinux_policy *backup_sepolicy;",
-        "struct selinux_policy *backup_sepolicy;",
-    )
-    text = text.replace(
         "static bool ksu_selinux_hide_running __read_mostly = false;",
         "bool ksu_selinux_hide_running __read_mostly = false;",
     )
@@ -678,7 +674,6 @@ def verify(ksu_dir):
         ),
         ksu_dir / "feature/selinux_hide.c": (
             "struct selinux_state fake_state;",
-            "struct selinux_policy *backup_sepolicy;",
             "bool ksu_selinux_hide_running __read_mostly",
             "int security_context_to_sid_with_policy(",
             "int security_sid_to_context_with_policy(",
@@ -697,7 +692,6 @@ def verify(ksu_dir):
         "static int security_sid_to_context_with_policy(",
         "static void __nocfi security_compute_av_user_with_policy(",
         "static void security_compute_av_user_with_policy(",
-        "static struct selinux_policy *backup_sepolicy;",
     )
     present = [marker for marker in forbidden if marker in selinux_hide]
     if present:
