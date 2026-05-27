@@ -567,13 +567,40 @@ object RootUtils {
         }
     }
 
+    private fun readAbkLspBridgeStatus(): ShellResult? {
+        return try {
+            createRootShell(timeoutSeconds = 10L).use { shell ->
+                val result = execWithShell(
+                    shell = shell,
+                    script = "cat /dev/abk_lsp_bridge 2>/dev/null || true",
+                    normalizeOutput = false
+                )
+                val body = result.output.joinToString("\n").trim()
+                if (body.startsWith("{")) {
+                    ShellResult(true, listOf(body))
+                } else {
+                    null
+                }
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
     fun readManagerRuntimeSnapshot(): ManagerRuntimeSnapshot {
         val manager = detectManagerRuntime()
         if (!manager.active) {
             return ManagerRuntimeSnapshot(manager = manager)
         }
 
-        val control = if (manager.workMode == "lkm") {
+        val control = if (manager.backend == "lsp_bridge") {
+            readAbkLspBridgeStatus()
+                ?.takeIf { it.success }
+                ?.output
+                ?.joinToString("\n")
+                ?.trim()
+                ?.takeIf { it.isNotBlank() && it.startsWith("{") }
+        } else if (manager.workMode == "lkm") {
             null
         } else {
             readAbkControlStatus().takeIf { it.success }
@@ -1365,6 +1392,11 @@ object RootUtils {
             return nativeRuntime
         }
 
+        val lspBridgeRuntime = detectLspBridgeRuntime()
+        if (lspBridgeRuntime != null) {
+            return lspBridgeRuntime
+        }
+
         val shellRuntime = detectShellManagerRuntime(nativeRuntime)
         if (shellRuntime != null) {
             return shellRuntime
@@ -1373,6 +1405,56 @@ object RootUtils {
         return nativeRuntime ?: ManagerRuntimeProbe(
             diagnostics = listOf(tr(R.string.ru_no_manager_interface))
         )
+    }
+
+    private fun detectLspBridgeRuntime(): ManagerRuntimeProbe? {
+        val raw = readAbkLspBridgeStatus()
+            ?.takeIf { it.success }
+            ?.output
+            ?.joinToString("\n")
+            ?.trim()
+            ?.takeIf { it.startsWith("{") }
+            ?: return null
+
+        return runCatching {
+            val root = JSONObject(raw)
+            val manager = root.optJSONObject("manager")
+            val displayName = manager?.optString("display_name").orEmpty().ifBlank { "ABK LSP Bridge" }
+            val variant = manager?.optString("variant").orEmpty().ifBlank { displayName }
+            val backend = manager?.optString("backend").orEmpty().ifBlank { "lsp_bridge" }
+            val version = manager?.optString("version").orEmpty()
+            val capabilities = manager
+                ?.optJSONArray("capabilities")
+                ?.let { array ->
+                    buildList {
+                        for (index in 0 until array.length()) {
+                            array.optString(index)?.trim()?.takeIf { it.isNotBlank() }?.let(::add)
+                        }
+                    }
+                }
+                .orEmpty()
+            val diagnostics = manager
+                ?.optJSONArray("diagnostics")
+                ?.let { array ->
+                    buildList {
+                        for (index in 0 until array.length()) {
+                            array.optString(index)?.trim()?.takeIf { it.isNotBlank() }?.let(::add)
+                        }
+                    }
+                }
+                .orEmpty()
+
+            ManagerRuntimeProbe(
+                active = true,
+                displayName = displayName,
+                variant = variant,
+                backend = backend,
+                version = version,
+                workMode = root.optString("work_mode").orEmpty().ifBlank { "built-in" },
+                capabilities = capabilities.ifEmpty { listOf("lsp_bridge", "zygote_helper", "plugin_bridge") },
+                diagnostics = diagnostics
+            )
+        }.getOrNull()
     }
 
     private fun detectShellManagerRuntime(

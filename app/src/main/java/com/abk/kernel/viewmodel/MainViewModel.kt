@@ -3025,15 +3025,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun loadManagerSettings(): ManagerSettingsLoad =
         runCatching {
-            if (!RootUtils.isNativeManagerActive()) {
-                return@runCatching ManagerSettingsLoad()
-            }
             val snapshot = RootUtils.readManagerRuntimeSnapshot()
             val manager = snapshot.manager.normalizedForManagerSettings()
             if (!manager.active) {
                 ManagerSettingsLoad()
             } else {
                 when {
+                    manager.isAbkLspBridge() -> ManagerSettingsLoad(
+                        backend = "lsp_bridge",
+                        title = "ABK LSP Bridge",
+                        items = buildAbkLspBridgeSettings()
+                    )
                     manager.isReSukiSu() -> ManagerSettingsLoad(
                         backend = "resukisu",
                         title = "ReSukiSU",
@@ -3059,6 +3061,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }.getOrElse { error ->
             ManagerSettingsLoad(
                 error = error.message?.takeIf { it.isNotBlank() } ?: text(R.string.settings_manager_load_failed)
+            )
+        }
+
+    private fun buildAbkLspBridgeSettings(): List<ManagerSettingItem> =
+        buildList {
+            add(
+                ManagerSettingItem(
+                    id = MANAGER_SETTING_LSP_TARGETS,
+                    title = "Bridge Targets",
+                    subtitle = "Configure zygote/app_process target profiles and attach policy.",
+                    kind = ManagerSettingKind.NAVIGATION
+                )
+            )
+            add(
+                ManagerSettingItem(
+                    id = MANAGER_SETTING_LSP_DIAGNOSTICS,
+                    title = "Bridge Diagnostics",
+                    subtitle = "Inspect bridge status, zygote helper state, and runtime diagnostics.",
+                    kind = ManagerSettingKind.NAVIGATION
+                )
+            )
+            add(
+                ManagerSettingItem(
+                    id = MANAGER_SETTING_LSP_PLUGINS,
+                    title = "Bridge Plugins",
+                    subtitle = "Manage ABK LSP bridge plugins and runtime payloads.",
+                    kind = ManagerSettingKind.NAVIGATION
+                )
             )
         }
 
@@ -3346,6 +3376,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             "official" in text ||
             (backend == "native" && "native_manager" in capabilities) ||
             (backend == "ksud" && capabilities.any { it == "features" || it == "module_control" || it == "modules" })
+    }
+
+    private fun RootUtils.ManagerRuntimeProbe.isAbkLspBridge(): Boolean {
+        val text = listOf(displayName, variant, version, backend).joinToString(" ").lowercase()
+        return "abk lsp" in text ||
+            "lsp bridge" in text ||
+            backend == "lsp_bridge" ||
+            capabilities.any { it.equals("lsp_bridge", ignoreCase = true) } ||
+            capabilities.any { it.equals("zygote_helper", ignoreCase = true) }
     }
 
     private fun RootUtils.ManagerRuntimeProbe.normalizedForManagerSettings(): RootUtils.ManagerRuntimeProbe =
@@ -5097,6 +5136,9 @@ private const val MANAGER_SETTING_SULOG = "sulog"
 private const val MANAGER_SETTING_SELINUX_HIDE = "selinux_hide"
 private const val MANAGER_SETTING_DEFAULT_UMOUNT = "default_umount_modules"
 private const val MANAGER_SETTING_WEBVIEW_DEBUG = "webview_debug"
+private const val MANAGER_SETTING_LSP_TARGETS = "lsp_targets"
+private const val MANAGER_SETTING_LSP_DIAGNOSTICS = "lsp_diagnostics"
+private const val MANAGER_SETTING_LSP_PLUGINS = "lsp_plugins"
 private const val MANAGER_TOOL_SELINUX_MODE = "selinux_mode"
 private const val MANAGER_TOOL_BACKUP_ALLOWLIST = "backup_allowlist"
 private const val MANAGER_TOOL_RESTORE_ALLOWLIST = "restore_allowlist"
