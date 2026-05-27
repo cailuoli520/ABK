@@ -389,7 +389,7 @@ const val BUILD_TARGET_GKI = "gki"
 const val BUILD_TARGET_ONEPLUS = "oneplus"
 const val MANAGER_SURFACE_BUILD = "build"
 const val MANAGER_SURFACE_ROOT = "root"
-const val MANAGER_SURFACE_LP = "lp"
+const val MANAGER_SURFACE_LSP = "lsp"
 
 val KSU_BRANCH_STANDARD_OPTIONS = listOf(KSU_BRANCH_STABLE, KSU_BRANCH_DEV, KSU_BRANCH_CUSTOM)
 val KSU_BRANCH_BUILD_PLAN_OPTIONS = KSU_BRANCH_STANDARD_OPTIONS
@@ -531,7 +531,7 @@ data class AppProfileTemplateItem(
     val content: String = ""
 )
 
-data class LpInstalledModule(
+data class LspInstalledModule(
     val packageName: String = "",
     val label: String = "",
     val versionName: String = "",

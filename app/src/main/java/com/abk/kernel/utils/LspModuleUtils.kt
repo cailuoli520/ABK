@@ -4,22 +4,22 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
-import com.abk.kernel.data.model.LpInstalledModule
+import com.abk.kernel.data.model.LspInstalledModule
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.Properties
 import java.util.zip.ZipFile
 
-object LpModuleUtils {
-    fun listInstalledModules(context: Context): List<LpInstalledModule> {
+object LspModuleUtils {
+    fun listInstalledModules(context: Context): List<LspInstalledModule> {
         val pm = context.packageManager
         val packages = pm.getInstalledPackages(PackageManager.GET_META_DATA)
         return packages.mapNotNull { pkg ->
-            toLpInstalledModule(pm, pkg)
+            toLspInstalledModule(pm, pkg)
         }.sortedBy { it.label.lowercase() }
     }
 
-    private fun toLpInstalledModule(pm: PackageManager, pkg: PackageInfo): LpInstalledModule? {
+    private fun toLspInstalledModule(pm: PackageManager, pkg: PackageInfo): LspInstalledModule? {
         val app = pkg.applicationInfo ?: return null
         val modern = getModernModuleApk(app)
         val legacy = isLegacyModule(app)
@@ -40,7 +40,7 @@ object LpModuleUtils {
                         reader.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.toList()
                     }
                 }.orEmpty()
-                LpInstalledModule(
+                LspInstalledModule(
                     packageName = pkg.packageName,
                     label = label,
                     versionName = pkg.versionName.orEmpty(),
@@ -57,7 +57,7 @@ object LpModuleUtils {
         } else {
             val metaData = app.metaData
             val scopeString = metaData?.getString("xposedscope").orEmpty()
-            LpInstalledModule(
+            LspInstalledModule(
                 packageName = pkg.packageName,
                 label = label,
                 versionName = pkg.versionName.orEmpty(),

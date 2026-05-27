@@ -34,6 +34,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.FolderOpen
@@ -42,6 +43,7 @@ import androidx.compose.material.icons.filled.LibraryBooks
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.RocketLaunch
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -81,8 +83,10 @@ import coil.compose.AsyncImage
 import com.abk.kernel.ui.screens.BuildScreen
 import com.abk.kernel.ui.screens.FlashScreen
 import com.abk.kernel.ui.screens.InstalledModulesScreen
-import com.abk.kernel.ui.screens.LpManagerHomeScreen
-import com.abk.kernel.ui.screens.LpModulesScreen
+import com.abk.kernel.ui.screens.LspLogsScreen
+import com.abk.kernel.ui.screens.LspManagerHomeScreen
+import com.abk.kernel.ui.screens.LspModulesScreen
+import com.abk.kernel.ui.screens.LspScopeScreen
 import com.abk.kernel.ui.screens.ModuleRepositoryScreen
 import com.abk.kernel.ui.screens.OobeScreen
 import com.abk.kernel.ui.screens.RootAuthorizationScreen
@@ -94,7 +98,7 @@ import com.abk.kernel.ui.theme.LocalUiSurfaceAlpha
 import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.viewmodel.MainViewModel
 import com.abk.kernel.data.model.MANAGER_SURFACE_BUILD
-import com.abk.kernel.data.model.MANAGER_SURFACE_LP
+import com.abk.kernel.data.model.MANAGER_SURFACE_LSP
 import com.abk.kernel.data.model.MANAGER_SURFACE_ROOT
 
 class MainActivity : ComponentActivity() {
@@ -367,8 +371,10 @@ private enum class AbkTab(@StringRes val labelRes: Int) {
     Modules(R.string.nav_modules),
     Flash(R.string.nav_flash),
     RuntimeHome(R.string.nav_home),
-    LpHome(R.string.nav_home),
-    LpModules(R.string.nav_modules),
+    LspHome(R.string.nav_home),
+    LspModules(R.string.nav_modules),
+    LspScope(R.string.nav_settings),
+    LspLogs(R.string.nav_status),
     InstalledModules(R.string.nav_installed_modules),
     RootAuth(R.string.nav_root_auth),
     Settings(R.string.nav_settings)
@@ -401,9 +407,11 @@ private fun AbkMainScaffold(
                 if (runtimeNativeManagerActive) add(AbkTab.RootAuth)
                 add(AbkTab.Settings)
             }
-            MANAGER_SURFACE_LP -> buildList {
-                add(AbkTab.LpHome)
-                add(AbkTab.LpModules)
+            MANAGER_SURFACE_LSP -> buildList {
+                add(AbkTab.LspHome)
+                add(AbkTab.LspModules)
+                add(AbkTab.LspScope)
+                add(AbkTab.LspLogs)
                 add(AbkTab.Settings)
             }
             else -> listOf(AbkTab.Status, AbkTab.Build, AbkTab.Modules, AbkTab.Flash, AbkTab.Settings)
@@ -423,7 +431,7 @@ private fun AbkMainScaffold(
         AbkTab.Settings -> settingsThemePageVisible
         AbkTab.RootAuth -> rootAuthDetailPageVisible
         AbkTab.RuntimeHome -> managerPatchPageVisible
-        AbkTab.LpHome, AbkTab.LpModules -> false
+        AbkTab.LspHome, AbkTab.LspModules, AbkTab.LspScope, AbkTab.LspLogs -> false
         else -> false
     }
 
@@ -493,7 +501,7 @@ private fun AbkMainScaffold(
         if (selectedTab !in visibleTabs) {
             selectedTab = when (state.managerSurfaceMode) {
                 MANAGER_SURFACE_ROOT -> AbkTab.RuntimeHome
-                MANAGER_SURFACE_LP -> AbkTab.LpHome
+                MANAGER_SURFACE_LSP -> AbkTab.LspHome
                 else -> AbkTab.Status
             }
         }
@@ -554,8 +562,10 @@ private fun AbkMainScaffold(
                                     AbkTab.Modules -> Icons.Default.LibraryBooks
                                     AbkTab.Flash -> if (state.rootGranted) Icons.Default.FlashOn else Icons.Default.FolderOpen
                                     AbkTab.RuntimeHome -> Icons.Default.Memory
-                                    AbkTab.LpHome -> Icons.Default.Memory
-                                    AbkTab.LpModules -> Icons.Default.Extension
+                                    AbkTab.LspHome -> Icons.Default.Memory
+                                    AbkTab.LspModules -> Icons.Default.Extension
+                                    AbkTab.LspScope -> Icons.Default.Tune
+                                    AbkTab.LspLogs -> Icons.Default.Article
                                     AbkTab.InstalledModules -> Icons.Default.Extension
                                     AbkTab.RootAuth -> Icons.Default.AdminPanelSettings
                                     AbkTab.Settings -> Icons.Default.Settings
@@ -634,12 +644,20 @@ private fun AbkMainScaffold(
                             onSwitchToClassic = ::openManagerSurfaceDialog,
                             onManagerPatchPageVisibleChange = { managerPatchPageVisible = it }
                         )
-                        AbkTab.LpHome -> LpManagerHomeScreen(
+                        AbkTab.LspHome -> LspManagerHomeScreen(
                             vm = vm,
                             outerPadding = contentPadding,
                             onOpenManagerSurfacePicker = ::openManagerSurfaceDialog
                         )
-                        AbkTab.LpModules -> LpModulesScreen(
+                        AbkTab.LspModules -> LspModulesScreen(
+                            vm = vm,
+                            outerPadding = contentPadding
+                        )
+                        AbkTab.LspScope -> LspScopeScreen(
+                            vm = vm,
+                            outerPadding = contentPadding
+                        )
+                        AbkTab.LspLogs -> LspLogsScreen(
                             vm = vm,
                             outerPadding = contentPadding
                         )
@@ -660,7 +678,7 @@ private fun AbkMainScaffold(
                             onThemePageVisibleChange = { settingsThemePageVisible = it },
                             onOpenInstalledModules = {
                                 when (state.managerSurfaceMode) {
-                                    MANAGER_SURFACE_LP -> selectedTab = AbkTab.LpModules
+                                    MANAGER_SURFACE_LSP -> selectedTab = AbkTab.LspModules
                                     MANAGER_SURFACE_ROOT -> {
                                         selectedTab = if (state.rootGranted) {
                                             AbkTab.InstalledModules
@@ -689,11 +707,11 @@ private fun AbkMainScaffold(
                         Button(
                             onClick = {
                                 showManagerSurfaceDialog = false
-                                vm.setManagerSurfaceMode(MANAGER_SURFACE_LP)
-                                selectedTab = AbkTab.LpHome
+                                vm.setManagerSurfaceMode(MANAGER_SURFACE_LSP)
+                                selectedTab = AbkTab.LspHome
                             },
                             modifier = Modifier.fillMaxWidth()
-                        ) { Text("LP 管理器") }
+                        ) { Text("LSP 管理器") }
                         Button(
                             onClick = {
                                 showManagerSurfaceDialog = false
@@ -727,8 +745,10 @@ private fun AbkMainScaffold(
 private fun AbkTab.displayLabel(rootGranted: Boolean): String = when (this) {
     AbkTab.Flash -> stringResource(if (rootGranted) labelRes else R.string.nav_files)
     AbkTab.RuntimeHome -> "Root"
-    AbkTab.LpHome -> "LP"
-    AbkTab.LpModules -> "LP 模块"
+    AbkTab.LspHome -> "LSP"
+    AbkTab.LspModules -> "LSP 模块"
+    AbkTab.LspScope -> "作用域"
+    AbkTab.LspLogs -> "日志"
     else -> stringResource(labelRes)
 }
 
