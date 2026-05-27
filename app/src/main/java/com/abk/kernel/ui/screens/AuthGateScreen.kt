@@ -34,17 +34,20 @@ import com.abk.kernel.viewmodel.AuthStep
 import com.abk.kernel.viewmodel.MainViewModel
 
 @Composable
-fun AuthGateScreen(vm: MainViewModel) {
+fun OobeScreen(vm: MainViewModel) {
     val state by vm.uiState.collectAsState()
 
-    LaunchedEffect(Unit) {
-        vm.checkRoot()
-    }
-
     when (state.authStep) {
-        AuthStep.CHECK_ROOT -> RootCheckScreen(
-            isLoading = state.isLoading,
-            onRequestRoot = { vm.requestRoot() }
+        AuthStep.INTRO -> OobeIntroScreen(
+            loggedIn = state.isLoggedIn,
+            onContinue = {
+                if (state.isLoggedIn) {
+                    vm.openBuildOobe()
+                } else {
+                    vm.continueOobeToLogin()
+                }
+            },
+            onSkip = { vm.skipOobe() }
         )
         AuthStep.LOGIN -> LoginScreen(
             isLoading = state.isLoading,
@@ -53,20 +56,84 @@ fun AuthGateScreen(vm: MainViewModel) {
             isPolling = state.isPollingToken,
             error = state.error,
             onLogin = { vm.startDeviceFlow() },
+            onSkip = { vm.skipOobe() },
             onClearError = { vm.clearError() }
         )
         AuthStep.FORK_CHECK -> ForkCheckScreen(
             isLoading = state.isLoading,
             hasFork = state.forkRepo != null,
             behindBy = state.behindBy,
-            showSyncDialog = state.showSyncDialog,
+            showSyncDialog = false,
             error = state.error,
             onFork = { vm.forkRepo() },
             onSync = { vm.syncFork() },
-            onSkip = { vm.dismissSyncDialog() },
+            onSkip = { vm.skipOobe() },
+            showSkipAction = true,
             onClearError = { vm.clearError() }
         )
-        AuthStep.READY -> { /* handled by parent */ }
+    }
+}
+
+@Composable
+private fun OobeIntroScreen(
+    loggedIn: Boolean,
+    onContinue: () -> Unit,
+    onSkip: () -> Unit
+) {
+    AuthShell {
+        ExpressiveHeroCard(
+            title = stringResource(R.string.oobe_title),
+            subtitle = stringResource(R.string.oobe_desc),
+            icon = Icons.Default.RocketLaunch,
+            badge = {
+                ExpressiveStatusChip(
+                    label = stringResource(R.string.oobe_first_launch),
+                    icon = Icons.Default.AutoAwesome,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        )
+        ExpressiveSectionCard(
+            title = stringResource(R.string.oobe_build_title),
+            subtitle = stringResource(R.string.oobe_build_desc),
+            icon = Icons.Default.Code
+        ) {
+            Text(
+                stringResource(R.string.oobe_build_detail),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        ExpressiveSectionCard(
+            title = stringResource(R.string.oobe_flash_title),
+            subtitle = stringResource(R.string.oobe_flash_desc),
+            icon = Icons.Default.CloudDownload
+        ) {
+            Text(
+                stringResource(R.string.oobe_flash_detail),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Button(
+            onClick = onContinue,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+        ) {
+            Icon(if (loggedIn) Icons.Default.ForkRight else Icons.Default.Code, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                if (loggedIn) {
+                    stringResource(R.string.oobe_continue_setup)
+                } else {
+                    stringResource(R.string.login_github)
+                }
+            )
+        }
+        TextButton(onClick = onSkip) {
+            Text(stringResource(R.string.oobe_skip_for_now))
+        }
     }
 }
 
@@ -124,6 +191,7 @@ private fun LoginScreen(
     isPolling: Boolean,
     error: String?,
     onLogin: () -> Unit,
+    onSkip: () -> Unit,
     onClearError: () -> Unit
 ) {
     val context = LocalContext.current
@@ -200,6 +268,10 @@ private fun LoginScreen(
                     Text(stringResource(R.string.login_github))
                 }
             }
+        }
+
+        TextButton(onClick = onSkip) {
+            Text(stringResource(R.string.oobe_skip_for_now))
         }
     }
 }
@@ -318,6 +390,7 @@ private fun ForkCheckScreen(
     onFork: () -> Unit,
     onSync: () -> Unit,
     onSkip: () -> Unit,
+    showSkipAction: Boolean = false,
     onClearError: () -> Unit
 ) {
     if (showSyncDialog) {
@@ -402,6 +475,11 @@ private fun ForkCheckScreen(
         }
         if (error != null) {
             ErrorCard(error = error, onClearError = onClearError)
+        }
+        if (showSkipAction) {
+            TextButton(onClick = onSkip) {
+                Text(stringResource(R.string.oobe_skip_for_now))
+            }
         }
     }
 }
