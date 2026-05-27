@@ -542,7 +542,39 @@ data class LspInstalledModule(
     val minVersion: Int = 0,
     val targetVersion: Int = 0,
     val scopeHints: List<String> = emptyList(),
-    val enabled: Boolean = false
+    val entryPoints: List<String> = emptyList(),
+    val enabled: Boolean = false,
+    val selectedScope: List<String> = emptyList(),
+    val lastError: String = ""
+)
+
+data class LspBridgeManagedModule(
+    val packageName: String = "",
+    val enabled: Boolean = false,
+    val selectedScope: List<String> = emptyList(),
+    val lastError: String = ""
+)
+
+data class LspBridgeStatus(
+    val safeMode: Boolean = false,
+    val helperActive: Boolean = false,
+    val daemonActive: Boolean = false,
+    val zygoteAttached: Boolean = false,
+    val targetCount: Int = 0,
+    val pluginCount: Int = 0,
+    val managedModuleCount: Int = 0,
+    val scopeCount: Int = 0,
+    val protocolVersion: Int = 0,
+    val lastError: String = "",
+    val diagnostics: List<String> = emptyList(),
+    val logs: List<String> = emptyList(),
+    val managedModules: List<LspBridgeManagedModule> = emptyList()
+)
+
+data class LspScopeApp(
+    val packageName: String = "",
+    val label: String = "",
+    val isSystemApp: Boolean = false
 )
 
 data class RootGrantApp(

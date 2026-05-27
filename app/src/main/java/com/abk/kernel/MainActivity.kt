@@ -651,7 +651,11 @@ private fun AbkMainScaffold(
                         )
                         AbkTab.LspModules -> LspModulesScreen(
                             vm = vm,
-                            outerPadding = contentPadding
+                            outerPadding = contentPadding,
+                            onOpenScope = {
+                                vm.setSelectedLspModulePackage(it)
+                                selectedTab = AbkTab.LspScope
+                            }
                         )
                         AbkTab.LspScope -> LspScopeScreen(
                             vm = vm,

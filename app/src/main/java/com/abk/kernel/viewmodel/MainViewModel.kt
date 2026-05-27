@@ -156,6 +156,11 @@ data class MainUiState(
     val lspInstalledModules: List<LspInstalledModule> = emptyList(),
     val lspInstalledModulesLoading: Boolean = false,
     val lspInstalledModulesError: String? = null,
+    val lspBridgeStatus: LspBridgeStatus? = null,
+    val lspScopeApps: List<LspScopeApp> = emptyList(),
+    val lspScopeAppsLoading: Boolean = false,
+    val selectedLspModulePackage: String? = null,
+    val lspModuleActionPackage: String? = null,
     val selinuxEnforcing: Boolean = true,
     val selinuxModeText: String = "",
     val umountPaths: List<String> = emptyList(),
@@ -537,6 +542,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (normalized == MANAGER_SURFACE_LSP) {
             refreshLspInstalledModules()
+            refreshLspScopeApps()
         }
         refreshManagerSettings(force = true)
     }
@@ -556,10 +562,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update {
                 modules.fold(
                     onSuccess = { list ->
+                        val merged = mergeLspInstalledModules(list, it.lspBridgeStatus)
+                        val selectedPackage = resolveSelectedLspModule(
+                            current = it.selectedLspModulePackage,
+                            modules = merged
+                        )
                         it.copy(
-                            lspInstalledModules = list,
+                            lspInstalledModules = merged,
                             lspInstalledModulesLoading = false,
-                            lspInstalledModulesError = null
+                            lspInstalledModulesError = null,
+                            selectedLspModulePackage = selectedPackage
                         )
                     },
                     onFailure = { error ->
@@ -574,6 +586,89 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun refreshLspScopeApps() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(lspScopeAppsLoading = true) }
+            val apps = withContext(Dispatchers.IO) {
+                runCatching { LspModuleUtils.listScopeApps(getApplication()) }
+            }
+            _uiState.update {
+                apps.fold(
+                    onSuccess = { list ->
+                        it.copy(
+                            lspScopeApps = list,
+                            lspScopeAppsLoading = false
+                        )
+                    },
+                    onFailure = {
+                        it.copy(lspScopeAppsLoading = false)
+                    }
+                )
+            }
+        }
+    }
+
+    fun setSelectedLspModulePackage(packageName: String?) {
+        _uiState.update { state ->
+            state.copy(
+                selectedLspModulePackage = packageName
+                    ?.takeIf { target -> state.lspInstalledModules.any { it.packageName == target } }
+                    ?: resolveSelectedLspModule(state.selectedLspModulePackage, state.lspInstalledModules)
+            )
+        }
+    }
+
+    fun setLspModuleEnabled(packageName: String, enabled: Boolean) {
+        val cleanPackage = sanitizeLspPackageToken(packageName) ?: return
+        if (_uiState.value.lspModuleActionPackage != null) return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(lspModuleActionPackage = cleanPackage, abkRuntimeError = null)
+            }
+            val result = withContext(Dispatchers.IO) {
+                RootUtils.writeAbkControlCommand(
+                    if (enabled) "lsp module enable $cleanPackage" else "lsp module disable $cleanPackage"
+                )
+            }
+            _uiState.update {
+                it.copy(
+                    lspModuleActionPackage = null,
+                    abkRuntimeError = if (result.success) null else result.output.lastOrNull() ?: text(R.string.ru_not_active)
+                )
+            }
+            if (result.success) {
+                refreshAbkRuntimeStatus()
+            }
+        }
+    }
+
+    fun setLspModuleScope(packageName: String, scopePackages: Collection<String>) {
+        val cleanPackage = sanitizeLspPackageToken(packageName) ?: return
+        if (_uiState.value.lspModuleActionPackage != null) return
+        val cleanedScope = scopePackages.mapNotNull(::sanitizeLspPackageToken).distinct().sorted()
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(lspModuleActionPackage = cleanPackage, abkRuntimeError = null)
+            }
+            val result = withContext(Dispatchers.IO) {
+                if (cleanedScope.isEmpty()) {
+                    RootUtils.writeAbkControlCommand("lsp scope clear $cleanPackage")
+                } else {
+                    RootUtils.writeAbkControlCommand("lsp scope set $cleanPackage ${cleanedScope.joinToString(",")}")
+                }
+            }
+            _uiState.update {
+                it.copy(
+                    lspModuleActionPackage = null,
+                    abkRuntimeError = if (result.success) null else result.output.lastOrNull() ?: text(R.string.ru_not_active)
+                )
+            }
+            if (result.success) {
+                refreshAbkRuntimeStatus()
+            }
+        }
+    }
+
     fun setWebViewDebugEnabled(enabled: Boolean) {
         _uiState.update { it.copy(webViewDebugEnabled = enabled) }
         viewModelScope.launch { prefs.setWebViewDebugEnabled(enabled) }
@@ -584,7 +679,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(abkRuntimeLoading = true, abkRuntimeError = null) }
             val rootGranted = _uiState.value.rootGranted
             val preferLspBridge = _uiState.value.managerSurfaceMode == MANAGER_SURFACE_LSP
-            val (access, runtimeStatus, runtimeError) = withContext(Dispatchers.IO) {
+            val (access, runtimeStatus, runtimeError, lspBridgeStatus) = withContext(Dispatchers.IO) {
                 val managerAccess = resolveManagerAccess(rootGranted)
                 if (!managerAccess.hasNativeManagerPermission) {
                     val snapshot = if (rootGranted) RootUtils.readManagerRuntimeSnapshot(preferLspBridge) else null
@@ -597,32 +692,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 ksuModulesJson = it.ksuModulesJson
                             )
                         }
-                    return@withContext Triple(
+                    return@withContext Quadruple(
                         managerAccess,
                         compatStatus,
-                        managerAccessErrorMessage(managerAccess, rootGranted)
+                        managerAccessErrorMessage(managerAccess, rootGranted),
+                        snapshot?.controlStatusJson?.let(::parseLspBridgeControlState)
                     )
                 }
                 val snapshot = RootUtils.readManagerRuntimeSnapshot(preferLspBridge)
                 if (!snapshot.manager.active) {
-                    Triple(
+                    Quadruple(
                         managerAccess,
                         null as AbkRuntimeStatus?,
-                        snapshot.manager.diagnostics.firstOrNull()
+                        snapshot.manager.diagnostics.firstOrNull(),
+                        snapshot.controlStatusJson?.let(::parseLspBridgeControlState)
                     )
                 } else {
-                    Triple(
+                    Quadruple(
                         managerAccess,
                         mergeRuntimeStatus(
                             manager = snapshot.manager,
                             controlJson = snapshot.controlStatusJson,
                             ksuModulesJson = snapshot.ksuModulesJson
                         ),
-                        null as String?
+                        null as String?,
+                        snapshot.controlStatusJson?.let(::parseLspBridgeControlState)
                     )
                 }
             }
             _uiState.update {
+                val mergedLspModules = mergeLspInstalledModules(it.lspInstalledModules, lspBridgeStatus)
+                val selectedPackage = resolveSelectedLspModule(it.selectedLspModulePackage, mergedLspModules)
                 if (runtimeStatus != null) {
                     it.copy(
                         managerAccessState = access.toUiState(),
@@ -630,7 +730,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         hasNativeManagerPermission = access.hasNativeManagerPermission,
                         abkRuntimeStatus = runtimeStatus,
                         abkRuntimeLoading = false,
-                        abkRuntimeError = if (access.hasNativeManagerPermission) null else runtimeError
+                        abkRuntimeError = if (access.hasNativeManagerPermission) null else runtimeError,
+                        lspBridgeStatus = lspBridgeStatus,
+                        lspInstalledModules = mergedLspModules,
+                        selectedLspModulePackage = selectedPackage
                     )
                 } else {
                     it.copy(
@@ -639,7 +742,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         hasNativeManagerPermission = access.hasNativeManagerPermission,
                         abkRuntimeStatus = null,
                         abkRuntimeLoading = false,
-                        abkRuntimeError = runtimeError ?: text(R.string.runtime_manager_inactive)
+                        abkRuntimeError = runtimeError ?: text(R.string.runtime_manager_inactive),
+                        lspBridgeStatus = lspBridgeStatus,
+                        lspInstalledModules = mergedLspModules,
+                        selectedLspModulePackage = selectedPackage
                     )
                 }
             }
@@ -3165,7 +3271,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 append(" helper")
                 append(if (bridge.helperActive) "已激活" else "未激活")
-                append("，目标规则 ${bridge.targetCount} 条，插件 ${bridge.pluginCount} 个。")
+                append("，daemon")
+                append(if (bridge.daemonActive) "已激活" else "未激活")
+                append("，已托管模块 ${bridge.managedModuleCount} 个。")
+                append(" 目标规则 ${bridge.targetCount} 条，插件 ${bridge.pluginCount} 个。")
                 if (bridge.lastError.isNotBlank()) {
                     append(" 最近错误：")
                     append(bridge.lastError)
@@ -3182,7 +3291,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    private fun parseLspBridgeControlState(controlJson: String?): LspBridgeControlState? =
+    private fun parseLspBridgeControlState(controlJson: String?): LspBridgeStatus? =
         runCatching {
             val root = JSONObject(controlJson ?: return@runCatching null)
             val lsp = root.optJSONObject("lsp_bridge")
@@ -3215,19 +3324,85 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     ?.takeIf { it.isNotBlank() }
                     ?.let(::add)
             }.distinct()
-            LspBridgeControlState(
+            val logs = buildList {
+                val logEntries = lsp?.optJSONArray("logs")
+                if (logEntries != null) {
+                    for (index in 0 until logEntries.length()) {
+                        logEntries.optString(index)
+                            .trim()
+                            .takeIf { it.isNotBlank() }
+                            ?.let(::add)
+                    }
+                }
+            }
+            val managedModules = buildList {
+                val managedEntries = lsp?.optJSONArray("managed_modules")
+                if (managedEntries != null) {
+                    for (index in 0 until managedEntries.length()) {
+                        val module = managedEntries.optJSONObject(index) ?: continue
+                        add(
+                            LspBridgeManagedModule(
+                                packageName = module.optString("package").trim(),
+                                enabled = module.optBoolean("enabled", false),
+                                selectedScope = module.optString("scope_csv")
+                                    .split(',')
+                                    .map { it.trim() }
+                                    .filter { it.isNotBlank() },
+                                lastError = module.optString("last_error").trim()
+                            )
+                        )
+                    }
+                }
+            }
+            LspBridgeStatus(
                 safeMode = when {
                     lsp?.has("safe_mode") == true -> lsp.optBoolean("safe_mode")
                     bridgeModule != null -> !bridgeModule.optBoolean("enabled", true)
                     else -> false
                 },
                 helperActive = lsp?.optBoolean("helper_active") == true,
+                daemonActive = lsp?.optBoolean("daemon_active") == true,
+                zygoteAttached = lsp?.optBoolean("zygote_attached") == true,
                 targetCount = lsp?.optInt("target_count") ?: 0,
                 pluginCount = lsp?.optInt("plugin_count") ?: 0,
+                managedModuleCount = lsp?.optInt("managed_module_count") ?: managedModules.size,
+                scopeCount = lsp?.optInt("scope_count") ?: managedModules.sumOf { it.selectedScope.size },
+                protocolVersion = lsp?.optInt("protocol_version") ?: 0,
                 lastError = lsp?.optString("last_error").orEmpty().trim(),
-                diagnostics = diagnostics
+                diagnostics = diagnostics,
+                logs = logs,
+                managedModules = managedModules
             )
         }.getOrNull()
+
+    private fun mergeLspInstalledModules(
+        installed: List<LspInstalledModule>,
+        bridgeStatus: LspBridgeStatus?
+    ): List<LspInstalledModule> {
+        val managed = bridgeStatus?.managedModules.orEmpty().associateBy { it.packageName }
+        return installed.map { module ->
+            val state = managed[module.packageName]
+            module.copy(
+                enabled = state?.enabled ?: false,
+                selectedScope = state?.selectedScope.orEmpty(),
+                lastError = state?.lastError.orEmpty()
+            )
+        }
+    }
+
+    private fun resolveSelectedLspModule(
+        current: String?,
+        modules: List<LspInstalledModule>
+    ): String? {
+        current?.takeIf { selected -> modules.any { it.packageName == selected } }?.let { return it }
+        return modules.firstOrNull()?.packageName
+    }
+
+    private fun sanitizeLspPackageToken(value: String?): String? {
+        val clean = value?.trim().orEmpty()
+        if (clean.isBlank()) return null
+        return clean.takeIf { it.matches(Regex("[A-Za-z0-9._:-]+")) }
+    }
 
     private fun buildReSukiSuSettings(): List<ManagerSettingItem> {
         val suCompat = RootUtils.readKsuFeature("su_compat")
@@ -5283,15 +5458,6 @@ private data class ManagerSettingsLoad(
     val title: String = "",
     val items: List<ManagerSettingItem> = emptyList(),
     val error: String? = null
-)
-
-private data class LspBridgeControlState(
-    val safeMode: Boolean = false,
-    val helperActive: Boolean = false,
-    val targetCount: Int = 0,
-    val pluginCount: Int = 0,
-    val lastError: String = "",
-    val diagnostics: List<String> = emptyList()
 )
 
 private data class Quadruple<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)

@@ -5,6 +5,7 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import com.abk.kernel.data.model.LspInstalledModule
+import com.abk.kernel.data.model.LspScopeApp
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.Properties
@@ -17,6 +18,29 @@ object LspModuleUtils {
         return packages.mapNotNull { pkg ->
             toLspInstalledModule(pm, pkg)
         }.sortedBy { it.label.lowercase() }
+    }
+
+    @Suppress("DEPRECATION")
+    fun listScopeApps(context: Context): List<LspScopeApp> {
+        val pm = context.packageManager
+        val installed = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            pm.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0))
+        } else {
+            pm.getInstalledApplications(0)
+        }
+        return installed.map { info ->
+            val label = runCatching { pm.getApplicationLabel(info).toString() }
+                .getOrDefault(info.packageName)
+            LspScopeApp(
+                packageName = info.packageName,
+                label = label,
+                isSystemApp = (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+            )
+        }.sortedWith(
+            compareBy<LspScopeApp> { it.isSystemApp }
+                .thenBy { it.label.lowercase() }
+                .thenBy { it.packageName }
+        )
     }
 
     private fun toLspInstalledModule(pm: PackageManager, pkg: PackageInfo): LspInstalledModule? {
@@ -40,6 +64,11 @@ object LspModuleUtils {
                         reader.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.toList()
                     }
                 }.orEmpty()
+                val entryPoints = zip.getEntry("META-INF/xposed/java_init.list")?.let { entry ->
+                    BufferedReader(InputStreamReader(zip.getInputStream(entry))).use { reader ->
+                        reader.lineSequence().map { it.trim() }.filter { it.isNotBlank() }.toList()
+                    }
+                }.orEmpty()
                 LspInstalledModule(
                     packageName = pkg.packageName,
                     label = label,
@@ -51,6 +80,7 @@ object LspModuleUtils {
                     minVersion = props.getProperty("minApiVersion", "0").toIntOrNull() ?: 0,
                     targetVersion = props.getProperty("targetApiVersion", "0").toIntOrNull() ?: 0,
                     scopeHints = scopeHints,
+                    entryPoints = entryPoints,
                     enabled = false
                 )
             }
@@ -68,6 +98,7 @@ object LspModuleUtils {
                 minVersion = extractIntPart(metaData?.get("xposedminversion")?.toString().orEmpty()),
                 targetVersion = 0,
                 scopeHints = scopeString.split(';').map { it.trim() }.filter { it.isNotBlank() },
+                entryPoints = emptyList(),
                 enabled = false
             )
         }
