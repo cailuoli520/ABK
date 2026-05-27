@@ -96,7 +96,6 @@ fun OobeScreen(vm: MainViewModel) {
                     shape = RoundedCornerShape(exitCorner)
                     clip = visualSkipExitProgress > 0.01f
                 }
-        )
         ) {
             when (state.authStep) {
                 AuthStep.INTRO -> OobeIntroScreen(
