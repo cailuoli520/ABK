@@ -759,6 +759,7 @@
     <string name="module_repo_back">Back to module repositories</string>
     <string name="module_repo_no_matching">No matching modules</string>
     <string name="module_repo_no_central">No central repositories yet</string>
+    <string name="module_repo_building_list">Building module list</string>
     <string name="module_repo_refresh_hint">Modules appear after refreshing a central repository</string>
     <string name="module_repo_no_display">No modules to show</string>
     <string name="module_repo_manage_central">Manage central repositories</string>

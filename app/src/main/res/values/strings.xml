@@ -759,6 +759,7 @@
     <string name="module_repo_back">返回模块仓库</string>
     <string name="module_repo_no_matching">没有匹配的模块</string>
     <string name="module_repo_no_central">还没有中央仓库</string>
+    <string name="module_repo_building_list">正在构建模块列表</string>
     <string name="module_repo_refresh_hint">刷新中央仓库后会显示模块</string>
     <string name="module_repo_no_display">没有可显示的模块</string>
     <string name="module_repo_manage_central">管理中央仓库</string>

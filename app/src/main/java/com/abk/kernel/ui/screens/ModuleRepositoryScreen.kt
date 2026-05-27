@@ -757,6 +757,7 @@ private fun RuntimeModuleRepositoryListContent(
     scrollBehavior: androidx.compose.material3.TopAppBarScrollBehavior,
     bottomPadding: Dp
 ) {
+    val showInitialLoading = refreshing && totalModules == 0 && searchQuery.isBlank()
     Column(
         modifier = Modifier
             .padding(padding)
@@ -771,11 +772,13 @@ private fun RuntimeModuleRepositoryListContent(
             onValueChange = onSearchQueryChange
         )
 
-        if (refreshing) {
+        if (refreshing && !showInitialLoading) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
 
-        if (modules.isEmpty()) {
+        if (showInitialLoading) {
+            ModuleRepositoryInitialLoading()
+        } else if (modules.isEmpty()) {
             RuntimeModuleRepositoryEmptyState(
                 totalModules = totalModules,
                 repositoryCount = repositories.size,
@@ -793,6 +796,28 @@ private fun RuntimeModuleRepositoryListContent(
         }
 
         Spacer(Modifier.height(bottomPadding + 24.dp))
+    }
+}
+
+@Composable
+private fun ModuleRepositoryInitialLoading() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 48.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            LoadingIndicator(Modifier.size(42.dp))
+            Text(
+                text = stringResource(R.string.module_repo_building_list),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
@@ -1537,6 +1562,7 @@ private fun BuildModuleRepositoryListContent(
     bottomPadding: Dp
 ) {
     val context = LocalContext.current
+    val showInitialLoading = refreshing && totalModules == 0 && searchQuery.isBlank()
     Column(
         modifier = Modifier
             .padding(padding)
@@ -1551,11 +1577,13 @@ private fun BuildModuleRepositoryListContent(
             onValueChange = onSearchQueryChange
         )
 
-        if (refreshing) {
+        if (refreshing && !showInitialLoading) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
 
-        if (modules.isEmpty()) {
+        if (showInitialLoading) {
+            ModuleRepositoryInitialLoading()
+        } else if (modules.isEmpty()) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
