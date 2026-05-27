@@ -583,8 +583,8 @@ object RootUtils {
         }.getOrNull()
     }
 
-    fun readManagerRuntimeSnapshot(): ManagerRuntimeSnapshot {
-        val manager = detectManagerRuntime()
+    fun readManagerRuntimeSnapshot(preferLspBridge: Boolean = true): ManagerRuntimeSnapshot {
+        val manager = detectManagerRuntime(preferLspBridge)
         if (!manager.active) {
             return ManagerRuntimeSnapshot(manager = manager)
         }
@@ -1382,11 +1382,13 @@ object RootUtils {
         return ShellResult(result.isSuccess, lines)
     }
 
-    private fun detectManagerRuntime(): ManagerRuntimeProbe {
+    private fun detectManagerRuntime(preferLspBridge: Boolean = true): ManagerRuntimeProbe {
         val nativeRuntime = detectNativeManagerRuntime()
-        val lspBridgeRuntime = detectLspBridgeRuntime(nativeRuntime)
-        if (lspBridgeRuntime != null) {
-            return lspBridgeRuntime
+        if (preferLspBridge) {
+            val lspBridgeRuntime = detectLspBridgeRuntime(nativeRuntime)
+            if (lspBridgeRuntime != null) {
+                return lspBridgeRuntime
+            }
         }
 
         if (nativeRuntime?.active == true) {

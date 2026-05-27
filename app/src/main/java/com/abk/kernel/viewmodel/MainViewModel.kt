@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import androidx.annotation.StringRes
 import com.abk.kernel.utils.LocaleHelper
+import com.abk.kernel.utils.LpModuleUtils
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.abk.kernel.BuildConfig
@@ -131,6 +132,7 @@ data class MainUiState(
     val prebuiltGkiEnabled: Boolean = true,
     val predictiveBackEnabled: Boolean = true,
     val runtimeNavigationEnabled: Boolean = false,
+    val managerSurfaceMode: String = MANAGER_SURFACE_BUILD,
     val webViewDebugEnabled: Boolean = false,
     val managerAccessState: ManagerAccessState = ManagerAccessState.UNKNOWN,
     val managerAccessError: String? = null,
@@ -150,6 +152,9 @@ data class MainUiState(
     val managerToolsLoading: Boolean = false,
     val managerToolsError: String? = null,
     val managerToolActionId: String? = null,
+    val lpInstalledModules: List<LpInstalledModule> = emptyList(),
+    val lpInstalledModulesLoading: Boolean = false,
+    val lpInstalledModulesError: String? = null,
     val selinuxEnforcing: Boolean = true,
     val selinuxModeText: String = "",
     val umountPaths: List<String> = emptyList(),
@@ -453,8 +458,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
-            prefs.runtimeNavigationEnabled.collect { enabled ->
-                _uiState.update { it.copy(runtimeNavigationEnabled = enabled) }
+            prefs.managerSurfaceMode.collect { mode ->
+                val normalized = normalizeManagerSurfaceMode(mode)
+                _uiState.update {
+                    it.copy(
+                        managerSurfaceMode = normalized,
+                        runtimeNavigationEnabled = normalized != MANAGER_SURFACE_BUILD
+                    )
+                }
             }
         }
         viewModelScope.launch {
@@ -508,9 +519,58 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setRuntimeNavigationEnabled(enabled: Boolean) {
-        _uiState.update { it.copy(runtimeNavigationEnabled = enabled) }
-        viewModelScope.launch { prefs.setRuntimeNavigationEnabled(enabled) }
-        if (enabled) refreshAbkRuntimeStatus()
+        setManagerSurfaceMode(if (enabled) MANAGER_SURFACE_ROOT else MANAGER_SURFACE_BUILD)
+    }
+
+    fun setManagerSurfaceMode(mode: String) {
+        val normalized = normalizeManagerSurfaceMode(mode)
+        _uiState.update {
+            it.copy(
+                managerSurfaceMode = normalized,
+                runtimeNavigationEnabled = normalized != MANAGER_SURFACE_BUILD
+            )
+        }
+        viewModelScope.launch { prefs.setManagerSurfaceMode(normalized) }
+        if (normalized != MANAGER_SURFACE_BUILD) {
+            refreshAbkRuntimeStatus()
+        }
+        if (normalized == MANAGER_SURFACE_LP) {
+            refreshLpInstalledModules()
+        }
+        refreshManagerSettings(force = true)
+    }
+
+    private fun normalizeManagerSurfaceMode(mode: String): String = when (mode.trim().lowercase()) {
+        MANAGER_SURFACE_ROOT -> MANAGER_SURFACE_ROOT
+        MANAGER_SURFACE_LP -> MANAGER_SURFACE_LP
+        else -> MANAGER_SURFACE_BUILD
+    }
+
+    fun refreshLpInstalledModules() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(lpInstalledModulesLoading = true, lpInstalledModulesError = null) }
+            val modules = withContext(Dispatchers.IO) {
+                runCatching { LpModuleUtils.listInstalledModules(getApplication()) }
+            }
+            _uiState.update {
+                modules.fold(
+                    onSuccess = { list ->
+                        it.copy(
+                            lpInstalledModules = list,
+                            lpInstalledModulesLoading = false,
+                            lpInstalledModulesError = null
+                        )
+                    },
+                    onFailure = { error ->
+                        it.copy(
+                            lpInstalledModulesLoading = false,
+                            lpInstalledModulesError = error.message?.takeIf { msg -> msg.isNotBlank() }
+                                ?: text(R.string.settings_manager_load_failed)
+                        )
+                    }
+                )
+            }
+        }
     }
 
     fun setWebViewDebugEnabled(enabled: Boolean) {
@@ -522,10 +582,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _uiState.update { it.copy(abkRuntimeLoading = true, abkRuntimeError = null) }
             val rootGranted = _uiState.value.rootGranted
+            val preferLspBridge = _uiState.value.managerSurfaceMode == MANAGER_SURFACE_LP
             val (access, runtimeStatus, runtimeError) = withContext(Dispatchers.IO) {
                 val managerAccess = resolveManagerAccess(rootGranted)
                 if (!managerAccess.hasNativeManagerPermission) {
-                    val snapshot = if (rootGranted) RootUtils.readManagerRuntimeSnapshot() else null
+                    val snapshot = if (rootGranted) RootUtils.readManagerRuntimeSnapshot(preferLspBridge) else null
                     val compatStatus = snapshot
                         ?.takeIf { it.manager.active }
                         ?.let {
@@ -541,7 +602,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         managerAccessErrorMessage(managerAccess, rootGranted)
                     )
                 }
-                val snapshot = RootUtils.readManagerRuntimeSnapshot()
+                val snapshot = RootUtils.readManagerRuntimeSnapshot(preferLspBridge)
                 if (!snapshot.manager.active) {
                     Triple(
                         managerAccess,
@@ -3039,7 +3100,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun loadManagerSettings(): ManagerSettingsLoad =
         runCatching {
-            val snapshot = RootUtils.readManagerRuntimeSnapshot()
+            val mode = _uiState.value.managerSurfaceMode
+            if (mode == MANAGER_SURFACE_BUILD) {
+                return@runCatching ManagerSettingsLoad()
+            }
+            val snapshot = RootUtils.readManagerRuntimeSnapshot(mode == MANAGER_SURFACE_LP)
             val manager = snapshot.manager.normalizedForManagerSettings()
             if (!manager.active) {
                 ManagerSettingsLoad()

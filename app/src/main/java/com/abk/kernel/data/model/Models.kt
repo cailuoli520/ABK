@@ -387,6 +387,9 @@ const val KSU_VARIANT_SUKISU = "SukiSU"
 const val KSU_VARIANT_RESUKISU = "ReSukiSU"
 const val BUILD_TARGET_GKI = "gki"
 const val BUILD_TARGET_ONEPLUS = "oneplus"
+const val MANAGER_SURFACE_BUILD = "build"
+const val MANAGER_SURFACE_ROOT = "root"
+const val MANAGER_SURFACE_LP = "lp"
 
 val KSU_BRANCH_STANDARD_OPTIONS = listOf(KSU_BRANCH_STABLE, KSU_BRANCH_DEV, KSU_BRANCH_CUSTOM)
 val KSU_BRANCH_BUILD_PLAN_OPTIONS = KSU_BRANCH_STANDARD_OPTIONS
@@ -526,6 +529,20 @@ data class ManagerSettingItem(
 data class AppProfileTemplateItem(
     val id: String = "",
     val content: String = ""
+)
+
+data class LpInstalledModule(
+    val packageName: String = "",
+    val label: String = "",
+    val versionName: String = "",
+    val versionCode: Long = 0L,
+    val description: String = "",
+    val modern: Boolean = false,
+    val legacy: Boolean = false,
+    val minVersion: Int = 0,
+    val targetVersion: Int = 0,
+    val scopeHints: List<String> = emptyList(),
+    val enabled: Boolean = false
 )
 
 data class RootGrantApp(
