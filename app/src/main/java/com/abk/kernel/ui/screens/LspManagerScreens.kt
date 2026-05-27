@@ -161,6 +161,13 @@ fun LspManagerHomeScreen(
                         color = MaterialTheme.colorScheme.error
                     )
                 }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = vm::syncLspBridgeConfiguration,
+                    enabled = !state.abkRuntimeLoading
+                ) {
+                    Text("同步模块配置到 Bridge")
+                }
             }
 
             ExpressiveSectionCard(

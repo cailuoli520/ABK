@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import androidx.annotation.StringRes
 import com.abk.kernel.utils.LocaleHelper
+import com.abk.kernel.utils.LspManagerService
 import com.abk.kernel.utils.LspModuleUtils
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -556,13 +557,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshLspInstalledModules() {
         viewModelScope.launch {
             _uiState.update { it.copy(lspInstalledModulesLoading = true, lspInstalledModulesError = null) }
+            val rootGranted = _uiState.value.rootGranted
             val modules = withContext(Dispatchers.IO) {
-                runCatching { LspModuleUtils.listInstalledModules(getApplication()) }
+                runCatching {
+                    LspModuleUtils.listInstalledModules(getApplication()) to if (rootGranted) {
+                        LspManagerService.readPersistedState()
+                    } else {
+                        LspManagerService.PersistedState()
+                    }
+                }
             }
             _uiState.update {
                 modules.fold(
-                    onSuccess = { list ->
-                        val merged = mergeLspInstalledModules(list, it.lspBridgeStatus)
+                    onSuccess = { (list, persistedState) ->
+                        val merged = mergeLspInstalledModules(
+                            installed = list,
+                            bridgeStatus = it.lspBridgeStatus,
+                            persistedModules = persistedState.modules
+                        )
                         val selectedPackage = resolveSelectedLspModule(
                             current = it.selectedLspModulePackage,
                             modules = merged
@@ -626,9 +638,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 it.copy(lspModuleActionPackage = cleanPackage, abkRuntimeError = null)
             }
             val result = withContext(Dispatchers.IO) {
-                RootUtils.writeAbkControlCommand(
-                    if (enabled) "lsp module enable $cleanPackage" else "lsp module disable $cleanPackage"
-                )
+                LspManagerService.setModuleEnabled(cleanPackage, enabled)
             }
             _uiState.update {
                 it.copy(
@@ -638,6 +648,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             if (result.success) {
                 refreshAbkRuntimeStatus()
+                refreshLspInstalledModules()
             }
         }
     }
@@ -651,11 +662,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 it.copy(lspModuleActionPackage = cleanPackage, abkRuntimeError = null)
             }
             val result = withContext(Dispatchers.IO) {
-                if (cleanedScope.isEmpty()) {
-                    RootUtils.writeAbkControlCommand("lsp scope clear $cleanPackage")
-                } else {
-                    RootUtils.writeAbkControlCommand("lsp scope set $cleanPackage ${cleanedScope.joinToString(",")}")
-                }
+                LspManagerService.setModuleScope(cleanPackage, cleanedScope)
             }
             _uiState.update {
                 it.copy(
@@ -665,6 +672,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             if (result.success) {
                 refreshAbkRuntimeStatus()
+                refreshLspInstalledModules()
+            }
+        }
+    }
+
+    fun syncLspBridgeConfiguration() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(abkRuntimeLoading = true, abkRuntimeError = null) }
+            val result = withContext(Dispatchers.IO) {
+                LspManagerService.syncBridgeFromPersistedState()
+            }
+            _uiState.update {
+                it.copy(
+                    abkRuntimeLoading = false,
+                    abkRuntimeError = if (result.success) null else result.output.lastOrNull() ?: text(R.string.ru_not_active)
+                )
+            }
+            if (result.success) {
+                refreshAbkRuntimeStatus()
+                refreshLspInstalledModules()
             }
         }
     }
@@ -679,8 +706,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(abkRuntimeLoading = true, abkRuntimeError = null) }
             val rootGranted = _uiState.value.rootGranted
             val preferLspBridge = _uiState.value.managerSurfaceMode == MANAGER_SURFACE_LSP
-            val (access, runtimeStatus, runtimeError, lspBridgeStatus) = withContext(Dispatchers.IO) {
+            val (access, runtimeStatus, runtimeError, lspBridgeStatus, persistedLspState) = withContext(Dispatchers.IO) {
                 val managerAccess = resolveManagerAccess(rootGranted)
+                val persistedState = if (rootGranted) {
+                    LspManagerService.readPersistedState()
+                } else {
+                    LspManagerService.PersistedState()
+                }
                 if (!managerAccess.hasNativeManagerPermission) {
                     val snapshot = if (rootGranted) RootUtils.readManagerRuntimeSnapshot(preferLspBridge) else null
                     val compatStatus = snapshot
@@ -692,23 +724,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 ksuModulesJson = it.ksuModulesJson
                             )
                         }
-                    return@withContext Quadruple(
+                    return@withContext Quintuple(
                         managerAccess,
                         compatStatus,
                         managerAccessErrorMessage(managerAccess, rootGranted),
-                        snapshot?.controlStatusJson?.let(::parseLspBridgeControlState)
+                        snapshot?.controlStatusJson?.let(::parseLspBridgeControlState),
+                        persistedState
                     )
                 }
                 val snapshot = RootUtils.readManagerRuntimeSnapshot(preferLspBridge)
                 if (!snapshot.manager.active) {
-                    Quadruple(
+                    Quintuple(
                         managerAccess,
                         null as AbkRuntimeStatus?,
                         snapshot.manager.diagnostics.firstOrNull(),
-                        snapshot.controlStatusJson?.let(::parseLspBridgeControlState)
+                        snapshot.controlStatusJson?.let(::parseLspBridgeControlState),
+                        persistedState
                     )
                 } else {
-                    Quadruple(
+                    Quintuple(
                         managerAccess,
                         mergeRuntimeStatus(
                             manager = snapshot.manager,
@@ -716,12 +750,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             ksuModulesJson = snapshot.ksuModulesJson
                         ),
                         null as String?,
-                        snapshot.controlStatusJson?.let(::parseLspBridgeControlState)
+                        snapshot.controlStatusJson?.let(::parseLspBridgeControlState),
+                        persistedState
                     )
                 }
             }
             _uiState.update {
-                val mergedLspModules = mergeLspInstalledModules(it.lspInstalledModules, lspBridgeStatus)
+                val mergedLspModules = mergeLspInstalledModules(
+                    installed = it.lspInstalledModules,
+                    bridgeStatus = lspBridgeStatus,
+                    persistedModules = persistedLspState.modules
+                )
                 val selectedPackage = resolveSelectedLspModule(it.selectedLspModulePackage, mergedLspModules)
                 if (runtimeStatus != null) {
                     it.copy(
@@ -3377,15 +3416,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun mergeLspInstalledModules(
         installed: List<LspInstalledModule>,
-        bridgeStatus: LspBridgeStatus?
+        bridgeStatus: LspBridgeStatus?,
+        persistedModules: List<LspBridgeManagedModule> = emptyList()
     ): List<LspInstalledModule> {
         val managed = bridgeStatus?.managedModules.orEmpty().associateBy { it.packageName }
+        val persisted = persistedModules.associateBy { it.packageName }
         return installed.map { module ->
-            val state = managed[module.packageName]
+            val liveState = managed[module.packageName]
+            val persistedState = persisted[module.packageName]
             module.copy(
-                enabled = state?.enabled ?: false,
-                selectedScope = state?.selectedScope.orEmpty(),
-                lastError = state?.lastError.orEmpty()
+                enabled = persistedState?.enabled ?: liveState?.enabled ?: false,
+                selectedScope = persistedState?.selectedScope ?: liveState?.selectedScope.orEmpty(),
+                lastError = liveState?.lastError?.takeIf { it.isNotBlank() }
+                    ?: persistedState?.lastError.orEmpty()
             )
         }
     }

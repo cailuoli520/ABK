@@ -46,8 +46,10 @@ object RootUtils {
     private const val ABK_META_MOUNT_WEB_ROOT = "/data/adb/modules/meta-abk-mount/webroot"
     private const val ABK_META_MOUNT_SYSFS_ENABLED = "/sys/kernel/abk_meta_mount/enabled"
     private const val ABK_META_MOUNT_SYSFS_PREPARE = "/sys/kernel/abk_meta_mount/prepare"
+    private const val ABK_LSP_BRIDGE_DIR = "/data/adb/abk/lsp_bridge"
     private val BOOT_PATCH_PARTITIONS = listOf("init_boot", "boot", "vendor_boot")
     private val KSU_FEATURE_NAME_REGEX = Regex("^[a-z0-9_]+$")
+    private val ABK_LSP_FILE_NAME_REGEX = Regex("^[A-Za-z0-9._-]+$")
     private var appContext: Context? = null
     private val bundledKsudLock = Any()
     @Volatile
@@ -903,6 +905,71 @@ object RootUtils {
         } else {
             ShellResult(false, listOf(tr(R.string.ru_not_active)))
         }
+    }
+
+    fun readLspBridgeDataFile(fileName: String): ShellResult {
+        val cleanName = fileName.trim()
+        if (!cleanName.matches(ABK_LSP_FILE_NAME_REGEX)) {
+            return ShellResult(false, listOf("invalid LSP bridge file name"))
+        }
+        val safePath = shellQuote("$ABK_LSP_BRIDGE_DIR/$cleanName")
+        val script = """
+            set -e
+            file=$safePath
+            [ -f "${'$'}file" ] || exit 3
+            base64 "${'$'}file" 2>/dev/null | tr -d '\n'
+        """.trimIndent()
+        val result = execRootScript(script, timeoutSeconds = 15L)
+        if (!result.success) return result
+        val encoded = result.output.joinToString("").trim()
+        val decoded = runCatching {
+            if (encoded.isBlank()) "" else String(Base64.decode(encoded, Base64.DEFAULT), Charsets.UTF_8)
+        }.getOrElse { error ->
+            return ShellResult(false, listOf(error.message ?: "failed to decode LSP bridge file"))
+        }
+        return ShellResult(true, listOf(decoded))
+    }
+
+    fun writeLspBridgeDataFile(fileName: String, content: String): ShellResult {
+        val cleanName = fileName.trim()
+        if (!cleanName.matches(ABK_LSP_FILE_NAME_REGEX)) {
+            return ShellResult(false, listOf("invalid LSP bridge file name"))
+        }
+        val encoded = Base64.encodeToString(content.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        val safeDir = shellQuote(ABK_LSP_BRIDGE_DIR)
+        val safeFile = shellQuote("$ABK_LSP_BRIDGE_DIR/$cleanName")
+        val safeTmp = shellQuote("$ABK_LSP_BRIDGE_DIR/.$cleanName.tmp")
+        val safeEncoded = shellQuote(encoded)
+        val script = """
+            set -e
+            dir=$safeDir
+            file=$safeFile
+            tmp=$safeTmp
+            mkdir -p "${'$'}dir"
+            chmod 0700 "${'$'}dir" 2>/dev/null || true
+            printf %s $safeEncoded | base64 -d > "${'$'}tmp"
+            chmod 0600 "${'$'}tmp" 2>/dev/null || true
+            mv "${'$'}tmp" "${'$'}file"
+        """.trimIndent()
+        return execRootScript(script, timeoutSeconds = 15L)
+    }
+
+    fun appendLspBridgeLog(line: String): ShellResult {
+        val trimmed = line.trim().take(512)
+        if (trimmed.isBlank()) return ShellResult(true, emptyList())
+        val safeDir = shellQuote(ABK_LSP_BRIDGE_DIR)
+        val safeLog = shellQuote("$ABK_LSP_BRIDGE_DIR/runtime.log")
+        val safeLine = shellQuote(trimmed)
+        val script = """
+            set -e
+            dir=$safeDir
+            log=$safeLog
+            mkdir -p "${'$'}dir"
+            chmod 0700 "${'$'}dir" 2>/dev/null || true
+            printf '%s %s\n' "${'$'}(date '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || echo unknown-time)" $safeLine >> "${'$'}log"
+            chmod 0600 "${'$'}log" 2>/dev/null || true
+        """.trimIndent()
+        return execRootScript(script, timeoutSeconds = 15L)
     }
 
     fun setAbkMetaMountEnabled(enabled: Boolean): ShellResult {
