@@ -81,6 +81,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -137,6 +138,11 @@ enum class ModuleRepositoryMode {
     RUNTIME_STANDARD
 }
 
+private data class ModuleListComputation<T>(
+    val items: List<T> = emptyList(),
+    val loading: Boolean = false
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ModuleRepositoryScreen(
@@ -181,12 +187,46 @@ fun ModuleRepositoryScreen(
     val repositoryBackCorner = with(density) {
         (MODULE_REPOSITORY_BACK_MAX_CORNER.toPx() * visualRepositoryBackProgress).toDp()
     }
-    val mergedModules = remember(state.runtimeModuleRepositories) {
-        mergeRuntimeCatalogModules(state.runtimeModuleRepositories)
+    val mergedModulesState by produceState(
+        initialValue = ModuleListComputation<MergedRuntimeCatalogModule>(
+            loading = state.runtimeModuleRepositories.isNotEmpty()
+        ),
+        key1 = state.runtimeModuleRepositories
+    ) {
+        if (state.runtimeModuleRepositories.isEmpty()) {
+            value = ModuleListComputation(items = emptyList(), loading = false)
+            return@produceState
+        }
+        value = ModuleListComputation(loading = true)
+        val merged = withContext(Dispatchers.Default) {
+            mergeRuntimeCatalogModules(state.runtimeModuleRepositories)
+        }
+        value = ModuleListComputation(items = merged, loading = false)
     }
-    val filteredModules = remember(mergedModules, searchQuery) {
-        mergedModules.filter { it.matchesQuery(searchQuery) }
+    val mergedModules = mergedModulesState.items
+    val filteredModulesState by produceState(
+        initialValue = ModuleListComputation<MergedRuntimeCatalogModule>(
+            loading = mergedModulesState.loading
+        ),
+        key1 = mergedModulesState,
+        key2 = searchQuery
+    ) {
+        if (mergedModulesState.loading) {
+            value = ModuleListComputation(loading = true)
+            return@produceState
+        }
+        value = ModuleListComputation(loading = true)
+        val filtered = withContext(Dispatchers.Default) {
+            if (searchQuery.isBlank()) {
+                mergedModules
+            } else {
+                mergedModules.filter { it.matchesQuery(searchQuery) }
+            }
+        }
+        value = ModuleListComputation(items = filtered, loading = false)
     }
+    val filteredModules = filteredModulesState.items
+    val listComputing = mergedModulesState.loading
 
     fun openRepositorySettings() {
         repositoryBackProgress = 0f
@@ -354,6 +394,7 @@ fun ModuleRepositoryScreen(
                 padding = padding,
                 modules = filteredModules,
                 totalModules = mergedModules.size,
+                computing = listComputing,
                 repositories = state.runtimeModuleRepositories,
                 refreshing = state.refreshingRuntimeModuleRepositoryIds.isNotEmpty(),
                 searchQuery = searchQuery,
@@ -476,12 +517,46 @@ private fun BuildModuleRepositoryScreenContent(
     val repositoryBackCorner = with(density) {
         (MODULE_REPOSITORY_BACK_MAX_CORNER.toPx() * visualRepositoryBackProgress).toDp()
     }
-    val mergedModules = remember(state.buildModuleRepositories) {
-        mergeBuildPageCatalogModules(state.buildModuleRepositories)
+    val mergedModulesState by produceState(
+        initialValue = ModuleListComputation<BuildPageMergedCatalogModule>(
+            loading = state.buildModuleRepositories.isNotEmpty()
+        ),
+        key1 = state.buildModuleRepositories
+    ) {
+        if (state.buildModuleRepositories.isEmpty()) {
+            value = ModuleListComputation(items = emptyList(), loading = false)
+            return@produceState
+        }
+        value = ModuleListComputation(loading = true)
+        val merged = withContext(Dispatchers.Default) {
+            mergeBuildPageCatalogModules(state.buildModuleRepositories)
+        }
+        value = ModuleListComputation(items = merged, loading = false)
     }
-    val filteredModules = remember(mergedModules, searchQuery) {
-        mergedModules.filter { it.matchesQuery(searchQuery) }
+    val mergedModules = mergedModulesState.items
+    val filteredModulesState by produceState(
+        initialValue = ModuleListComputation<BuildPageMergedCatalogModule>(
+            loading = mergedModulesState.loading
+        ),
+        key1 = mergedModulesState,
+        key2 = searchQuery
+    ) {
+        if (mergedModulesState.loading) {
+            value = ModuleListComputation(loading = true)
+            return@produceState
+        }
+        value = ModuleListComputation(loading = true)
+        val filtered = withContext(Dispatchers.Default) {
+            if (searchQuery.isBlank()) {
+                mergedModules
+            } else {
+                mergedModules.filter { it.matchesQuery(searchQuery) }
+            }
+        }
+        value = ModuleListComputation(items = filtered, loading = false)
     }
+    val filteredModules = filteredModulesState.items
+    val listComputing = mergedModulesState.loading
     val selectedModules = remember(state.buildConfig.customExternalModules) {
         state.buildConfig.customExternalModules
             .map { it.url.trim().lowercase() to CustomExternalModuleStage.normalize(it.stage) }
@@ -657,6 +732,7 @@ private fun BuildModuleRepositoryScreenContent(
                 padding = padding,
                 modules = filteredModules,
                 totalModules = mergedModules.size,
+                computing = listComputing,
                 repositories = state.buildModuleRepositories,
                 refreshing = state.refreshingBuildModuleRepositoryIds.isNotEmpty(),
                 selectedModules = selectedModules,
@@ -747,6 +823,7 @@ private fun RuntimeModuleRepositoryListContent(
     padding: PaddingValues,
     modules: List<MergedRuntimeCatalogModule>,
     totalModules: Int,
+    computing: Boolean,
     repositories: List<RuntimeModuleRepository>,
     refreshing: Boolean,
     searchQuery: String,
@@ -757,7 +834,7 @@ private fun RuntimeModuleRepositoryListContent(
     scrollBehavior: androidx.compose.material3.TopAppBarScrollBehavior,
     bottomPadding: Dp
 ) {
-    val showInitialLoading = refreshing && totalModules == 0 && searchQuery.isBlank()
+    val showInitialLoading = computing || (refreshing && totalModules == 0 && searchQuery.isBlank())
     Column(
         modifier = Modifier
             .padding(padding)
@@ -1550,6 +1627,7 @@ private fun BuildModuleRepositoryListContent(
     padding: PaddingValues,
     modules: List<BuildPageMergedCatalogModule>,
     totalModules: Int,
+    computing: Boolean,
     repositories: List<ModuleCatalogRepository>,
     refreshing: Boolean,
     selectedModules: Set<Pair<String, String>>,
@@ -1562,7 +1640,7 @@ private fun BuildModuleRepositoryListContent(
     bottomPadding: Dp
 ) {
     val context = LocalContext.current
-    val showInitialLoading = refreshing && totalModules == 0 && searchQuery.isBlank()
+    val showInitialLoading = computing || (refreshing && totalModules == 0 && searchQuery.isBlank())
     Column(
         modifier = Modifier
             .padding(padding)
