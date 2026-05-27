@@ -480,7 +480,7 @@ fun LspLogsScreen(
                 icon = Icons.Default.Article
             ) {
                 Text(
-                    text = bridge?.logs?.joinToString("\n").ifBlank { "暂无 bridge 日志" },
+                    text = bridge?.logs?.joinToString("\n").orEmpty().ifBlank { "暂无 bridge 日志" },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

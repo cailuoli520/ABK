@@ -604,16 +604,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val apps = withContext(Dispatchers.IO) {
                 runCatching { LspModuleUtils.listScopeApps(getApplication()) }
             }
-            _uiState.update {
+            _uiState.update { state ->
                 apps.fold(
                     onSuccess = { list ->
-                        it.copy(
+                        state.copy(
                             lspScopeApps = list,
                             lspScopeAppsLoading = false
                         )
                     },
                     onFailure = {
-                        it.copy(lspScopeAppsLoading = false)
+                        state.copy(lspScopeAppsLoading = false)
                     }
                 )
             }
