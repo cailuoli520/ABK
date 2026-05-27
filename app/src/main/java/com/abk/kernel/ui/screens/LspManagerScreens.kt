@@ -8,7 +8,6 @@ package com.abk.kernel.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,7 +22,6 @@ import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -124,17 +122,11 @@ fun LspManagerHomeScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { vm.refreshAbkRuntimeStatus() }) {
-                        Text("刷新状态")
-                    }
-                    Button(onClick = { vm.toggleLspBridgeEnabled(false) }) {
-                        Text("安全模式")
-                    }
-                    Button(onClick = { vm.toggleLspBridgeEnabled(true) }) {
-                        Text("启用桥接")
-                    }
-                }
+                Text(
+                    text = "安全模式开关已移到“设置”页。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             ExpressiveSectionCard(

@@ -33,6 +33,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.charset.StandardCharsets
@@ -570,22 +571,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 )
             }
-        }
-    }
-
-    fun toggleLspBridgeEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                RootUtils.writeAbkControlCommand(
-                    if (enabled) "enable abk_lsp_bridge" else "disable abk_lsp_bridge"
-                )
-            }
-            _uiState.update {
-                it.copy(
-                    abkRuntimeError = if (result.success) null else result.output.lastOrNull() ?: text(R.string.ru_not_active)
-                )
-            }
-            refreshAbkRuntimeStatus()
         }
     }
 
@@ -2751,6 +2736,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         return@withContext RootUtils.ShellResult(false, listOf(managerAccessErrorMessage(access, rootGranted)))
                     }
                     when (settingId) {
+                        MANAGER_SETTING_LSP_SAFE_MODE ->
+                            RootUtils.writeAbkControlCommand(if (checked) "lsp safe_mode on" else "lsp safe_mode off")
                         MANAGER_SETTING_KERNEL_UMOUNT -> RootUtils.setKsuFeatureEnabled("kernel_umount", checked)
                         MANAGER_SETTING_SULOG -> RootUtils.setKsuFeatureEnabled("sulog", checked)
                         MANAGER_SETTING_ADB_ROOT -> RootUtils.setKsuFeatureEnabled("adb_root", checked)
@@ -2771,6 +2758,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             if (result.success) {
                 refreshManagerSettings(force = true)
+                if (settingId == MANAGER_SETTING_LSP_SAFE_MODE) {
+                    refreshAbkRuntimeStatus()
+                }
             } else {
                 _uiState.update {
                     it.copy(
@@ -3129,7 +3119,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     manager.isAbkLspBridge() -> ManagerSettingsLoad(
                         backend = "lsp_bridge",
                         title = "ABK LSP Bridge",
-                        items = emptyList()
+                        items = buildLspBridgeSettings(snapshot.controlStatusJson)
                     )
                     manager.isReSukiSu() -> ManagerSettingsLoad(
                         backend = "resukisu",
@@ -3158,6 +3148,86 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 error = error.message?.takeIf { it.isNotBlank() } ?: text(R.string.settings_manager_load_failed)
             )
         }
+
+    private fun buildLspBridgeSettings(controlJson: String?): List<ManagerSettingItem> {
+        val bridge = parseLspBridgeControlState(controlJson)
+        val subtitle = buildString {
+            append("开启后暂停 LSP bridge 注入。")
+            if (bridge == null) {
+                append(" 当前状态未同步，请先刷新。")
+            } else {
+                append(
+                    if (bridge.safeMode) {
+                        " 当前已处于安全模式。"
+                    } else {
+                        " 当前桥接处于活动状态。"
+                    }
+                )
+                append(" helper")
+                append(if (bridge.helperActive) "已激活" else "未激活")
+                append("，目标规则 ${bridge.targetCount} 条，插件 ${bridge.pluginCount} 个。")
+                if (bridge.lastError.isNotBlank()) {
+                    append(" 最近错误：")
+                    append(bridge.lastError)
+                }
+            }
+        }
+        return listOf(
+            ManagerSettingItem(
+                id = MANAGER_SETTING_LSP_SAFE_MODE,
+                title = text(R.string.runtime_cap_safe_mode),
+                subtitle = subtitle,
+                checked = bridge?.safeMode == true
+            )
+        )
+    }
+
+    private fun parseLspBridgeControlState(controlJson: String?): LspBridgeControlState? =
+        runCatching {
+            val root = JSONObject(controlJson ?: return@runCatching null)
+            val lsp = root.optJSONObject("lsp_bridge")
+            val modules = root.optJSONArray("modules")
+            var bridgeModule: JSONObject? = null
+            if (modules != null) {
+                for (index in 0 until modules.length()) {
+                    val module = modules.optJSONObject(index) ?: continue
+                    if (module.optString("id") == "abk_lsp_bridge") {
+                        bridgeModule = module
+                        break
+                    }
+                }
+            }
+            if (lsp == null && bridgeModule == null) {
+                return@runCatching null
+            }
+            val diagnostics = buildList {
+                val lspDiagnostics = lsp?.optJSONArray("diagnostics")
+                if (lspDiagnostics != null) {
+                    for (index in 0 until lspDiagnostics.length()) {
+                        lspDiagnostics.optString(index)
+                            .trim()
+                            .takeIf { it.isNotBlank() }
+                            ?.let(::add)
+                    }
+                }
+                bridgeModule?.optString("description")
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let(::add)
+            }.distinct()
+            LspBridgeControlState(
+                safeMode = when {
+                    lsp?.has("safe_mode") == true -> lsp.optBoolean("safe_mode")
+                    bridgeModule != null -> !bridgeModule.optBoolean("enabled", true)
+                    else -> false
+                },
+                helperActive = lsp?.optBoolean("helper_active") == true,
+                targetCount = lsp?.optInt("target_count") ?: 0,
+                pluginCount = lsp?.optInt("plugin_count") ?: 0,
+                lastError = lsp?.optString("last_error").orEmpty().trim(),
+                diagnostics = diagnostics
+            )
+        }.getOrNull()
 
     private fun buildReSukiSuSettings(): List<ManagerSettingItem> {
         val suCompat = RootUtils.readKsuFeature("su_compat")
@@ -5196,6 +5266,7 @@ private val ACTIVE_BUILD_STATUSES = setOf(BuildStatus.QUEUED, BuildStatus.IN_PRO
 private const val MANAGER_SETTING_APP_PROFILE_TEMPLATES = "app_profile_templates"
 private const val MANAGER_SETTING_TOOLS = "manager_tools"
 private const val MANAGER_SETTING_KPM = "kpm"
+private const val MANAGER_SETTING_LSP_SAFE_MODE = "lsp_safe_mode"
 private const val MANAGER_SETTING_SU_COMPAT = "su_compat"
 private const val MANAGER_SETTING_KERNEL_UMOUNT = "kernel_umount"
 private const val MANAGER_SETTING_ADB_ROOT = "adb_root"
@@ -5212,6 +5283,15 @@ private data class ManagerSettingsLoad(
     val title: String = "",
     val items: List<ManagerSettingItem> = emptyList(),
     val error: String? = null
+)
+
+private data class LspBridgeControlState(
+    val safeMode: Boolean = false,
+    val helperActive: Boolean = false,
+    val targetCount: Int = 0,
+    val pluginCount: Int = 0,
+    val lastError: String = "",
+    val diagnostics: List<String> = emptyList()
 )
 
 private data class Quadruple<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
