@@ -659,7 +659,8 @@ private fun AbkMainScaffold(
                         )
                         AbkTab.LspScope -> LspScopeScreen(
                             vm = vm,
-                            outerPadding = contentPadding
+                            outerPadding = contentPadding,
+                            onBack = { selectedTab = AbkTab.LspModules }
                         )
                         AbkTab.LspLogs -> LspLogsScreen(
                             vm = vm,

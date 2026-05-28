@@ -5,7 +5,10 @@
 
 package com.abk.kernel.ui.screens
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -14,24 +17,34 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -43,12 +56,18 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.abk.kernel.R
 import com.abk.kernel.data.model.LspInstalledModule
+import com.abk.kernel.data.model.LspScopeApp
 import com.abk.kernel.ui.components.AbkScreenHorizontalPadding
 import com.abk.kernel.ui.components.ExpressiveHeroCard
 import com.abk.kernel.ui.components.ExpressiveListItem
@@ -221,10 +240,26 @@ fun LspModulesScreen(
 ) {
     val state by vm.uiState.collectAsState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+    var query by rememberSaveable { mutableStateOf("") }
+    var sortMode by rememberSaveable { mutableStateOf(LspModuleSortMode.NAME) }
+    var menuExpanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         vm.refreshLspInstalledModules()
         vm.refreshAbkRuntimeStatus()
+    }
+
+    val modules = remember(state.lspInstalledModules, query, sortMode) {
+        state.lspInstalledModules
+            .asSequence()
+            .filter { module ->
+                val needle = query.trim().lowercase()
+                needle.isBlank() ||
+                    module.label.lowercase().contains(needle) ||
+                    module.packageName.lowercase().contains(needle)
+            }
+            .sortedWith(moduleComparator(sortMode))
+            .toList()
     }
 
     Scaffold(
@@ -239,6 +274,30 @@ fun LspModulesScreen(
                         vm.refreshAbkRuntimeStatus()
                     }) {
                         Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.runtime_refresh))
+                    }
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "模块排序")
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false }
+                        ) {
+                            LspModuleSortMode.values().forEach { mode ->
+                                DropdownMenuItem(
+                                    text = { Text(mode.label) },
+                                    leadingIcon = if (sortMode == mode) {
+                                        { Icon(Icons.Default.Check, contentDescription = null) }
+                                    } else {
+                                        null
+                                    },
+                                    onClick = {
+                                        sortMode = mode
+                                        menuExpanded = false
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             )
@@ -255,6 +314,15 @@ fun LspModulesScreen(
             if (state.lspInstalledModulesLoading || state.abkRuntimeLoading) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                label = { Text("搜索模块") },
+                placeholder = { Text("应用名或包名") }
+            )
             state.lspInstalledModulesError?.let {
                 Text(
                     text = it,
@@ -269,12 +337,19 @@ fun LspModulesScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            state.lspInstalledModules.forEach { module ->
-                LspModuleCard(
+            if (state.lspInstalledModules.isNotEmpty() && modules.isEmpty()) {
+                Text(
+                    text = "没有匹配的模块",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            modules.forEach { module ->
+                LspModuleListCard(
                     module = module,
                     actionInFlight = state.lspModuleActionPackage == module.packageName,
                     onEnabledChange = { enabled -> vm.setLspModuleEnabled(module.packageName, enabled) },
-                    onOpenScope = {
+                    onOpenDetail = {
                         vm.setSelectedLspModulePackage(module.packageName)
                         onOpenScope(module.packageName)
                     }
@@ -288,10 +363,15 @@ fun LspModulesScreen(
 @Composable
 fun LspScopeScreen(
     vm: MainViewModel,
-    outerPadding: PaddingValues = PaddingValues(0.dp)
+    outerPadding: PaddingValues = PaddingValues(0.dp),
+    onBack: () -> Unit = {}
 ) {
     val state by vm.uiState.collectAsState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+    var query by rememberSaveable { mutableStateOf("") }
+    var showSystemApps by rememberSaveable { mutableStateOf(true) }
+    var sortMode by rememberSaveable { mutableStateOf(LspScopeSortMode.NAME) }
+    var menuExpanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         vm.refreshLspInstalledModules()
@@ -304,13 +384,36 @@ fun LspScopeScreen(
     var draftScope by remember(selectedModule?.packageName, selectedModule?.selectedScope) {
         mutableStateOf(selectedModule?.selectedScope?.toSet().orEmpty())
     }
+    val recommendedScope = remember(selectedModule?.packageName, selectedModule?.scopeHints) {
+        selectedModule?.scopeHints.orEmpty().filter { it.isNotBlank() }.toSet()
+    }
+    val filteredApps = remember(state.lspScopeApps, query, showSystemApps, sortMode, recommendedScope) {
+        state.lspScopeApps
+            .asSequence()
+            .filter { showSystemApps || !it.isSystemApp }
+            .filter { app ->
+                val needle = query.trim().lowercase()
+                needle.isBlank() ||
+                    app.label.lowercase().contains(needle) ||
+                    app.packageName.lowercase().contains(needle)
+            }
+            .sortedWith(scopeAppComparator(sortMode, recommendedScope))
+            .toList()
+    }
+
+    BackHandler(onBack = onBack)
 
     Scaffold(
         containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surface),
         topBar = {
             ExpressiveTopBar(
-                title = "LSP 作用域",
+                title = selectedModule?.let { module -> module.label.ifBlank { module.packageName } } ?: "LSP 模块详情",
                 scrollBehavior = scrollBehavior,
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "返回模块列表")
+                    }
+                },
                 actions = {
                     IconButton(onClick = {
                         vm.refreshLspInstalledModules()
@@ -318,6 +421,64 @@ fun LspScopeScreen(
                         vm.refreshAbkRuntimeStatus()
                     }) {
                         Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.runtime_refresh))
+                    }
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "作用域菜单")
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("勾选推荐") },
+                                enabled = selectedModule != null &&
+                                    recommendedScope.isNotEmpty() &&
+                                    state.lspModuleActionPackage == null,
+                                onClick = {
+                                    selectedModule?.let { module ->
+                                        val nextScope = draftScope + recommendedScope
+                                        draftScope = nextScope
+                                        vm.setLspModuleScope(module.packageName, nextScope)
+                                    }
+                                    menuExpanded = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("清空作用域") },
+                                enabled = selectedModule != null &&
+                                    draftScope.isNotEmpty() &&
+                                    state.lspModuleActionPackage == null,
+                                onClick = {
+                                    selectedModule?.let { module ->
+                                        draftScope = emptySet()
+                                        vm.setLspModuleScope(module.packageName, emptySet())
+                                    }
+                                    menuExpanded = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (showSystemApps) "隐藏系统应用" else "显示系统应用") },
+                                onClick = {
+                                    showSystemApps = !showSystemApps
+                                    menuExpanded = false
+                                }
+                            )
+                            LspScopeSortMode.values().forEach { mode ->
+                                DropdownMenuItem(
+                                    text = { Text(mode.label) },
+                                    leadingIcon = if (sortMode == mode) {
+                                        { Icon(Icons.Default.Check, contentDescription = null) }
+                                    } else {
+                                        null
+                                    },
+                                    onClick = {
+                                        sortMode = mode
+                                        menuExpanded = false
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             )
@@ -331,94 +492,83 @@ fun LspScopeScreen(
                 .padding(horizontal = AbkScreenHorizontalPadding),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            ExpressiveSectionCard(
-                title = "模块选择",
-                subtitle = "先选一个模块，再编辑它的作用域",
-                icon = Icons.Default.Extension
-            ) {
-                if (modules.isEmpty()) {
-                    Text(
-                        text = "当前没有可配置作用域的模块。",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                } else {
-                    modules.forEach { module ->
-                        ExpressiveListItem(
-                            title = module.label.ifBlank { module.packageName },
-                            subtitle = buildString {
-                                append(module.packageName)
-                                append("\n当前作用域 ${module.selectedScope.size} 项")
-                                if (module.scopeHints.isNotEmpty()) {
-                                    append(" · 推荐 ${module.scopeHints.joinToString(", ")}")
-                                }
-                            },
-                            leadingIcon = Icons.Default.Tune,
-                            selected = selectedModule?.packageName == module.packageName,
-                            onClick = { vm.setSelectedLspModulePackage(module.packageName) }
-                        )
-                    }
-                }
-            }
-
             if (state.lspScopeAppsLoading) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
 
-            selectedModule?.let { module ->
-                ExpressiveSectionCard(
-                    title = module.label.ifBlank { module.packageName },
-                    subtitle = "编辑 ${module.packageName} 的实际作用域",
-                    icon = Icons.Default.Tune
-                ) {
-                    Text(
-                        text = if (module.scopeHints.isEmpty()) {
-                            "该模块未声明推荐作用域。"
-                        } else {
-                            "推荐作用域: ${module.scopeHints.joinToString(", ")}"
+            if (selectedModule == null) {
+                Text(
+                    text = "当前没有可配置作用域的模块。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                val module = selectedModule
+                LspModuleDetailHeader(
+                    module = module,
+                    actionInFlight = state.lspModuleActionPackage == module.packageName,
+                    onEnabledChange = { enabled -> vm.setLspModuleEnabled(module.packageName, enabled) }
+                )
+
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    label = { Text("搜索作用域应用") },
+                    placeholder = { Text("应用名或包名") }
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AssistChip(
+                        onClick = {
+                            val nextScope = draftScope + recommendedScope
+                            draftScope = nextScope
+                            vm.setLspModuleScope(module.packageName, nextScope)
                         },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        enabled = state.lspModuleActionPackage == null && recommendedScope.isNotEmpty(),
+                        label = { Text("勾选推荐") }
                     )
-                    if (module.lastError.isNotBlank()) {
-                        Text(
-                            text = "模块错误: ${module.lastError}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = {
-                                val nextScope = (draftScope + module.scopeHints).filter { it.isNotBlank() }.toSet()
-                                draftScope = nextScope
-                                vm.setLspModuleScope(module.packageName, nextScope)
-                            },
-                            enabled = state.lspModuleActionPackage == null && module.scopeHints.isNotEmpty()
-                        ) {
-                            Text("勾选推荐")
-                        }
-                        OutlinedButton(
-                            onClick = {
-                                draftScope = emptySet()
-                                vm.setLspModuleScope(module.packageName, emptySet())
-                            },
-                            enabled = state.lspModuleActionPackage == null && draftScope.isNotEmpty()
-                        ) {
-                            Text("清空并保存")
-                        }
-                    }
+                    AssistChip(
+                        onClick = {
+                            draftScope = emptySet()
+                            vm.setLspModuleScope(module.packageName, emptySet())
+                        },
+                        enabled = state.lspModuleActionPackage == null && draftScope.isNotEmpty(),
+                        label = { Text("清空") }
+                    )
+                    AssistChip(
+                        onClick = { showSystemApps = !showSystemApps },
+                        label = { Text(if (showSystemApps) "系统应用: 显示" else "系统应用: 隐藏") }
+                    )
                 }
 
-                state.lspScopeApps.forEach { app ->
+                Text(
+                    text = "已选择 ${draftScope.size} 个应用 · 当前显示 ${filteredApps.size} 个",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (filteredApps.isEmpty()) {
+                    Text(
+                        text = "没有匹配的应用",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                filteredApps.forEach { app ->
                     val checked = app.packageName in draftScope
                     ExpressiveListItem(
                         title = app.label.ifBlank { app.packageName },
                         subtitle = buildString {
                             append(app.packageName)
-                            append(if (app.isSystemApp) "\n系统应用" else "\n用户应用")
+                            append("\n")
+                            append(scopeAppTags(app, recommendedScope))
                         },
                         leadingIcon = if (app.isSystemApp) Icons.Default.Security else Icons.Default.Extension,
+                        selected = checked,
                         trailingContent = {
                             Switch(
                                 checked = checked,
@@ -433,6 +583,17 @@ fun LspScopeScreen(
                                 },
                                 enabled = state.lspModuleActionPackage == null
                             )
+                        },
+                        onClick = {
+                            if (state.lspModuleActionPackage == null) {
+                                val nextScope = if (checked) {
+                                    draftScope - app.packageName
+                                } else {
+                                    draftScope + app.packageName
+                                }
+                                draftScope = nextScope
+                                vm.setLspModuleScope(module.packageName, nextScope)
+                            }
                         }
                     )
                 }
@@ -559,82 +720,258 @@ fun LspLogsScreen(
 }
 
 @Composable
-private fun LspModuleCard(
+private fun LspModuleListCard(
     module: LspInstalledModule,
     actionInFlight: Boolean,
     onEnabledChange: (Boolean) -> Unit,
-    onOpenScope: () -> Unit
+    onOpenDetail: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onOpenDetail,
+        colors = CardDefaults.cardColors(
+            containerColor = uiSurfaceColor(MaterialTheme.colorScheme.surfaceContainer)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            LspModuleAvatar(module)
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = module.label.ifBlank { module.packageName },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = module.packageName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    AssistChip(
+                        onClick = {},
+                        label = { Text(lspModuleApiLabel(module)) }
+                    )
+                    AssistChip(
+                        onClick = {},
+                        label = {
+                            Text(
+                                if (module.selectedScope.isEmpty()) {
+                                    "无作用域"
+                                } else {
+                                    "作用域 ${module.selectedScope.size}"
+                                }
+                            )
+                        }
+                    )
+                    if (module.hookActive) {
+                        AssistChip(
+                            onClick = {},
+                            label = { Text("已激活") }
+                        )
+                    } else if (module.loaded) {
+                        AssistChip(
+                            onClick = {},
+                            label = { Text("已加载") }
+                        )
+                    }
+                }
+                Text(
+                    text = buildString {
+                        append("版本 ")
+                        append(module.versionName.ifBlank { module.versionCode.toString() })
+                        append(" · ")
+                        append(if (module.enabled) "配置启用" else "未启用")
+                        if (module.lastError.isNotBlank()) {
+                            append(" · 有错误")
+                        }
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (module.lastError.isNotBlank()) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Switch(
+                checked = module.enabled,
+                onCheckedChange = onEnabledChange,
+                enabled = !actionInFlight
+            )
+        }
+    }
+}
+
+@Composable
+private fun LspModuleDetailHeader(
+    module: LspInstalledModule,
+    actionInFlight: Boolean,
+    onEnabledChange: (Boolean) -> Unit
 ) {
     ExpressiveSectionCard(
         title = module.label.ifBlank { module.packageName },
         subtitle = module.packageName,
         icon = Icons.Default.Extension
     ) {
-        Text(
-            text = buildString {
-                append("Version: ")
-                append(module.versionName.ifBlank { module.versionCode.toString() })
-                append("\nMode: ")
-                append(
-                    when {
-                        module.modern && module.legacy -> "Modern + Legacy"
-                        module.modern -> "Modern"
-                        module.legacy -> "Legacy"
-                        else -> "Unknown"
-                    }
-                )
-                append("\n当前状态: ")
-                append(if (module.enabled) "配置已启用" else "未启用")
-                append(" · ")
-                append(if (module.loaded) "runtime 已加载" else "runtime 未加载")
-                append(" · ")
-                append(if (module.hookActive) "hook 活动" else "hook 未确认")
-                append("\n作用域: ")
-                append(if (module.selectedScope.isEmpty()) "未配置" else "${module.selectedScope.size} 项")
-                if (module.entryPoints.isNotEmpty()) {
-                    append("\n入口: ")
-                    append(module.entryPoints.joinToString(", "))
-                }
-                if (module.compatEntryPoints.isNotEmpty()) {
-                    append("\n兼容入口: ")
-                    append(module.compatEntryPoints.joinToString(", "))
-                }
-                if (module.staticScope) {
-                    append("\nStatic scope: true")
-                }
-                if (module.scopeHints.isNotEmpty()) {
-                    append("\n推荐 Scope: ")
-                    append(module.scopeHints.joinToString(", "))
-                }
-                if (module.description.isNotBlank()) {
-                    append("\n")
-                    append(module.description)
-                }
-                if (module.lastError.isNotBlank()) {
-                    append("\n最近错误: ")
-                    append(module.lastError)
-                }
+        ExpressiveListItem(
+            title = "启用模块",
+            subtitle = if (module.enabled) {
+                "已写入 LSP bridge 配置；真正激活仍取决于 runtime hook 状态。"
+            } else {
+                "关闭后该模块不会进入 LSP bridge 作用域配置。"
             },
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            leadingIcon = Icons.Default.Tune,
+            trailingContent = {
+                Switch(
+                    checked = module.enabled,
+                    onCheckedChange = onEnabledChange,
+                    enabled = !actionInFlight
+                )
+            },
+            onClick = {
+                if (!actionInFlight) onEnabledChange(!module.enabled)
+            }
         )
-        Spacer(Modifier.height(6.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
-                onClick = { onEnabledChange(!module.enabled) },
-                enabled = !actionInFlight
-            ) {
-                Text(if (module.enabled) "禁用" else "启用")
-            }
-            OutlinedButton(
-                onClick = onOpenScope,
-                enabled = !actionInFlight
-            ) {
-                Text("管理作用域")
-            }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            AssistChip(onClick = {}, label = { Text(lspModuleApiLabel(module)) })
+            AssistChip(onClick = {}, label = { Text("版本 ${module.versionName.ifBlank { module.versionCode.toString() }}") })
+            AssistChip(onClick = {}, label = { Text(if (module.hookActive) "已激活" else if (module.loaded) "已加载" else "未激活") })
+        }
+        if (module.scopeHints.isNotEmpty()) {
+            Text(
+                text = "推荐作用域: ${module.scopeHints.joinToString(", ")}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (module.entryPoints.isNotEmpty() || module.compatEntryPoints.isNotEmpty()) {
+            Text(
+                text = buildString {
+                    if (module.entryPoints.isNotEmpty()) {
+                        append("入口: ")
+                        append(module.entryPoints.joinToString(", "))
+                    }
+                    if (module.compatEntryPoints.isNotEmpty()) {
+                        if (isNotEmpty()) append("\n")
+                        append("兼容入口: ")
+                        append(module.compatEntryPoints.joinToString(", "))
+                    }
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (module.description.isNotBlank()) {
+            Text(
+                text = module.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (module.lastError.isNotBlank()) {
+            Text(
+                text = "最近错误: ${module.lastError}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
         }
     }
 }
+
+@Composable
+private fun LspModuleAvatar(module: LspInstalledModule) {
+    Box(
+        modifier = Modifier
+            .size(52.dp)
+            .clip(CircleShape)
+            .background(
+                if (module.enabled) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                }
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.Extension,
+            contentDescription = null,
+            tint = if (module.enabled) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            }
+        )
+    }
+}
+
+private enum class LspModuleSortMode(val label: String) {
+    NAME("按应用名"),
+    PACKAGE("按包名"),
+    INSTALL_TIME("按安装时间"),
+    UPDATE_TIME("按更新时间")
+}
+
+private enum class LspScopeSortMode(val label: String) {
+    NAME("按应用名"),
+    PACKAGE("按包名"),
+    INSTALL_TIME("按安装时间"),
+    UPDATE_TIME("按更新时间")
+}
+
+private fun moduleComparator(mode: LspModuleSortMode): Comparator<LspInstalledModule> = when (mode) {
+    LspModuleSortMode.NAME -> compareBy<LspInstalledModule> { it.label.lowercase() }.thenBy { it.packageName }
+    LspModuleSortMode.PACKAGE -> compareBy { it.packageName }
+    LspModuleSortMode.INSTALL_TIME -> compareByDescending<LspInstalledModule> { it.installTime }.thenBy { it.label.lowercase() }
+    LspModuleSortMode.UPDATE_TIME -> compareByDescending<LspInstalledModule> { it.updateTime }.thenBy { it.label.lowercase() }
+}
+
+private fun scopeAppComparator(
+    mode: LspScopeSortMode,
+    recommendedScope: Set<String>
+): Comparator<LspScopeApp> {
+    val recommendationOrder = compareByDescending<LspScopeApp> { it.packageName in recommendedScope }
+    val selectedMode = when (mode) {
+        LspScopeSortMode.NAME -> compareBy<LspScopeApp> { it.label.lowercase() }.thenBy { it.packageName }
+        LspScopeSortMode.PACKAGE -> compareBy { it.packageName }
+        LspScopeSortMode.INSTALL_TIME -> compareByDescending<LspScopeApp> { it.installTime }.thenBy { it.label.lowercase() }
+        LspScopeSortMode.UPDATE_TIME -> compareByDescending<LspScopeApp> { it.updateTime }.thenBy { it.label.lowercase() }
+    }
+    return recommendationOrder.then(selectedMode)
+}
+
+private fun lspModuleApiLabel(module: LspInstalledModule): String = when {
+    module.modern && module.legacy -> "API ${module.targetVersion.takeIf { it > 0 } ?: module.minVersion} + legacy"
+    module.modern -> "API ${module.targetVersion.takeIf { it > 0 } ?: module.minVersion}"
+    module.legacy -> "legacy"
+    else -> "unknown"
+}
+
+private fun scopeAppTags(app: LspScopeApp, recommendedScope: Set<String>): String =
+    buildList {
+        add(if (app.isSystemApp) "系统应用" else "用户应用")
+        if (app.packageName in recommendedScope) add("推荐应用")
+        if (app.isGame) add("游戏")
+        if (app.isModule) add("模块")
+        if (app.versionName.isNotBlank()) add("版本 ${app.versionName}")
+    }.joinToString(" · ")
 
 @Composable
 private fun LspStatusLine(label: String, value: String) {
