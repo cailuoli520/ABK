@@ -3387,7 +3387,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     .split(',')
                                     .map { it.trim() }
                                     .filter { it.isNotBlank() },
+                                loaded = module.optBoolean("loaded", false),
+                                hookActive = module.optBoolean("hook_active", false),
                                 lastError = module.optString("last_error").trim()
+                            )
+                        )
+                    }
+                }
+            }
+            val targetStates = buildList {
+                val targetEntries = lsp?.optJSONArray("target_states")
+                if (targetEntries != null) {
+                    for (index in 0 until targetEntries.length()) {
+                        val target = targetEntries.optJSONObject(index) ?: continue
+                        add(
+                            LspTargetState(
+                                packageName = target.optString("package").trim(),
+                                processName = target.optString("process").trim(),
+                                pid = target.optInt("pid", 0),
+                                uid = target.optInt("uid", 0),
+                                payloadInjected = target.optBoolean("payload_injected", false),
+                                runtimeReady = target.optBoolean("runtime_ready", false),
+                                hookActive = target.optBoolean("hook_active", false),
+                                loadedModuleCount = target.optInt("loaded_module_count", 0),
+                                activeHookCount = target.optInt("active_hook_count", 0),
+                                lastError = target.optString("last_error").trim()
                             )
                         )
                     }
@@ -3402,15 +3426,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 helperActive = lsp?.optBoolean("helper_active") == true,
                 daemonActive = lsp?.optBoolean("daemon_active") == true,
                 zygoteAttached = lsp?.optBoolean("zygote_attached") == true,
+                payloadReady = lsp?.optBoolean("payload_ready") == true,
+                runtimeReady = lsp?.optBoolean("runtime_ready") == true,
                 targetCount = lsp?.optInt("target_count") ?: 0,
                 pluginCount = lsp?.optInt("plugin_count") ?: 0,
                 managedModuleCount = lsp?.optInt("managed_module_count") ?: managedModules.size,
                 scopeCount = lsp?.optInt("scope_count") ?: managedModules.sumOf { it.selectedScope.size },
+                targetStateCount = lsp?.optInt("target_state_count") ?: targetStates.size,
+                loadedModuleCount = lsp?.optInt("loaded_module_count") ?: managedModules.count { it.loaded },
+                activeHookCount = lsp?.optInt("active_hook_count") ?: managedModules.count { it.hookActive },
                 protocolVersion = lsp?.optInt("protocol_version") ?: 0,
                 lastError = lsp?.optString("last_error").orEmpty().trim(),
                 diagnostics = diagnostics,
                 logs = logs,
-                managedModules = managedModules
+                managedModules = managedModules,
+                targetStates = targetStates
             )
         }.getOrNull()
 
@@ -3427,6 +3457,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             module.copy(
                 enabled = persistedState?.enabled ?: liveState?.enabled ?: false,
                 selectedScope = persistedState?.selectedScope ?: liveState?.selectedScope.orEmpty(),
+                loaded = liveState?.loaded ?: persistedState?.loaded ?: false,
+                hookActive = liveState?.hookActive ?: persistedState?.hookActive ?: false,
                 lastError = liveState?.lastError?.takeIf { it.isNotBlank() }
                     ?: persistedState?.lastError.orEmpty()
             )

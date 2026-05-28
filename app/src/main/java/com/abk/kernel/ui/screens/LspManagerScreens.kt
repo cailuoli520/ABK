@@ -139,8 +139,20 @@ fun LspManagerHomeScreen(
                 LspStatusLine("Helper", if (bridge?.helperActive == true) "active" else "inactive")
                 LspStatusLine("Daemon", if (bridge?.daemonActive == true) "active" else "inactive")
                 LspStatusLine("Zygote", if (bridge?.zygoteAttached == true) "attached" else "detached")
+                LspStatusLine("Payload", if (bridge?.payloadReady == true) "ready" else "not ready")
+                LspStatusLine("Runtime", if (bridge?.runtimeReady == true) "ready" else "not ready")
                 LspStatusLine("模块", "${bridge?.managedModuleCount ?: 0}")
                 LspStatusLine("作用域", "${bridge?.scopeCount ?: 0}")
+                LspStatusLine("目标进程", "${bridge?.targetStateCount ?: 0}")
+                LspStatusLine("已加载", "${bridge?.loadedModuleCount ?: 0}")
+                LspStatusLine("Hook", "${bridge?.activeHookCount ?: 0}")
+                if (bridge != null && !bridge.runtimeReady) {
+                    Text(
+                        text = "配置启用不等于模块已激活；目标应用内显示已激活需要 payload 注入并完成 ART/Xposed hook。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
                 if (!bridge?.lastError.isNullOrBlank()) {
                     Text(
                         text = "最近错误: ${bridge?.lastError}",
@@ -377,16 +389,23 @@ fun LspScopeScreen(
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
-                            onClick = { vm.setLspModuleScope(module.packageName, draftScope) },
-                            enabled = state.lspModuleActionPackage == null
+                            onClick = {
+                                val nextScope = (draftScope + module.scopeHints).filter { it.isNotBlank() }.toSet()
+                                draftScope = nextScope
+                                vm.setLspModuleScope(module.packageName, nextScope)
+                            },
+                            enabled = state.lspModuleActionPackage == null && module.scopeHints.isNotEmpty()
                         ) {
-                            Text("保存作用域")
+                            Text("勾选推荐")
                         }
                         OutlinedButton(
-                            onClick = { draftScope = emptySet() },
+                            onClick = {
+                                draftScope = emptySet()
+                                vm.setLspModuleScope(module.packageName, emptySet())
+                            },
                             enabled = state.lspModuleActionPackage == null && draftScope.isNotEmpty()
                         ) {
-                            Text("清空")
+                            Text("清空并保存")
                         }
                     }
                 }
@@ -404,11 +423,13 @@ fun LspScopeScreen(
                             Switch(
                                 checked = checked,
                                 onCheckedChange = { enabled ->
-                                    draftScope = if (enabled) {
+                                    val nextScope = if (enabled) {
                                         draftScope + app.packageName
                                     } else {
                                         draftScope - app.packageName
                                     }
+                                    draftScope = nextScope
+                                    vm.setLspModuleScope(module.packageName, nextScope)
                                 },
                                 enabled = state.lspModuleActionPackage == null
                             )
@@ -486,6 +507,38 @@ fun LspLogsScreen(
                 )
             }
 
+            if (bridge?.targetStates?.isNotEmpty() == true) {
+                ExpressiveSectionCard(
+                    title = "Target Runtime",
+                    subtitle = "目标进程内 payload / runtime / hook 状态",
+                    icon = Icons.Default.Memory
+                ) {
+                    Text(
+                        text = bridge.targetStates.joinToString("\n") { target ->
+                            buildString {
+                                append(target.packageName.ifBlank { "unknown" })
+                                append(" / ")
+                                append(target.processName.ifBlank { target.packageName })
+                                append(" pid=")
+                                append(target.pid)
+                                append(" payload=")
+                                append(if (target.payloadInjected) "yes" else "no")
+                                append(" runtime=")
+                                append(if (target.runtimeReady) "ready" else "no")
+                                append(" hooks=")
+                                append(target.activeHookCount)
+                                if (target.lastError.isNotBlank()) {
+                                    append(" error=")
+                                    append(target.lastError)
+                                }
+                            }
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             state.lspInstalledModules.filter { it.lastError.isNotBlank() }.forEach { module ->
                 ExpressiveSectionCard(
                     title = module.label.ifBlank { module.packageName },
@@ -531,12 +584,23 @@ private fun LspModuleCard(
                     }
                 )
                 append("\n当前状态: ")
-                append(if (module.enabled) "已启用" else "未启用")
+                append(if (module.enabled) "配置已启用" else "未启用")
+                append(" · ")
+                append(if (module.loaded) "runtime 已加载" else "runtime 未加载")
+                append(" · ")
+                append(if (module.hookActive) "hook 活动" else "hook 未确认")
                 append("\n作用域: ")
                 append(if (module.selectedScope.isEmpty()) "未配置" else "${module.selectedScope.size} 项")
                 if (module.entryPoints.isNotEmpty()) {
                     append("\n入口: ")
                     append(module.entryPoints.joinToString(", "))
+                }
+                if (module.compatEntryPoints.isNotEmpty()) {
+                    append("\n兼容入口: ")
+                    append(module.compatEntryPoints.joinToString(", "))
+                }
+                if (module.staticScope) {
+                    append("\nStatic scope: true")
                 }
                 if (module.scopeHints.isNotEmpty()) {
                     append("\n推荐 Scope: ")

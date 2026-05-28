@@ -541,10 +541,17 @@ data class LspInstalledModule(
     val legacy: Boolean = false,
     val minVersion: Int = 0,
     val targetVersion: Int = 0,
+    val staticScope: Boolean = false,
+    val installTime: Long = 0L,
+    val updateTime: Long = 0L,
+    val sourceApk: String = "",
     val scopeHints: List<String> = emptyList(),
     val entryPoints: List<String> = emptyList(),
+    val compatEntryPoints: List<String> = emptyList(),
     val enabled: Boolean = false,
     val selectedScope: List<String> = emptyList(),
+    val loaded: Boolean = false,
+    val hookActive: Boolean = false,
     val lastError: String = ""
 )
 
@@ -552,6 +559,21 @@ data class LspBridgeManagedModule(
     val packageName: String = "",
     val enabled: Boolean = false,
     val selectedScope: List<String> = emptyList(),
+    val loaded: Boolean = false,
+    val hookActive: Boolean = false,
+    val lastError: String = ""
+)
+
+data class LspTargetState(
+    val packageName: String = "",
+    val processName: String = "",
+    val pid: Int = 0,
+    val uid: Int = 0,
+    val payloadInjected: Boolean = false,
+    val runtimeReady: Boolean = false,
+    val hookActive: Boolean = false,
+    val loadedModuleCount: Int = 0,
+    val activeHookCount: Int = 0,
     val lastError: String = ""
 )
 
@@ -560,21 +582,32 @@ data class LspBridgeStatus(
     val helperActive: Boolean = false,
     val daemonActive: Boolean = false,
     val zygoteAttached: Boolean = false,
+    val payloadReady: Boolean = false,
+    val runtimeReady: Boolean = false,
     val targetCount: Int = 0,
     val pluginCount: Int = 0,
     val managedModuleCount: Int = 0,
     val scopeCount: Int = 0,
+    val targetStateCount: Int = 0,
+    val loadedModuleCount: Int = 0,
+    val activeHookCount: Int = 0,
     val protocolVersion: Int = 0,
     val lastError: String = "",
     val diagnostics: List<String> = emptyList(),
     val logs: List<String> = emptyList(),
-    val managedModules: List<LspBridgeManagedModule> = emptyList()
+    val managedModules: List<LspBridgeManagedModule> = emptyList(),
+    val targetStates: List<LspTargetState> = emptyList()
 )
 
 data class LspScopeApp(
     val packageName: String = "",
     val label: String = "",
-    val isSystemApp: Boolean = false
+    val versionName: String = "",
+    val installTime: Long = 0L,
+    val updateTime: Long = 0L,
+    val isSystemApp: Boolean = false,
+    val isGame: Boolean = false,
+    val isModule: Boolean = false
 )
 
 data class RootGrantApp(

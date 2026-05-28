@@ -63,6 +63,8 @@ object LspManagerService {
                         packageName = it.packageName,
                         enabled = it.enabled,
                         selectedScope = it.selectedScope,
+                        loaded = it.loaded,
+                        hookActive = it.hookActive,
                         lastError = it.lastError
                     )
                 }
@@ -199,6 +201,8 @@ object LspManagerService {
                 packageName = packageName,
                 enabled = module.enabled,
                 selectedScope = module.selectedScope.mapNotNull(::sanitizePackage).distinct().sorted(),
+                loaded = module.loaded,
+                hookActive = module.hookActive,
                 lastError = module.lastError
             )
         }
@@ -215,6 +219,8 @@ object LspManagerService {
         val packageName: String,
         var enabled: Boolean = false,
         var selectedScope: List<String> = emptyList(),
+        var loaded: Boolean = false,
+        var hookActive: Boolean = false,
         var lastError: String = ""
     )
 }
