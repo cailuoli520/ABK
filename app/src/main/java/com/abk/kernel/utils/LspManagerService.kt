@@ -90,10 +90,11 @@ object LspManagerService {
         }
         val bridgeResult = RootUtils.writeAbkControlCommand(bridgeCommand)
         RootUtils.appendLspBridgeLog("${if (enabled) "enabled" else "disabled"} module $cleanPackage")
+        val officialResult = syncOfficialLsposedRuntime()
         return if (bridgeResult.success) {
-            writeResult
+            RootUtils.ShellResult(true, writeResult.output + officialResult.output)
         } else {
-            RootUtils.ShellResult(true, writeResult.output + bridgeResult.output)
+            RootUtils.ShellResult(true, writeResult.output + bridgeResult.output + officialResult.output)
         }
     }
 
@@ -115,10 +116,11 @@ object LspManagerService {
             RootUtils.writeAbkControlCommand("lsp scope set $cleanPackage ${cleanScope.joinToString(",")}")
         }
         RootUtils.appendLspBridgeLog("updated scope for $cleanPackage (${cleanScope.size})")
+        val officialResult = syncOfficialLsposedRuntime()
         return if (bridgeResult.success) {
-            writeResult
+            RootUtils.ShellResult(true, writeResult.output + officialResult.output)
         } else {
-            RootUtils.ShellResult(true, writeResult.output + bridgeResult.output)
+            RootUtils.ShellResult(true, writeResult.output + bridgeResult.output + officialResult.output)
         }
     }
 
@@ -147,8 +149,15 @@ object LspManagerService {
             success = success && scopeResult.success
             outputs += scopeResult.output
         }
+        val officialResult = RootUtils.syncOfficialLsposedDatabaseFromPersistedState(state.modules)
+        outputs += officialResult.output
         if (success) RootUtils.appendLspBridgeLog("synced ${state.modules.size} persisted LSP modules")
         return RootUtils.ShellResult(success, outputs)
+    }
+
+    private fun syncOfficialLsposedRuntime(): RootUtils.ShellResult {
+        val state = readPersistedState()
+        return RootUtils.syncOfficialLsposedDatabaseFromPersistedState(state.modules)
     }
 
     private fun writeState(modules: List<MutableModuleState>): RootUtils.ShellResult {

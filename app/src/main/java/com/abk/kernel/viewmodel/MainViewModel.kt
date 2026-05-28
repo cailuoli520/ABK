@@ -713,6 +713,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     LspManagerService.PersistedState()
                 }
+                if (rootGranted && preferLspBridge && managerAccess.hasNativeManagerPermission) {
+                    RootUtils.probeAndReportLspRuntimeState()
+                }
                 if (!managerAccess.hasNativeManagerPermission) {
                     val snapshot = if (rootGranted) RootUtils.readManagerRuntimeSnapshot(preferLspBridge) else null
                     val compatStatus = snapshot
