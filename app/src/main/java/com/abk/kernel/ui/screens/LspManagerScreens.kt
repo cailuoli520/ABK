@@ -5,6 +5,7 @@
 
 package com.abk.kernel.ui.screens
 
+import android.graphics.drawable.Drawable
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -20,7 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Article
@@ -61,10 +62,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.abk.kernel.R
 import com.abk.kernel.data.model.LspInstalledModule
 import com.abk.kernel.data.model.LspScopeApp
@@ -76,6 +82,8 @@ import com.abk.kernel.ui.components.ExpressiveStatusChip
 import com.abk.kernel.ui.components.ExpressiveTopBar
 import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.viewmodel.MainViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun LspManagerHomeScreen(
@@ -510,6 +518,12 @@ fun LspScopeScreen(
                     onEnabledChange = { enabled -> vm.setLspModuleEnabled(module.packageName, enabled) }
                 )
 
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AssistChip(onClick = {}, label = { Text("推荐 ${recommendedScope.size}") })
+                    AssistChip(onClick = {}, label = { Text("已选 ${draftScope.size}") })
+                    AssistChip(onClick = {}, label = { Text("显示 ${filteredApps.size}") })
+                }
+
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
@@ -544,12 +558,6 @@ fun LspScopeScreen(
                     )
                 }
 
-                Text(
-                    text = "已选择 ${draftScope.size} 个应用 · 当前显示 ${filteredApps.size} 个",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
                 if (filteredApps.isEmpty()) {
                     Text(
                         text = "没有匹配的应用",
@@ -567,7 +575,15 @@ fun LspScopeScreen(
                             append("\n")
                             append(scopeAppTags(app, recommendedScope))
                         },
-                        leadingIcon = if (app.isSystemApp) Icons.Default.Security else Icons.Default.Extension,
+                        leadingContent = {
+                            LspAppIcon(
+                                packageName = app.packageName,
+                                label = app.label,
+                                modifier = Modifier.size(44.dp),
+                                cornerSize = 12.dp,
+                                fallbackIcon = if (app.isSystemApp) Icons.Default.Security else Icons.Default.Extension
+                            )
+                        },
                         selected = checked,
                         trailingContent = {
                             Switch(
@@ -854,13 +870,6 @@ private fun LspModuleDetailHeader(
             AssistChip(onClick = {}, label = { Text("版本 ${module.versionName.ifBlank { module.versionCode.toString() }}") })
             AssistChip(onClick = {}, label = { Text(if (module.hookActive) "已激活" else if (module.loaded) "已加载" else "未激活") })
         }
-        if (module.scopeHints.isNotEmpty()) {
-            Text(
-                text = "推荐作用域: ${module.scopeHints.joinToString(", ")}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
         if (module.entryPoints.isNotEmpty() || module.compatEntryPoints.isNotEmpty()) {
             Text(
                 text = buildString {
@@ -897,27 +906,52 @@ private fun LspModuleDetailHeader(
 
 @Composable
 private fun LspModuleAvatar(module: LspInstalledModule) {
+    LspAppIcon(
+        packageName = module.packageName,
+        label = module.label,
+        modifier = Modifier.size(52.dp),
+        cornerSize = 14.dp,
+        fallbackIcon = Icons.Default.Extension
+    )
+}
+
+@Composable
+private fun LspAppIcon(
+    packageName: String,
+    label: String,
+    modifier: Modifier = Modifier.size(52.dp),
+    cornerSize: Dp = 14.dp,
+    fallbackIcon: ImageVector = Icons.Default.Extension
+) {
+    val context = LocalContext.current
+    var drawable by remember(packageName) { mutableStateOf<Drawable?>(null) }
+
+    LaunchedEffect(packageName) {
+        drawable = withContext(Dispatchers.IO) {
+            runCatching { context.packageManager.getApplicationIcon(packageName) }.getOrNull()
+        }
+    }
+
+    val iconModifier = modifier.clip(RoundedCornerShape(cornerSize))
+    if (drawable != null) {
+        AsyncImage(
+            model = drawable,
+            contentDescription = label.ifBlank { packageName },
+            contentScale = ContentScale.Crop,
+            modifier = iconModifier
+        )
+        return
+    }
+
     Box(
-        modifier = Modifier
-            .size(52.dp)
-            .clip(CircleShape)
-            .background(
-                if (module.enabled) {
-                    MaterialTheme.colorScheme.primaryContainer
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant
-                }
-            ),
+        modifier = iconModifier.background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center
     ) {
         Icon(
-            imageVector = Icons.Default.Extension,
+            imageVector = fallbackIcon,
             contentDescription = null,
-            tint = if (module.enabled) {
-                MaterialTheme.colorScheme.onPrimaryContainer
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            }
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(28.dp)
         )
     }
 }

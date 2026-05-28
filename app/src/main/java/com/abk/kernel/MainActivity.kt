@@ -410,14 +410,14 @@ private fun AbkMainScaffold(
             MANAGER_SURFACE_LSP -> buildList {
                 add(AbkTab.LspHome)
                 add(AbkTab.LspModules)
-                add(AbkTab.LspScope)
                 add(AbkTab.LspLogs)
                 add(AbkTab.Settings)
             }
             else -> listOf(AbkTab.Status, AbkTab.Build, AbkTab.Modules, AbkTab.Flash, AbkTab.Settings)
         }
     }
-    val activeTab = if (selectedTab in visibleTabs) selectedTab else visibleTabs.first()
+    val isLspChildPage = state.managerSurfaceMode == MANAGER_SURFACE_LSP && selectedTab == AbkTab.LspScope
+    val activeTab = if (selectedTab in visibleTabs || isLspChildPage) selectedTab else visibleTabs.first()
     val motionScheme = MaterialTheme.motionScheme
     val density = LocalDensity.current
     var bottomBarHeightPx by remember { mutableIntStateOf(0) }
@@ -431,7 +431,8 @@ private fun AbkMainScaffold(
         AbkTab.Settings -> settingsThemePageVisible
         AbkTab.RootAuth -> rootAuthDetailPageVisible
         AbkTab.RuntimeHome -> managerPatchPageVisible
-        AbkTab.LspHome, AbkTab.LspModules, AbkTab.LspScope, AbkTab.LspLogs -> false
+        AbkTab.LspScope -> true
+        AbkTab.LspHome, AbkTab.LspModules, AbkTab.LspLogs -> false
         else -> false
     }
 
@@ -498,7 +499,8 @@ private fun AbkMainScaffold(
     }
 
     LaunchedEffect(visibleTabs, selectedTab, state.runtimeNavigationEnabled) {
-        if (selectedTab !in visibleTabs) {
+        val keepInternalLspPage = state.managerSurfaceMode == MANAGER_SURFACE_LSP && selectedTab == AbkTab.LspScope
+        if (selectedTab !in visibleTabs && !keepInternalLspPage) {
             selectedTab = when (state.managerSurfaceMode) {
                 MANAGER_SURFACE_ROOT -> AbkTab.RuntimeHome
                 MANAGER_SURFACE_LSP -> AbkTab.LspHome
