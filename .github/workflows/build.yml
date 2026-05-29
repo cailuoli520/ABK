@@ -1096,8 +1096,14 @@ jobs:
                               selinux_c.write_text(text.replace(anchor, anchor + block, 1))
                           elif '#include "selinux_defs.h"\n' in text:
                               selinux_c.write_text(text.replace('#include "selinux_defs.h"\n', '#include "selinux_defs.h"\n' + block, 1))
+                          elif '#include "selinux/selinux.h"\n' in text:
+                              selinux_c.write_text(text.replace('#include "selinux/selinux.h"\n', '#include "selinux/selinux.h"\n' + block, 1))
                           else:
-                              raise SystemExit(f"{selinux_c} missing SELinux compatibility insertion anchor")
+                              # 未找到已知锚点，在最后一个 #include 之后注入
+                              lines = text.splitlines(keepends=True)
+                              last_include = max(i for i, l in enumerate(lines) if l.startswith("#include"))
+                              lines.insert(last_include + 1, block)
+                              selinux_c.write_text("".join(lines))
                           print("Injected ReSukiSU SUSFS SELinux hide compatibility globals")
 
               sucompat_c = kernel_dir / "feature/sucompat.c"
@@ -1133,6 +1139,68 @@ jobs:
                               print("Fixed SukiSU/ReSukiSU builtin sulog grant_root argv type for CONFIG_KSU_SUSFS")
                               break
           PY
+
+          # SUSFS v2.1.0 新增符号兼容：fake_status / fake_status_initialize_key / initialize_fake_status
+          KSU_SRC=""
+          for d in common/drivers/kernelsu drivers/kernelsu KernelSU/kernel; do
+            [ -d "$d" ] && { KSU_SRC="$d"; break; }
+          done
+          if [ -n "$KSU_SRC" ]; then
+            echo "应用 SUSFS v2.1.0 兼容修复: $KSU_SRC"
+
+            # 创建 susfs_compat.c 提供缺失的 SUSFS 符号
+            printf '%s\n' \
+              '// SPDX-License-Identifier: GPL-2.0' \
+              '#include <linux/kernel.h>' \
+              '#include <linux/mm.h>' \
+              '#include <linux/gfp.h>' \
+              '#include <linux/jump_label.h>' \
+              '#include <linux/slab.h>' \
+              '' \
+              '#ifdef CONFIG_KSU_SUSFS' \
+              'struct page *fake_status = NULL;' \
+              'struct static_key_false fake_status_initialize_key = STATIC_KEY_FALSE_INIT;' \
+              '' \
+              'void initialize_fake_status(void)' \
+              '{' \
+              '    fake_status = alloc_page(GFP_KERNEL | __GFP_ZERO);' \
+              '    if (fake_status)' \
+              '        static_branch_enable(&fake_status_initialize_key);' \
+              '}' \
+              '#endif' \
+              > "$KSU_SRC/susfs_compat.c"
+            if ! grep -q "susfs_compat.o" "$KSU_SRC/Kbuild" 2>/dev/null; then
+              echo "" >> "$KSU_SRC/Kbuild"
+              echo "# SUSFS v2.1.0 兼容符号" >> "$KSU_SRC/Kbuild"
+              echo "kernelsu-objs += susfs_compat.o" >> "$KSU_SRC/Kbuild"
+              echo "已添加 susfs_compat.o 到 Kbuild"
+            fi
+
+            # 修复 ksu_selinux_hide_enabled 和 fake_state 的符号可见性
+            SELINUX_HIDE_C="$KSU_SRC/feature/selinux_hide.c"
+            if [ -f "$SELINUX_HIDE_C" ]; then
+              if grep -q "^static bool ksu_selinux_hide_enabled" "$SELINUX_HIDE_C"; then
+                sed -i 's/^static bool ksu_selinux_hide_enabled/bool ksu_selinux_hide_enabled/' "$SELINUX_HIDE_C"
+                echo "已移除 ksu_selinux_hide_enabled 的 static 限定"
+              fi
+              if grep -q "^__maybe_static struct selinux_state fake_state" "$SELINUX_HIDE_C"; then
+                sed -i 's/^__maybe_static struct selinux_state fake_state;/struct selinux_state fake_state;/' "$SELINUX_HIDE_C"
+                echo "已移除 fake_state 的 __maybe_static 限定"
+              fi
+            fi
+
+            # 禁用 BTF 避免 pahole 版本不兼容导致 .btf.vmlinux.bin.o 链接失败
+            COMMON_ROOT="$(pwd)/common"
+            if [ -d "$COMMON_ROOT" ]; then
+              DEFCONFIG="$COMMON_ROOT/arch/arm64/configs/gki_defconfig"
+              if grep -q "^CONFIG_DEBUG_INFO_BTF=y" "$DEFCONFIG" 2>/dev/null; then
+                sed -i 's/^CONFIG_DEBUG_INFO_BTF=y/# CONFIG_DEBUG_INFO_BTF is not set/' "$DEFCONFIG"
+                echo "已禁用 CONFIG_DEBUG_INFO_BTF (pahole 版本不兼容)"
+              fi
+            fi
+          else
+            echo "::warning::未找到 ReSukiSU 源码目录，跳过 SUSFS v2.1.0 兼容修复"
+          fi
 
       - name: 配置 SukiSU 管理器信息
         if: inputs.ksu_variant == 'SukiSU'
@@ -2632,10 +2700,12 @@ jobs:
 
           VERSION_INPUT=$(echo "${{ inputs.version }}" | tr -d '[:space:]')
           if [ -n "$VERSION_INPUT" ]; then
-            CLEAN_VERSION=$(echo "$VERSION_INPUT" | sed -E 's/^[0-9]+\.[0-9]+\.[0-9]+//')
+            # Sanitize: strip shell-dangerous chars that break sed/perl interpolation
+            SANITIZED_VERSION=$(echo "$VERSION_INPUT" | sed -E 's/^[0-9]+\.[0-9]+\.[0-9]+//' | tr -d '()<>|&;!$`"'"'"'\\#~')
+            CLEAN_VERSION="$SANITIZED_VERSION"
             perl -i -0777 -pe 's/(.*)echo "\$\{KERNELVERSION\}\$\{file_localversion\}\$\{config_localversion\}\$\{LOCALVERSION\}\$\{scm_version\}"/$1echo "\$\{KERNELVERSION\}'"${CLEAN_VERSION}"'"/s' ./common/scripts/setlocalversion 2>/dev/null || true
             sed -i "\$s|echo \"\$res\"|echo \"${CLEAN_VERSION}\"|" ./common/scripts/setlocalversion 2>/dev/null || true
-            sed -i '/^CONFIG_LOCALVERSION=/ s/="\([^"]*\)"/="'"$CLEAN_VERSION"'"/' ./common/arch/arm64/configs/gki_defconfig
+            sed -i '/^CONFIG_LOCALVERSION=/ s/="\([^"]*\)"/="'"$CLEAN_VERSION"'"/' ./common/arch/arm64/configs/gki_defconfig 2>/dev/null || true
           elif [ ! -f "build/build.sh" ]; then
             cd ./common
             BID="ab$((RANDOM % 90000000 + 10000000))"
