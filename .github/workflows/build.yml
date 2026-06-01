@@ -961,13 +961,22 @@ jobs:
                       text = selinux_c.read_text()
                       compat_symbols = [
                           "ksu_selinux_hide_running",
+                          "ksu_selinux_hide_enabled",
                           "struct selinux_state fake_state",
+                          "fake_status_initialize_key",
+                          "struct page *fake_status",
+                          "initialize_fake_status",
                           "struct selinux_policy *backup_sepolicy",
                           "security_context_to_sid_with_policy",
                           "security_sid_to_context_with_policy",
                           "security_compute_av_user_with_policy",
                       ]
                       if not all(symbol in tree_text for symbol in compat_symbols):
+                          if "#include <linux/jump_label.h>" not in text:
+                              for include_anchor in ('#include "linux/version.h"\n', '#include "selinux_defs.h"\n'):
+                                  if include_anchor in text:
+                                      text = text.replace(include_anchor, include_anchor + "#include <linux/jump_label.h>\n", 1)
+                                      break
                           anchor = "u32 ksu_file_sid __read_mostly = 0;\n"
                           block = "\n".join([
                               "",
@@ -975,6 +984,12 @@ jobs:
                               "#ifdef CONFIG_KSU_SUSFS",
                               "struct selinux_state fake_state;",
                               "bool ksu_selinux_hide_running __read_mostly = false;",
+                              "bool ksu_selinux_hide_enabled __read_mostly = false;",
+                              "DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);",
+                              "struct page *fake_status = NULL;",
+                              "void initialize_fake_status(void)",
+                              "{",
+                              "}",
                               "struct selinux_policy *backup_sepolicy;",
                               "#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)",
                               "int security_context_to_sid_with_policy(struct selinux_policy *policy, const char *scontext, u32 scontext_len,",
@@ -2657,6 +2672,7 @@ jobs:
 
           python3 - <<'PY'
           from pathlib import Path
+          from textwrap import dedent
           import re
 
           INIT_BODY = """int __init kernelsu_init(void)
