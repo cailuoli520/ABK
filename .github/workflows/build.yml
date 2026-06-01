@@ -3310,6 +3310,8 @@ jobs:
           changed = ensure_official_susfs_objects(ksu_dir) or changed
           changed = patch_official_selinux_hide(ksu_dir) or changed
           changed = ensure_official_symbol_resolver_exports(ksu_dir) or changed
+          changed = ensure_official_runtime_compat(ksu_dir) or changed
+          changed = ensure_official_boot_event_compat(ksu_dir) or changed
 
           runtime_c = ksu_dir / "runtime/ksud_integration.c"
           if runtime_c.exists():
