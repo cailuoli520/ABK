@@ -614,36 +614,45 @@ def patch_selinux_hide(path, changed_files):
         "static bool ksu_selinux_hide_enabled __read_mostly = false;",
         "bool ksu_selinux_hide_enabled __read_mostly = false;",
     )
-    text = text.replace(
-        "static DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);",
+    text = re.sub(
+        r"(?m)^\s*(?:static\s+|__maybe_static\s+)?DEFINE_STATIC_KEY_FALSE\s*\(\s*fake_status_initialize_key\s*\)\s*;",
         "DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);",
-    )
-    text = text.replace(
-        "static struct page *fake_status = NULL;",
-        "struct page *fake_status = NULL;",
+        text,
     )
     text = re.sub(
-        r"(?m)^static void initialize_fake_status\s*\(\s*(?:void)?\s*\)",
+        r"(?m)^\s*(?:static\s+|__maybe_static\s+)?struct\s+page\s*\*\s*fake_status\s*(?:=\s*NULL)?\s*;",
+        "struct page *fake_status = NULL;",
+        text,
+    )
+    text = re.sub(
+        r"(?m)^\s*(?:static\s+|__maybe_static\s+)?void\s+initialize_fake_status\s*\(\s*(?:void)?\s*\)",
         "void initialize_fake_status(void)",
         text,
     )
-    if "DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key)" not in text:
+    fake_status_additions = []
+    if not re.search(r"(?m)^\s*DEFINE_STATIC_KEY_FALSE\s*\(\s*fake_status_initialize_key\s*\)\s*;", text):
+        fake_status_additions.append("DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);")
+    if not re.search(r"(?m)^\s*struct\s+page\s*\*\s*fake_status\s*(?:=\s*NULL)?\s*;", text):
+        fake_status_additions.append("struct page *fake_status = NULL;")
+    if not re.search(r"(?m)^\s*void\s+initialize_fake_status\s*\(\s*(?:void)?\s*\)\s*\{", text):
+        fake_status_additions.extend([
+            "void initialize_fake_status(void)",
+            "{",
+            "}",
+        ])
+    if fake_status_additions:
         if "jump_label.h" not in text:
             text = ensure_include(text, "#include <linux/jump_label.h>", "#include <linux/mutex.h>\n")
         anchor = "bool ksu_selinux_hide_running __read_mostly = false;\n"
         if anchor not in text:
             die(f"missing selinux_hide fake status anchor: {path}")
-        block = r'''
-
-#ifdef CONFIG_KSU_SUSFS
-DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);
-struct page *fake_status = NULL;
-
-void initialize_fake_status(void)
-{
-}
-#endif
-'''
+        block = "\n".join([
+            "",
+            "#ifdef CONFIG_KSU_SUSFS",
+            *fake_status_additions,
+            "#endif",
+            "",
+        ])
         text = text.replace(anchor, anchor + block, 1)
     text = text.replace(
         "static int security_context_to_sid_with_policy(",
