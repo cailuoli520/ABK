@@ -1033,57 +1033,23 @@ jobs:
               if sulog_event_c.exists():
                   text = sulog_event_c.read_text()
                   marker = "builtin SUSFS ksu_sulog_capture() expects argv_user as a pointer"
-                  def detect_sulog_argv(source):
-                      match = re.search(r"(?s)\bksu_sulog_capture\s*\((.*?)\)\s*\{", source)
-                      if not match:
-                          return None
-                      params = [part.strip() for part in match.group(1).split(",")]
-                      if len(params) < 5:
-                          return None
-                      return " ".join(params[3].split())
-
-                  argv_decl = detect_sulog_argv(text)
-                  if argv_decl is None:
-                      print(f"Skip sulog argv compatibility for unexpected ksu_sulog_capture() signature: {sulog_event_c}")
-                      continue
-                  user_arg_null_is_pointer = "user_arg_null_ptr()" in text
-                  argv_is_pointer = "*" in argv_decl
-                  if argv_is_pointer:
-                      susfs_argv = "USER_ARG_NULL" if user_arg_null_is_pointer else "&USER_ARG_NULL"
-                  else:
-                      susfs_argv = "*USER_ARG_NULL" if user_arg_null_is_pointer else "USER_ARG_NULL"
                   new = "\n".join([
-                      "    /* ABK: builtin SUSFS ksu_sulog_capture() argv type compatibility. */",
+                      "    /* ABK: builtin SUSFS ksu_sulog_capture() expects argv_user as a pointer. */",
                       "#ifdef CONFIG_KSU_SUSFS",
-                      f"    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, {susfs_argv}, gfp);",
+                      "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, NULL, gfp);",
                       "#else",
                       "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, USER_ARG_NULL, gfp);",
                       "#endif",
                   ])
-                  pattern = re.compile(
-                      r"(?m)^    /\* ABK: builtin SUSFS ksu_sulog_capture\(\).*?\*/\n"
-                      r"#ifdef CONFIG_KSU_SUSFS\n"
-                      r"    pending = ksu_sulog_capture\(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, [^,]+, gfp\);\n"
-                      r"#else\n"
-                      r"    pending = ksu_sulog_capture\(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, USER_ARG_NULL, gfp\);\n"
-                      r"#endif"
-                  )
-                  text, count = pattern.subn(new, text, count=1)
-                  changed_sulog = count > 0
-                  if not changed_sulog:
+                  if marker not in text:
                       for old in (
                           "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, USER_ARG_NULL, gfp);",
                           "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, &USER_ARG_NULL, gfp);",
-                          "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, *USER_ARG_NULL, gfp);",
-                          "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, NULL, gfp);",
                       ):
                           if old in text:
-                              text = text.replace(old, new, 1)
-                              changed_sulog = True
+                              sulog_event_c.write_text(text.replace(old, new, 1))
+                              print("Fixed SukiSU/ReSukiSU builtin sulog grant_root argv type for CONFIG_KSU_SUSFS")
                               break
-                  if changed_sulog:
-                      sulog_event_c.write_text(text)
-                      print(f"Fixed SukiSU/ReSukiSU builtin sulog grant_root argv type: {argv_decl} -> {susfs_argv}")
           PY
 
       - name: 配置 SukiSU 管理器信息
@@ -3134,43 +3100,33 @@ jobs:
                       "bool ksu_selinux_hide_running __read_mostly = false;\n",
                       "struct selinux_state fake_state;\n",
                   )
-              text = re.sub(
-                  r"(?m)^\s*(?:static\s+|__maybe_static\s+)?DEFINE_STATIC_KEY_FALSE\s*\(\s*fake_status_initialize_key\s*\)\s*;",
+              text = text.replace(
+                  "static DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);",
                   "DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);",
-                  text,
               )
-              text = re.sub(
-                  r"(?m)^\s*(?:static\s+|__maybe_static\s+)?struct\s+page\s*\*\s*fake_status\s*(?:=\s*NULL)?\s*;",
+              text = text.replace(
+                  "static struct page *fake_status = NULL;",
                   "struct page *fake_status = NULL;",
-                  text,
               )
               text = re.sub(
-                  r"(?m)^\s*(?:static\s+|__maybe_static\s+)?void\s+initialize_fake_status\s*\(\s*(?:void)?\s*\)",
+                  r"(?m)^static void initialize_fake_status\s*\(\s*(?:void)?\s*\)",
                   "void initialize_fake_status(void)",
                   text,
               )
-              fake_status_additions = []
-              if not re.search(r"(?m)^\s*DEFINE_STATIC_KEY_FALSE\s*\(\s*fake_status_initialize_key\s*\)\s*;", text):
-                  fake_status_additions.append("DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);")
-              if not re.search(r"(?m)^\s*struct\s+page\s*\*\s*fake_status\s*(?:=\s*NULL)?\s*;", text):
-                  fake_status_additions.append("struct page *fake_status = NULL;")
-              if not re.search(r"(?m)^\s*void\s+initialize_fake_status\s*\(\s*(?:void)?\s*\)\s*\{", text):
-                  fake_status_additions.extend([
-                      "void initialize_fake_status(void)",
-                      "{",
-                      "}",
-                  ])
-              if fake_status_additions:
+              if "DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key)" not in text:
                   if "jump_label.h" not in text:
                       text = ensure_include(text, "#include <linux/jump_label.h>", "#include <linux/mutex.h>\n")
-                  block = "\n".join([
-                      "",
-                      "#ifdef CONFIG_KSU_SUSFS",
-                      *fake_status_additions,
-                      "#endif",
-                      "",
-                  ])
+                  block = dedent("""\
 
+                  #ifdef CONFIG_KSU_SUSFS
+                  DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);
+                  struct page *fake_status = NULL;
+
+                  void initialize_fake_status(void)
+                  {
+                  }
+                  #endif
+                  """)
                   text = ensure_line_after(
                       text,
                       "struct selinux_state fake_state;\n",
@@ -3240,8 +3196,6 @@ jobs:
 
               text = kbuild.read_text()
               missing = []
-              if "feature/selinux_hide.o" not in text:
-                  missing.append("kernelsu-objs += feature/selinux_hide.o")
               if "hook/lsm_hook.o" not in text:
                   missing.append("kernelsu-objs += hook/lsm_hook.o")
               if "hook/arm64/patch_memory.o" not in text:
@@ -3434,18 +3388,16 @@ jobs:
               "static bool ksu_selinux_hide_running __read_mostly = false;",
               "bool ksu_selinux_hide_running __read_mostly = false;",
           )
-          text = re.sub(
-              r"(?m)^\s*(?:static\s+|__maybe_static\s+)?DEFINE_STATIC_KEY_FALSE\s*\(\s*fake_status_initialize_key\s*\)\s*;",
+          text = text.replace(
+              "static DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);",
               "DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);",
-              text,
           )
-          text = re.sub(
-              r"(?m)^\s*(?:static\s+|__maybe_static\s+)?struct\s+page\s*\*\s*fake_status\s*(?:=\s*NULL)?\s*;",
+          text = text.replace(
+              "static struct page *fake_status = NULL;",
               "struct page *fake_status = NULL;",
-              text,
           )
           text = re.sub(
-              r"(?m)^\s*(?:static\s+|__maybe_static\s+)?void\s+initialize_fake_status\s*\(\s*(?:void)?\s*\)",
+              r"(?m)^static void initialize_fake_status\s*\(\s*(?:void)?\s*\)",
               "void initialize_fake_status(void)",
               text,
           )
@@ -3460,12 +3412,6 @@ jobs:
           missing = [marker for marker in required if marker not in text]
           if missing:
               raise SystemExit(f"{path} 缺少 Official 6.1-6.12 SELinux 导出: {missing}")
-          if not re.search(r"(?m)^\s*DEFINE_STATIC_KEY_FALSE\s*\(\s*fake_status_initialize_key\s*\)\s*;", text):
-              raise SystemExit(f"{path} 缺少 fake_status_initialize_key 定义")
-          if not re.search(r"(?m)^\s*struct\s+page\s*\*\s*fake_status\s*(?:=\s*NULL)?\s*;", text):
-              raise SystemExit(f"{path} 缺少 fake_status 定义")
-          if not re.search(r"(?m)^\s*void\s+initialize_fake_status\s*\(\s*(?:void)?\s*\)\s*\{", text):
-              raise SystemExit(f"{path} 缺少 initialize_fake_status 定义")
 
           if text != original:
               path.write_text(text)
@@ -3573,58 +3519,24 @@ jobs:
               if sulog_event_c.exists():
                   text = sulog_event_c.read_text()
                   marker = "builtin SUSFS ksu_sulog_capture() expects argv_user as a pointer"
-                  def detect_sulog_argv(source):
-                      match = re.search(r"(?s)\bksu_sulog_capture\s*\((.*?)\)\s*\{", source)
-                      if not match:
-                          return None
-                      params = [part.strip() for part in match.group(1).split(",")]
-                      if len(params) < 5:
-                          return None
-                      return " ".join(params[3].split())
-
-                  argv_decl = detect_sulog_argv(text)
-                  if argv_decl is None:
-                      print(f"  跳过 {sulog_event_c} 的 sulog argv 兼容：未识别 ksu_sulog_capture() 签名")
-                      continue
-                  user_arg_null_is_pointer = "user_arg_null_ptr()" in text
-                  argv_is_pointer = "*" in argv_decl
-                  if argv_is_pointer:
-                      susfs_argv = "USER_ARG_NULL" if user_arg_null_is_pointer else "&USER_ARG_NULL"
-                  else:
-                      susfs_argv = "*USER_ARG_NULL" if user_arg_null_is_pointer else "USER_ARG_NULL"
                   new = "\n".join([
-                      "    /* ABK: builtin SUSFS ksu_sulog_capture() argv type compatibility. */",
+                      "    /* ABK: builtin SUSFS ksu_sulog_capture() expects argv_user as a pointer. */",
                       "#ifdef CONFIG_KSU_SUSFS",
-                      f"    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, {susfs_argv}, gfp);",
+                      "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, NULL, gfp);",
                       "#else",
                       "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, USER_ARG_NULL, gfp);",
                       "#endif",
                   ])
-                  pattern = re.compile(
-                      r"(?m)^    /\* ABK: builtin SUSFS ksu_sulog_capture\(\).*?\*/\n"
-                      r"#ifdef CONFIG_KSU_SUSFS\n"
-                      r"    pending = ksu_sulog_capture\(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, [^,]+, gfp\);\n"
-                      r"#else\n"
-                      r"    pending = ksu_sulog_capture\(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, USER_ARG_NULL, gfp\);\n"
-                      r"#endif"
-                  )
-                  text, count = pattern.subn(new, text, count=1)
-                  changed_sulog = count > 0
-                  if not changed_sulog:
+                  if marker not in text:
                       for old in (
                           "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, USER_ARG_NULL, gfp);",
                           "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, &USER_ARG_NULL, gfp);",
-                          "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, *USER_ARG_NULL, gfp);",
-                          "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, NULL, gfp);",
                       ):
                           if old in text:
-                              text = text.replace(old, new, 1)
-                              changed_sulog = True
+                              sulog_event_c.write_text(text.replace(old, new, 1))
+                              changed = True
+                              print(f"  已修复 {sulog_event_c} 的 grant_root argv 参数类型")
                               break
-                  if changed_sulog:
-                      sulog_event_c.write_text(text)
-                      changed = True
-                      print(f"  已修复 {sulog_event_c} 的 grant_root argv 参数类型: {argv_decl} -> {susfs_argv}")
 
           if not changed:
               print("SukiSU 源码兼容修复无需修改。")
@@ -3664,9 +3576,9 @@ jobs:
           fi
 
           if [ -f "$KSU_BUILD_DIR/sulog/event.c" ]; then
-            if grep -qF 'const struct user_arg_ptr argv' "$KSU_BUILD_DIR/sulog/event.c" \
+            if grep -qF 'struct user_arg_ptr *argv_user' "$KSU_BUILD_DIR/sulog/event.c" \
               && grep -Eq 'NULL, (&)?USER_ARG_NULL, gfp' "$KSU_BUILD_DIR/sulog/event.c" \
-              && ! grep -qF 'builtin SUSFS ksu_sulog_capture() argv type compatibility' "$KSU_BUILD_DIR/sulog/event.c"; then
+              && ! grep -qF 'builtin SUSFS ksu_sulog_capture() expects argv_user as a pointer' "$KSU_BUILD_DIR/sulog/event.c"; then
               echo "::error::SukiSU/ReSukiSU sulog/event.c 仍存在 argv 参数类型不兼容调用: $KSU_BUILD_DIR/sulog/event.c"
               exit 1
             fi

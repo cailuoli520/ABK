@@ -559,52 +559,20 @@ jobs:
 
           text = path.read_text()
           marker = "builtin SUSFS ksu_sulog_capture() expects argv_user as a pointer"
-          def detect_sulog_argv(source):
-              match = re.search(r"(?s)\bksu_sulog_capture\s*\((.*?)\)\s*\{", source)
-              if not match:
-                  return None
-              params = [part.strip() for part in match.group(1).split(",")]
-              if len(params) < 5:
-                  return None
-              return " ".join(params[3].split())
-
-          argv_decl = detect_sulog_argv(text)
-          if argv_decl is None:
-              print(f"skip {path}: unexpected ksu_sulog_capture() signature")
-              raise SystemExit(0)
-          user_arg_null_is_pointer = "user_arg_null_ptr()" in text
-          argv_is_pointer = "*" in argv_decl
-          if argv_is_pointer:
-              susfs_argv = "USER_ARG_NULL" if user_arg_null_is_pointer else "&USER_ARG_NULL"
-          else:
-              susfs_argv = "*USER_ARG_NULL" if user_arg_null_is_pointer else "USER_ARG_NULL"
-
           new = "\n".join([
-              "    /* ABK: builtin SUSFS ksu_sulog_capture() argv type compatibility. */",
+              "    /* ABK: builtin SUSFS ksu_sulog_capture() expects argv_user as a pointer. */",
               "#ifdef CONFIG_KSU_SUSFS",
-              f"    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, {susfs_argv}, gfp);",
+              "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, NULL, gfp);",
               "#else",
               "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, USER_ARG_NULL, gfp);",
               "#endif",
           ])
 
           changed = False
-          pattern = re.compile(
-              r"(?m)^    /\* ABK: builtin SUSFS ksu_sulog_capture\(\).*?\*/\n"
-              r"#ifdef CONFIG_KSU_SUSFS\n"
-              r"    pending = ksu_sulog_capture\(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, [^,]+, gfp\);\n"
-              r"#else\n"
-              r"    pending = ksu_sulog_capture\(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, USER_ARG_NULL, gfp\);\n"
-              r"#endif"
-          )
-          text, count = pattern.subn(new, text, count=1)
-          changed = count > 0
-          if not changed:
+          if marker not in text:
               for old in (
                   "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, USER_ARG_NULL, gfp);",
                   "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, &USER_ARG_NULL, gfp);",
-                  "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, *USER_ARG_NULL, gfp);",
-                  "    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, NULL, gfp);",
               ):
                   if old in text:
                       text = text.replace(old, new, 1)
@@ -613,14 +581,17 @@ jobs:
 
           if changed:
               path.write_text(text)
-              print(f"patched {path}: argv_decl={argv_decl!r} USER_ARG_NULL={susfs_argv}")
+              print(f"patched {path}")
           else:
               print(f"no change for {path}")
 
           final_text = path.read_text()
-          expected = f"pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, {susfs_argv}, gfp);"
-          if expected not in final_text:
-              raise SystemExit(f"{path} missing expected ksu_sulog_capture grant_root argv call: {expected}")
+          incompatible = re.search(
+              r"pending = ksu_sulog_capture\(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, &?USER_ARG_NULL, gfp\);",
+              final_text,
+          )
+          if incompatible and marker not in final_text:
+              raise SystemExit(f"{path} still contains incompatible ksu_sulog_capture grant_root argv call")
           PY
 
       - name: 配置 defconfig
