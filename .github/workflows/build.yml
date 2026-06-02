@@ -4314,6 +4314,8 @@ jobs:
           path: |
             *AnyKernel3.zip
             *.img
+            LICENSE
+            THIRD_PARTY_NOTICES.md
           compression-level: 9
 
       - name: 上传补丁冲突文件
