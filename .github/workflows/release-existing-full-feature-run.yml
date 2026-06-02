@@ -97,10 +97,11 @@ jobs:
           while IFS= read -r artifact; do
             [ -n "$artifact" ] || continue
             echo "下载 artifact: $artifact"
+            artifact_dir="$(printf '%s' "$artifact" | tr '/:\\' '___')"
             gh run download "$SOURCE_RUN_ID" \
               --repo "$REPO" \
               --name "$artifact" \
-              --dir downloaded-artifacts
+              --dir "downloaded-artifacts/$artifact_dir"
           done < artifact_names.txt
 
       - name: 准备 Release 元数据
