@@ -861,6 +861,7 @@ jobs:
 
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           def preprocessor_delta(text):
               opens = 0
