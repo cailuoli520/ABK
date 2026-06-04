@@ -235,6 +235,7 @@ jobs:
           Environment:
             Set GITHUB_TOKEN before triggering builds that require authentication.
           EOF
+          curl https://raw.githubusercontent.com/xingguangcuican6666/ABK/refs/heads/dev/LICENSE --output dist/abk/LICENSE
 
       - name: Add bundled README
         if: runner.os == 'Windows'
@@ -251,6 +252,8 @@ jobs:
           Environment:
             Set GITHUB_TOKEN before triggering builds that require authentication.
           "@ | Set-Content -Path dist/abk/README.txt
+          
+          curl https://raw.githubusercontent.com/xingguangcuican6666/ABK/refs/heads/dev/LICENSE --output dist/abk/LICENSE
 
       - name: Verify bundle contents
         if: runner.os != 'Windows'
