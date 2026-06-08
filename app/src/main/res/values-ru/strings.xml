@@ -675,9 +675,13 @@
     <string name="settings_app_update_status_available">Можно обновить</string>
     <string name="settings_app_update_status_latest">Актуально</string>
     <string name="settings_app_update_result">Текущая %1$s → Удалённая %2$s · %3$s / %4$s · %5$s · %6$s</string>
+    <string name="settings_download_install_update">Скачать и установить обновление</string>
+    <string name="settings_app_update_downloading_progress">Загрузка обновления %1$d%%</string>
     <string name="settings_open_update_link">Открыть ссылку обновления</string>
     <string name="settings_app_update_link_missing">В этой записи метаданных нет ссылки для скачивания</string>
     <string name="settings_app_update_error">Ошибка проверки обновления</string>
+    <string name="settings_app_update_install_permission">Сначала разрешите ABK устанавливать неизвестные приложения, затем нажмите обновление ещё раз.</string>
+    <string name="settings_app_update_install_failed">Не удалось открыть системный установщик.</string>
     <string name="settings_download_directory">Каталог загрузок по умолчанию</string>
     <string name="settings_download_directory_desc">Артефакты сборки, prebuilt GKI и модули сохраняются в эту папку файловой системы.</string>
     <string name="settings_download_directory_choose">Выбрать папку</string>
@@ -987,6 +991,10 @@
     <string name="vm_app_update_available">Найдена новая версия: %1$s</string>
     <string name="vm_app_update_latest">Это приложение уже обновлено</string>
     <string name="vm_app_update_check_failed">Не удалось проверить обновления приложения: %1$s</string>
+    <string name="vm_app_update_download_url_missing">Для этой записи обновления нет URL загрузки.</string>
+    <string name="vm_app_update_apk_missing">В загруженном пакете обновления не найден APK для установки.</string>
+    <string name="vm_app_update_download_failed">Не удалось скачать обновление приложения: %1$s</string>
+    <string name="vm_app_update_download_ready">Пакет обновления загружен: %1$s</string>
     <string name="vm_artifact_download_login_required">Вход не выполнен — скачивать артефакты сборки нельзя</string>
     <string name="vm_mirror_prepare_failed">Не удалось подготовить загрузку через зеркало: %1$s</string>
     <string name="vm_artifact_download_failed">Скачивание не удалось: %1$s</string>

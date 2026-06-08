@@ -181,8 +181,11 @@ data class MainUiState(
     val appUpdateStability: String = APP_UPDATE_STABILITY_STABLE,
     val appUpdateLine: String = APP_UPDATE_LINE_NORMAL,
     val appUpdateChecking: Boolean = false,
+    val appUpdateDownloading: Boolean = false,
+    val appUpdateDownloadProgress: Int = 0,
     val appUpdateInfo: AppUpdateCheckResult? = null,
     val appUpdateError: String? = null,
+    val appUpdatePendingInstallPath: String? = null,
     val predictiveBackEnabled: Boolean = true,
     val runtimeNavigationEnabled: Boolean = false,
     val webViewDebugEnabled: Boolean = false,
@@ -237,6 +240,7 @@ class MainViewModel @JvmOverloads constructor(
     private val monitoredRunIds = mutableSetOf<Long>()
     private val preparedMirrorArtifacts = mutableMapOf<Long, Set<String>>()
     private val artifactDownloadJobs = mutableMapOf<Long, Job>()
+    private var appUpdateDownloadJob: Job? = null
     private val cancelledArtifactDownloadKeys = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
     private var hasCheckedWorkflowEnablementThisLaunch = false
     private var hasRefreshedGitHubSessionThisLaunch = false
@@ -2539,6 +2543,7 @@ class MainViewModel @JvmOverloads constructor(
     fun setAppUpdateLine(value: String) = viewModelScope.launch {
         prefs.setAppUpdateLine(value)
     }
+
     fun checkAppUpdate() {
         if (_uiState.value.appUpdateChecking) return
         viewModelScope.launch {
@@ -2609,6 +2614,72 @@ class MainViewModel @JvmOverloads constructor(
                 Result.Loading -> Unit
             }
         }
+    }
+
+    fun downloadAndInstallAppUpdate() {
+        if (appUpdateDownloadJob != null || _uiState.value.appUpdateDownloading) return
+        val info = _uiState.value.appUpdateInfo?.takeIf { it.hasUpdate } ?: return
+        val downloadUrl = info.remote.downloadUrl.trim()
+        if (downloadUrl.isBlank()) {
+            val message = text(R.string.vm_app_update_download_url_missing)
+            _uiState.update { it.copy(appUpdateError = message) }
+            showSnackbar(message, longDuration = true)
+            return
+        }
+        appUpdateDownloadJob = viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    appUpdateDownloading = true,
+                    appUpdateDownloadProgress = 0,
+                    appUpdateError = null,
+                    appUpdatePendingInstallPath = null
+                )
+            }
+            try {
+                val token = prefs.accessToken.first()
+                val result = DownloadUtils.downloadAppUpdatePackage(
+                    getApplication(),
+                    token = token,
+                    url = downloadUrl,
+                    preferredLine = info.line
+                ) { progress ->
+                    _uiState.update { state ->
+                        state.copy(appUpdateDownloading = true, appUpdateDownloadProgress = progress)
+                    }
+                }
+                if (result.apkFile != null) {
+                    _uiState.update {
+                        it.copy(
+                            appUpdateDownloading = false,
+                            appUpdateDownloadProgress = 100,
+                            appUpdatePendingInstallPath = result.apkFile.absolutePath,
+                            appUpdateError = null
+                        )
+                    }
+                    showSnackbar(text(R.string.vm_app_update_download_ready, result.apkFile.name))
+                } else {
+                    val message = text(
+                        R.string.vm_app_update_download_failed,
+                        result.errorMessage ?: text(R.string.download_unknown_error)
+                    )
+                    _uiState.update {
+                        it.copy(
+                            appUpdateDownloading = false,
+                            appUpdateDownloadProgress = 0,
+                            appUpdatePendingInstallPath = null,
+                            appUpdateError = message
+                        )
+                    }
+                    showSnackbar(message, longDuration = true)
+                }
+            } finally {
+                appUpdateDownloadJob = null
+            }
+        }
+    }
+
+    fun consumeAppUpdatePendingInstallPath() {
+        _uiState.update { it.copy(appUpdatePendingInstallPath = null) }
     }
 
     fun refreshManagerSettings(force: Boolean = false) {

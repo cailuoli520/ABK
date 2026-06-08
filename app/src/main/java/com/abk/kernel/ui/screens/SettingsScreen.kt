@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.Settings
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -75,6 +76,7 @@ import com.abk.kernel.data.model.normalizeAppUpdateLine
 import com.abk.kernel.data.model.normalizeAppUpdateStability
 import com.abk.kernel.viewmodel.MainUiState
 import com.abk.kernel.viewmodel.MainViewModel
+import java.io.File
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SettingsScreen(
@@ -109,6 +111,12 @@ fun SettingsScreen(
             showAppProfileTemplates = false
             showManagerTools = false
         }
+    }
+
+    LaunchedEffect(state.appUpdatePendingInstallPath) {
+        val apkPath = state.appUpdatePendingInstallPath ?: return@LaunchedEffect
+        launchAppUpdateInstaller(context, apkPath)
+        vm.consumeAppUpdatePendingInstallPath()
     }
 
     fun closeChildPage() {
@@ -640,18 +648,25 @@ private fun SettingsMainContent(
                 if (info.hasUpdate) {
                     val downloadUrl = info.remote.downloadUrl
                     ExpressiveListItem(
-                        title = stringResource(R.string.settings_open_update_link),
-                        subtitle = downloadUrl.ifBlank { stringResource(R.string.settings_app_update_link_missing) },
-                        leadingIcon = Icons.Default.OpenInBrowser,
+                        title = stringResource(R.string.settings_download_install_update),
+                        subtitle = when {
+                            state.appUpdateDownloading -> stringResource(
+                                R.string.settings_app_update_downloading_progress,
+                                state.appUpdateDownloadProgress
+                            )
+                            downloadUrl.isBlank() -> stringResource(R.string.settings_app_update_link_missing)
+                            else -> downloadUrl
+                        },
+                        leadingIcon = Icons.Default.InstallMobile,
                         enabled = downloadUrl.isNotBlank(),
                         trailingContent = {
-                            if (downloadUrl.isNotBlank()) {
-                                Icon(Icons.Default.OpenInBrowser, contentDescription = stringResource(R.string.settings_open_update_link))
+                            if (state.appUpdateDownloading) {
+                                LoadingIndicator(Modifier.size(22.dp))
+                            } else if (downloadUrl.isNotBlank()) {
+                                Icon(Icons.Default.Download, contentDescription = stringResource(R.string.settings_download_install_update))
                             }
                         },
-                        onClick = downloadUrl.takeIf { it.isNotBlank() }?.let { url ->
-                            { openUrl(context, url) }
-                        }
+                        onClick = downloadUrl.takeIf { it.isNotBlank() }?.let { { vm.downloadAndInstallAppUpdate() } }
                     )
                 }
             }
@@ -1886,6 +1901,43 @@ private fun openUrl(context: android.content.Context, url: String) {
     }
 }
 
+private fun launchAppUpdateInstaller(context: android.content.Context, apkPath: String) {
+    val apkFile = File(apkPath)
+    if (!apkFile.isFile) {
+        Toast.makeText(context, context.getString(R.string.ru_apk_not_found, apkPath), Toast.LENGTH_SHORT).show()
+        return
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+        !context.packageManager.canRequestPackageInstalls()
+    ) {
+        val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+            data = Uri.parse("package:${context.packageName}")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { context.startActivity(intent) }
+            .onFailure {
+                Toast.makeText(context, context.getString(R.string.settings_app_update_install_permission), Toast.LENGTH_LONG).show()
+            }
+        return
+    }
+    val uri = FileProvider.getUriForFile(
+        context,
+        "${context.packageName}.fileprovider",
+        apkFile
+    )
+    val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+        data = uri
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+        putExtra(Intent.EXTRA_RETURN_RESULT, false)
+    }
+    runCatching { context.startActivity(intent) }
+        .onFailure {
+            Toast.makeText(context, context.getString(R.string.settings_app_update_install_failed), Toast.LENGTH_LONG).show()
+        }
+}
+
 @Composable
 private fun SettingsHero(
     login: String?,
@@ -2055,6 +2107,10 @@ private fun AppUpdateLinePicker(
 
 @Composable
 private fun appUpdateCheckSubtitle(state: MainUiState): String = when {
+    state.appUpdateDownloading -> stringResource(
+        R.string.settings_app_update_downloading_progress,
+        state.appUpdateDownloadProgress
+    )
     state.appUpdateChecking -> stringResource(R.string.settings_app_update_checking)
     state.appUpdateInfo != null -> appUpdateResultSubtitle(state.appUpdateInfo)
     state.appUpdateError?.isNotBlank() == true -> state.appUpdateError

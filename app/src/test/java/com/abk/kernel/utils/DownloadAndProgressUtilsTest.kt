@@ -2,6 +2,8 @@ package com.abk.kernel.utils
 
 import com.abk.kernel.data.model.ArtifactType
 import com.abk.kernel.data.model.Artifact
+import com.abk.kernel.data.model.APP_UPDATE_LINE_DEV
+import com.abk.kernel.data.model.APP_UPDATE_LINE_NORMAL
 import com.abk.kernel.data.model.DownloadedArtifact
 import com.abk.kernel.data.model.PREBUILT_GKI_RUN_ID
 import com.abk.kernel.data.model.PrebuiltGkiAsset
@@ -99,6 +101,18 @@ class DownloadAndProgressUtilsTest {
         )
 
         assertTrue(DownloadUtils.matchesDownloadedPrebuilt(downloaded, asset))
+    }
+
+    @Test
+    fun selectsExpectedApkForAppUpdateChannel() {
+        val root = createTempDir("app-update-select")
+        val release = File(root, "app-release.apk").apply { writeText("release") }
+        val debug = File(root, "app-debug.apk").apply { writeText("debug") }
+        val devRelease = File(root, "app-release-dev.apk").apply { writeText("dev-release") }
+        val unsigned = File(root, "app-release-unsigned.apk").apply { writeText("unsigned") }
+
+        assertEquals(release, DownloadUtils.selectAppUpdateApk(listOf(debug, release, devRelease, unsigned), APP_UPDATE_LINE_NORMAL))
+        assertEquals(devRelease, DownloadUtils.selectAppUpdateApk(listOf(debug, release, devRelease, unsigned), APP_UPDATE_LINE_DEV))
     }
 
     @Test

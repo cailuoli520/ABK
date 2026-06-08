@@ -675,9 +675,13 @@
     <string name="settings_app_update_status_available">可更新</string>
     <string name="settings_app_update_status_latest">已最新</string>
     <string name="settings_app_update_result">当前 %1$s → 远端 %2$s · %3$s / %4$s · %5$s · %6$s</string>
+    <string name="settings_download_install_update">下载并安装更新</string>
+    <string name="settings_app_update_downloading_progress">正在下载更新 %1$d%%</string>
     <string name="settings_open_update_link">打开更新链接</string>
     <string name="settings_app_update_link_missing">当前元数据未提供下载链接</string>
     <string name="settings_app_update_error">更新检查失败</string>
+    <string name="settings_app_update_install_permission">请先允许 ABK 安装未知应用，再重新点击更新。</string>
+    <string name="settings_app_update_install_failed">无法拉起系统安装器。</string>
     <string name="settings_download_directory">默认下载目录</string>
     <string name="settings_download_directory_desc">构建产物、预编译 GKI 和模块会保存到此文件系统目录。</string>
     <string name="settings_download_directory_choose">选择文件夹</string>
@@ -987,6 +991,10 @@
     <string name="vm_app_update_available">发现新版本：%1$s</string>
     <string name="vm_app_update_latest">当前已是最新版本</string>
     <string name="vm_app_update_check_failed">检查应用更新失败: %1$s</string>
+    <string name="vm_app_update_download_url_missing">当前更新缺少下载地址。</string>
+    <string name="vm_app_update_apk_missing">下载包内未找到可安装的 APK。</string>
+    <string name="vm_app_update_download_failed">下载应用更新失败: %1$s</string>
+    <string name="vm_app_update_download_ready">更新包已下载：%1$s</string>
     <string name="vm_artifact_download_login_required">未登录，无法下载构建产物</string>
     <string name="vm_mirror_prepare_failed">镜像下载准备失败: %1$s</string>
     <string name="vm_artifact_download_failed">下载失败: %1$s</string>
