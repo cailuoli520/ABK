@@ -133,8 +133,10 @@ object DownloadUtils {
             downloaded.filePath.contains("/${artifactStorageFolderName(artifact.name)}/")
 
     fun matchesDownloadedPrebuilt(downloaded: DownloadedArtifact, asset: PrebuiltGkiAsset): Boolean =
-        downloaded.runId == PREBUILT_GKI_RUN_ID &&
-            downloaded.filePath.contains("/prebuilt-gki/${artifactStorageFolderName(asset.name)}/")
+        downloaded.runId == PREBUILT_GKI_RUN_ID && (
+            downloaded.sourceAssetName?.trim() == asset.name ||
+                downloaded.filePath.contains("/prebuilt-gki/${artifactStorageFolderName(asset.name)}/")
+            )
 
     fun artifactStorageFolderName(name: String): String = safeFileName(name)
 
@@ -283,6 +285,7 @@ object DownloadUtils {
                         runTitle = run?.displayTitle ?: run?.name ?: run?.let { "#${it.runNumber}" }
                             ?: context.getString(R.string.workflow_unlinked),
                         runNumber = run?.runNumber ?: 0,
+                        sourceAssetName = artifact.name,
                         category = entry.type.toArtifactCategory()
                     )
                 }
@@ -459,6 +462,7 @@ object DownloadUtils {
                         runId = runId,
                         runTitle = runTitle,
                         runNumber = 0,
+                        sourceAssetName = name,
                         category = entry.type.toArtifactCategory()
                     )
                 }

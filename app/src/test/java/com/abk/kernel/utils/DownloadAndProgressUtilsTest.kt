@@ -2,6 +2,9 @@ package com.abk.kernel.utils
 
 import com.abk.kernel.data.model.ArtifactType
 import com.abk.kernel.data.model.Artifact
+import com.abk.kernel.data.model.DownloadedArtifact
+import com.abk.kernel.data.model.PREBUILT_GKI_RUN_ID
+import com.abk.kernel.data.model.PrebuiltGkiAsset
 import com.abk.kernel.data.model.WorkflowJob
 import com.abk.kernel.data.model.WorkflowRun
 import com.abk.kernel.data.model.WorkflowStep
@@ -43,6 +46,59 @@ class DownloadAndProgressUtilsTest {
                 )
             )
         )
+    }
+
+    @Test
+    fun matchesPrebuiltDownloadsBySourceAssetName() {
+        val asset = PrebuiltGkiAsset(
+            id = 1L,
+            name = "android14-6.1.162-gki.zip",
+            sizeBytes = 1L,
+            browserDownloadUrl = "https://example.com/android14.zip",
+            releaseTag = "gki",
+            releaseName = "GKI",
+            releaseHtmlUrl = "https://example.com/release",
+            publishedAt = "2026-06-08T00:00:00Z"
+        )
+        val downloaded = DownloadedArtifact(
+            id = 1L,
+            name = "boot.img",
+            filePath = "/storage/emulated/0/ABK/prebuilt-gki/some-other-layout/boot.img.bundle.zip",
+            type = ArtifactType.KERNEL_IMG,
+            sizeBytes = 1L,
+            runId = PREBUILT_GKI_RUN_ID,
+            runTitle = "预编译 GKI",
+            sourceAssetName = asset.name,
+            category = ArtifactType.KERNEL_IMG.toArtifactCategory()
+        )
+
+        assertTrue(DownloadUtils.matchesDownloadedPrebuilt(downloaded, asset))
+    }
+
+    @Test
+    fun matchesLegacyPrebuiltDownloadsByPath() {
+        val asset = PrebuiltGkiAsset(
+            id = 2L,
+            name = "AnyKernel3-android14-6.1.162.zip",
+            sizeBytes = 1L,
+            browserDownloadUrl = "https://example.com/ak3.zip",
+            releaseTag = "gki",
+            releaseName = "GKI",
+            releaseHtmlUrl = "https://example.com/release",
+            publishedAt = "2026-06-08T00:00:00Z"
+        )
+        val downloaded = DownloadedArtifact(
+            id = 2L,
+            name = "AnyKernel3-android14-6.1.162.zip",
+            filePath = "/storage/emulated/0/ABK/prebuilt-gki/AnyKernel3-android14-6.1.162.zip/AnyKernel3-android14-6.1.162.zip/AnyKernel3-android14-6.1.162.zip.bundle.zip",
+            type = ArtifactType.ANYKERNEL3,
+            sizeBytes = 1L,
+            runId = PREBUILT_GKI_RUN_ID,
+            runTitle = "预编译 GKI",
+            category = ArtifactType.ANYKERNEL3.toArtifactCategory()
+        )
+
+        assertTrue(DownloadUtils.matchesDownloadedPrebuilt(downloaded, asset))
     }
 
     @Test
