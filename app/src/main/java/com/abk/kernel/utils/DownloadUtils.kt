@@ -398,10 +398,9 @@ object DownloadUtils {
             val records = if (bundleWithNotices) {
                 if (looksLikeNoticeBundle(downloadedFile)) {
                     listOf(
-                        LocalDownloadEntry(
-                            displayName = normalizedArtifactName(downloadedFile.name),
-                            file = downloadedFile,
-                            type = classifyDownloadedFile(downloadedFile)
+                        persistBundledDownloadEntry(
+                            bundleRootDir = requireNotNull(assetDir),
+                            downloadedFile = downloadedFile
                         )
                     )
                 } else {
@@ -778,6 +777,25 @@ object DownloadUtils {
                 type = classifyDownloadedFile(candidate)
             )
         }
+    }
+
+    private fun persistBundledDownloadEntry(
+        bundleRootDir: File,
+        downloadedFile: File
+    ): LocalDownloadEntry {
+        val displayName = normalizedArtifactName(downloadedFile.name)
+        val dirName = safeFileName(displayName).ifBlank { "artifact-bundle" }
+        val candidateDir = File(bundleRootDir, dirName).apply {
+            if (exists()) deleteRecursively()
+            mkdirs()
+        }
+        val persistedBundle = File(candidateDir, downloadedFile.name)
+        downloadedFile.copyTo(persistedBundle, overwrite = true)
+        return LocalDownloadEntry(
+            displayName = displayName,
+            file = persistedBundle,
+            type = classifyDownloadedFile(persistedBundle)
+        )
     }
 
     private fun createNoticeBundle(
