@@ -773,6 +773,17 @@ fun WorkflowRun.isManagerBuild(): Boolean {
 fun WorkflowRun.isPureManagerBuild(): Boolean =
     isManagerBuild() && !isKernelBuild()
 
+/** ABK app workflow only (Build ABK App / Build ABK App Dev). */
+fun WorkflowRun.isAbkManagerBuild(): Boolean {
+    val workflowName = name.orEmpty().lowercase()
+    val lower = "${name.orEmpty()} ${displayTitle.orEmpty()}".lowercase()
+    if (lower.hasUtilityWorkflowSignal()) return false
+    if (workflowName.hasAbkManagerBuildSignal()) return true
+    if (workflowName.hasKernelBuildSignal()) return false
+    if (lower.hasKernelBuildSignal()) return false
+    return lower.hasAbkManagerBuildSignal()
+}
+
 /**
  * Dev manager workflow (e.g. Build ABK App Dev). Uses workflow [name] only — not
  * [WorkflowRun.displayTitle]. Avoids bare `"dev" in text` so "device" does not match.
@@ -799,8 +810,12 @@ private val MANAGER_DEV_WORKFLOW_NAME_MARKERS = listOf(
 private val MANAGER_DEV_NAME_TOKEN =
     Regex("""(^|[\s_.-])dev($|[\s_.-]|\.apk)""", RegexOption.IGNORE_CASE)
 
-private fun String.hasManagerBuildSignal(): Boolean =
+private fun String.hasAbkManagerBuildSignal(): Boolean =
     "abk app" in this || "abk-app" in this ||
+        "build abk app" in this
+
+private fun String.hasManagerBuildSignal(): Boolean =
+    hasAbkManagerBuildSignal() ||
         "build app" in this || "build-app" in this ||
         "debug apk" in this ||
         "manager" in this || "ksu manager" in this || "sukisu manager" in this ||

@@ -74,9 +74,9 @@ object DownloadUtils {
             lower.endsWith(".zip") && isLikelyModuleZipName(lower) -> ArtifactType.SUSFS_MODULE
             isLikelyModuleZipName(lower) && !lower.contains("anykernel") -> ArtifactType.SUSFS_MODULE
             // Build ABK App workflows upload a single artifact bundle named
-            // "abk-apks" that contains the debug/release APK files. Treat the
-            // bundle itself as a manager artifact so completed manager runs
-            // remain visible in the workflow list and manager filter.
+            // "abk-apks" that contains the debug/release APK files. Keep the
+            // dedicated type so legacy persisted downloads still parse cleanly,
+            // while flash-specific UI can filter it out.
             lower == "abk-apks" || lower.contains("abk-apks") -> ArtifactType.ABK_MANAGER
             lower.contains("abk") && lower.endsWith(".apk") -> ArtifactType.ABK_MANAGER
             lower.endsWith(".apk") && (
@@ -115,11 +115,14 @@ object DownloadUtils {
     fun shouldAutoDownload(artifact: Artifact): Boolean {
         val lower = artifact.name.lowercase()
         val type = classifyArtifact(artifact.name)
-        return when (classifyCategory(type)) {
+        return when (type) {
+            ArtifactType.ABK_MANAGER -> false
+            else -> when (classifyCategory(type)) {
             ArtifactCategory.KERNEL,
             ArtifactCategory.MODULE -> true
             ArtifactCategory.MANAGER -> isLikelySupportedManager(lower)
             null -> false
+            }
         }
     }
 

@@ -1,6 +1,7 @@
 package com.abk.kernel.utils
 
 import com.abk.kernel.data.model.ArtifactType
+import com.abk.kernel.data.model.Artifact
 import com.abk.kernel.data.model.WorkflowJob
 import com.abk.kernel.data.model.WorkflowRun
 import com.abk.kernel.data.model.WorkflowStep
@@ -23,8 +24,25 @@ class DownloadAndProgressUtilsTest {
         assertEquals(ArtifactType.KERNEL_IMG, DownloadUtils.classifyArtifact("boot-android14-6.1.162.img"))
         assertEquals(ArtifactType.ANYKERNEL3, DownloadUtils.classifyArtifact("AnyKernel3-android14.zip"))
         assertEquals(ArtifactType.SUSFS_MODULE, DownloadUtils.classifyArtifact("susfs-module.zip"))
+        assertEquals(ArtifactType.ABK_MANAGER, DownloadUtils.classifyArtifact("abk-apks"))
         assertEquals(ArtifactType.KSU_MANAGER, DownloadUtils.classifyArtifact("KernelSU-Manager.apk"))
         assertEquals(ArtifactType.OTHER, DownloadUtils.classifyArtifact("patch-rejects.zip"))
+    }
+
+    @Test
+    fun doesNotAutoDownloadAbkManagerArtifacts() {
+        assertFalse(
+            DownloadUtils.shouldAutoDownload(
+                Artifact(
+                    id = 1L,
+                    name = "abk-apks",
+                    sizeInBytes = 1L,
+                    archiveDownloadUrl = "https://example.com/abk.zip",
+                    expired = false,
+                    createdAt = ""
+                )
+            )
+        )
     }
 
     @Test

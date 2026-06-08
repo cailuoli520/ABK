@@ -226,7 +226,7 @@ internal val artifactCategoryOrder = listOf(
 internal const val MAX_VISIBLE_WORKFLOWS_PER_CATEGORY = 15
 
 internal fun DownloadedArtifact.isInstallableApk(): Boolean =
-    type.isManagerArtifactType() || name.endsWith(".apk", ignoreCase = true)
+    type == ArtifactType.KSU_MANAGER || (type != ArtifactType.ABK_MANAGER && name.endsWith(".apk", ignoreCase = true))
 
 @StringRes
 internal fun ArtifactCategory.labelRes(): Int = when (this) {
@@ -306,7 +306,9 @@ internal fun WorkflowRun?.workflowState(): FlashFilterWorkflowState? = when {
 }
 
 internal fun WorkflowArtifactGroup.shouldAppearInWorkflowList(run: WorkflowRun?): Boolean =
-    when (
+    if (run.isAbkManagerFlashRun(runTitle) || (remote.isEmpty() && local.isEmpty())) {
+        false
+    } else when (
         FlashWorkflowFilter.primaryKind(
             run = run,
             runTitle = runTitle,
