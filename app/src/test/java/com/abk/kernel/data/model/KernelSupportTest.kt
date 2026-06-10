@@ -130,4 +130,29 @@ class KernelSupportTest {
         assertEquals("5.10", normalized.kernelVersion)
         assertTrue(normalized.cancelSusfs)
     }
+
+    @Test
+    fun normalizeDisablesKpmForResukisuDevAndLatest() {
+        val dev = KernelSupport.normalize(
+            KernelBuildConfig(
+                kernelsuVariant = KSU_VARIANT_RESUKISU,
+                kernelsuBranch = KSU_BRANCH_DEV,
+                useKpm = true,
+                kpmPassword = "secret"
+            )
+        )
+        val latest = KernelSupport.normalize(
+            KernelBuildConfig(
+                kernelsuVariant = KSU_VARIANT_RESUKISU,
+                kernelsuBranch = KSU_BRANCH_LATEST,
+                useKpm = true,
+                kpmPassword = "secret"
+            )
+        )
+
+        assertFalse(dev.useKpm)
+        assertEquals("", dev.kpmPassword)
+        assertFalse(latest.useKpm)
+        assertEquals("", latest.kpmPassword)
+    }
 }
