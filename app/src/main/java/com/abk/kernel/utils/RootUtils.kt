@@ -1081,44 +1081,6 @@ object RootUtils {
         return execRootScript(script, timeoutSeconds = 15L)
     }
 
-    fun hasBundledExtensionAsset(context: Context, assetName: String): Boolean {
-        val cleanName = assetName.trim()
-        if (cleanName.isBlank()) return false
-        return runCatching {
-            context.assets.open("extensions/$cleanName").use { true }
-        }.getOrDefault(false)
-    }
-
-    fun installBundledExtensionApk(
-        context: Context,
-        assetName: String,
-        onOutput: ((String) -> Unit)? = null
-    ): ShellResult {
-        val cleanName = assetName.trim()
-        if (cleanName.isBlank()) {
-            val line = tr(R.string.extension_asset_missing)
-            onOutput?.invoke(line)
-            return ShellResult(false, listOf(line))
-        }
-        val stageDir = File(context.cacheDir, "extension-install").apply {
-            deleteRecursively()
-            mkdirs()
-        }
-        val stagedApk = File(stageDir, cleanName)
-        return try {
-            context.assets.open("extensions/$cleanName").use { input ->
-                FileOutputStream(stagedApk).use { output -> input.copyTo(output) }
-            }
-            installApk(context, stagedApk.absolutePath, onOutput)
-        } catch (error: Throwable) {
-            val line = error.message ?: error::class.java.simpleName
-            onOutput?.invoke(line)
-            ShellResult(false, listOf(line))
-        } finally {
-            stageDir.deleteRecursively()
-        }
-    }
-
     private fun sanitizeExtensionId(value: String): String? {
         val clean = value.trim()
         return clean.takeIf { it.isNotBlank() && SAFE_EXTENSION_ID.matches(it) }
