@@ -404,10 +404,11 @@ object KernelSupport {
         val normalizedBranch = normalizeKsuBranch(ksuBranch)
         return when {
             normalizedVariant == KSU_VARIANT_NONE -> false
+            normalizedVariant == KSU_VARIANT_OFFICIAL -> false
             normalizedTarget == BUILD_TARGET_ONEPLUS ->
                 normalizedVariant in setOf(KSU_VARIANT_SUKISU, KSU_VARIANT_RESUKISU)
             normalizedVariant == KSU_VARIANT_RESUKISU &&
-                normalizedBranch in setOf(KSU_BRANCH_DEV, KSU_BRANCH_LATEST) -> false
+                normalizedBranch !in setOf(KSU_BRANCH_STABLE, KSU_BRANCH_CUSTOM) -> false
             else -> true
         }
     }
