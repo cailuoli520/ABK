@@ -13,11 +13,11 @@
 
 简体中文 | [English](README-EN.md)
 
+</div>
+
 ## 赞助
 
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-F16061?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/xingguangcuican)
-
-</div>
 
 ## 项目定位
 
