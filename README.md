@@ -15,9 +15,7 @@
 
 </div>
 
-## 赞助我（球球惹）
-
-[![Ko-fi](https://img.shields.io/badge/Ko--fi-F16061?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/xingguangcuican)
+如果你喜欢这个项目，欢迎在 [![Ko-fi](https://img.shields.io/badge/Ko--fi-F16061?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/xingguangcuican) 上为我点一杯咖啡喵
 
 ## 项目定位
 
