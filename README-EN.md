@@ -15,7 +15,10 @@ An automation repository and Android app for building, distributing, and managin
 
 </div>
 
-## Sponsor for me (meow)
+## Support My Work
+
+If you like this project, please consider buying me a coffee to support its ongoing development!
+
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-F16061?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/xingguangcuican)
 
 ## Purpose
