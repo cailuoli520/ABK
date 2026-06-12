@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material3.MaterialTheme
@@ -46,17 +45,23 @@ fun AppBackgroundHost(
 
 @Composable
 fun AppPageBackground(
+    backgroundUri: String?,
+    backgroundImageEnabled: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val hasBackground = backgroundImageEnabled && !backgroundUri.isNullOrBlank()
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                if (LocalAppBackgroundEnabled.current) {
-                    Color.Transparent
-                } else {
-                    MaterialTheme.colorScheme.surface
-                }
+            .background(MaterialTheme.colorScheme.surface)
+    ) {
+        if (hasBackground) {
+            AsyncImage(
+                model = backgroundUri,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
             )
-    )
+        }
+    }
 }

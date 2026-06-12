@@ -1690,7 +1690,10 @@ private fun BuildPlanPageBackground(
     backgroundUri: String?,
     backgroundImageEnabled: Boolean
 ) {
-    AppPageBackground()
+    AppPageBackground(
+        backgroundUri = backgroundUri,
+        backgroundImageEnabled = backgroundImageEnabled
+    )
 }
 
 @Composable

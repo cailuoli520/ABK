@@ -1610,7 +1610,10 @@ private fun ModuleRepositoryPageBackground(
     backgroundUri: String?,
     backgroundImageEnabled: Boolean
 ) {
-    AppPageBackground()
+    AppPageBackground(
+        backgroundUri = backgroundUri,
+        backgroundImageEnabled = backgroundImageEnabled
+    )
 }
 
 private data class MergedRuntimeCatalogModule(
