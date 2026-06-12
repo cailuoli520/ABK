@@ -104,11 +104,11 @@ class AbkExtensionManagerActivity : ComponentActivity() {
                     AbkExtensionManagerScreen(
                         focusExtensionId = focusExtensionId,
                         bootstrapMode = bootstrapMode,
-                        onBack = ::finish,
-                        onExternalFlowLaunched = ::finish,
-                    )
-                }
+                    onBack = ::finish,
+                    onExternalFlowLaunched = ::finish,
+                )
             }
+        }
         }
     }
 }
@@ -177,23 +177,6 @@ fun AbkExtensionManagerScreen(
         }
         if (finishAfterLaunch) {
             onExternalFlowLaunched()
-        }
-    }
-
-    fun launchSettings(extension: AbkManagedExtension) {
-        val hostActivity = activity ?: return
-        if (!abkLaunchExtensionSettings(hostActivity, extension)) {
-            Toast.makeText(hostActivity, hostActivity.getString(R.string.extension_settings_missing), Toast.LENGTH_SHORT).show()
-            requestRefresh()
-        }
-    }
-
-    fun launchCompanionApp(extension: AbkManagedExtension) {
-        val hostActivity = activity ?: return
-        if (!abkLaunchExtensionCompanionApp(hostActivity, extension)) {
-            Toast.makeText(hostActivity, hostActivity.getString(R.string.extension_companion_open_failed), Toast.LENGTH_SHORT).show()
-            requestRefresh()
-            return
         }
     }
 
@@ -326,8 +309,7 @@ fun AbkExtensionManagerScreen(
                     ExtensionBootstrapCard(
                         extension = focused,
                         onInstall = { installExtension(focused) },
-                        onOpenOobe = { launchOobe(focused) },
-                        onOpenCompanionApp = { launchCompanionApp(focused) }
+                        onOpenOobe = { launchOobe(focused) }
                     )
                 }
             }
@@ -339,8 +321,6 @@ fun AbkExtensionManagerScreen(
                         emphasize = true,
                         onInstall = { installExtension(it) },
                         onOpenOobe = { launchOobe(it) },
-                        onOpenSettings = { launchSettings(it) },
-                        onOpenCompanionApp = { launchCompanionApp(it) },
                         onReset = { resetExtension(it) },
                     )
                 }
@@ -355,8 +335,6 @@ fun AbkExtensionManagerScreen(
                     emphasize = false,
                     onInstall = { installExtension(it) },
                     onOpenOobe = { launchOobe(it) },
-                    onOpenSettings = { launchSettings(it) },
-                    onOpenCompanionApp = { launchCompanionApp(it) },
                     onReset = { resetExtension(it) },
                 )
             }
@@ -369,22 +347,21 @@ private fun ExtensionBootstrapCard(
     extension: AbkManagedExtension,
     onInstall: () -> Unit,
     onOpenOobe: () -> Unit,
-    onOpenCompanionApp: () -> Unit,
 ) {
     val companionLabel = extension.companionLabel()
     val titleRes = when {
         !extension.isCompanionInstalled -> R.string.extension_bootstrap_install_title
-        extension.canLaunchOobe && extension.needsOobe -> R.string.extension_bootstrap_oobe_required_title
+        extension.canLaunchOobe -> R.string.extension_bootstrap_oobe_required_title
         else -> R.string.extension_bootstrap_oobe_missing_title
     }
     val subtitle = when {
         !extension.isCompanionInstalled -> stringResource(R.string.extension_bootstrap_install_desc, companionLabel)
-        extension.canLaunchOobe && extension.needsOobe -> stringResource(R.string.extension_bootstrap_oobe_required_desc)
+        extension.canLaunchOobe -> stringResource(R.string.extension_bootstrap_oobe_required_desc)
         else -> stringResource(R.string.extension_bootstrap_oobe_missing_desc, companionLabel)
     }
     val containerColor = when {
         !extension.isCompanionInstalled -> MaterialTheme.colorScheme.secondaryContainer
-        extension.canLaunchOobe && extension.needsOobe -> MaterialTheme.colorScheme.primaryContainer
+        extension.canLaunchOobe -> MaterialTheme.colorScheme.primaryContainer
         else -> MaterialTheme.colorScheme.errorContainer
     }
 
@@ -409,18 +386,11 @@ private fun ExtensionBootstrapCard(
                         Text(stringResource(R.string.extension_install_action))
                     }
                 }
-                extension.canLaunchOobe && extension.needsOobe -> {
+                extension.canLaunchOobe -> {
                     Button(onClick = onOpenOobe) {
                         Icon(Icons.Default.Build, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
                         Text(stringResource(R.string.extension_run_oobe_action))
-                    }
-                }
-                else -> {
-                    Button(onClick = onOpenCompanionApp) {
-                        Icon(Icons.Default.OpenInNew, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text(stringResource(R.string.extension_open_companion_action))
                     }
                 }
             }
@@ -434,8 +404,6 @@ private fun ExtensionCard(
     emphasize: Boolean,
     onInstall: (AbkManagedExtension) -> Unit,
     onOpenOobe: (AbkManagedExtension) -> Unit,
-    onOpenSettings: (AbkManagedExtension) -> Unit,
-    onOpenCompanionApp: (AbkManagedExtension) -> Unit,
     onReset: (AbkManagedExtension) -> Unit,
 ) {
     val chipColor = if (extension.needsOobe) {
@@ -521,20 +489,6 @@ private fun ExtensionCard(
                         Icon(Icons.Default.Build, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
                         Text(stringResource(R.string.extension_run_oobe_action))
-                    }
-                } else if (extension.needsOobe) {
-                    Button(onClick = { onOpenCompanionApp(extension) }) {
-                        Icon(Icons.Default.OpenInNew, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text(stringResource(R.string.extension_open_companion_action))
-                    }
-                }
-
-                if (extension.settingsSupported) {
-                    Button(onClick = { onOpenSettings(extension) }) {
-                        Icon(Icons.Default.Extension, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text(stringResource(R.string.extension_open_settings_action))
                     }
                 }
             }
