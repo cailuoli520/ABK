@@ -74,13 +74,34 @@ fun abkLoadManagedExtensions(context: Context): List<AbkManagedExtension> {
     val discovered = discoverExtensionApps(context)
 
     return runtimeStatus.modules
-        .filter { it.extensionId.isNotBlank() }
-        .map { module -> toManagedExtension(module, discovered[module.extensionId]) }
+        .mapNotNull { module ->
+            val discoveredApp = discovered[module.extensionId]
+            if (!abkShouldExposeManagedExtension(module, hasDiscoveredApp = discoveredApp != null)) {
+                return@mapNotNull null
+            }
+            toManagedExtension(module, discoveredApp)
+        }
         .sortedWith(
             compareByDescending<AbkManagedExtension> { it.needsOobe }
                 .thenByDescending { it.oobePriority }
                 .thenBy { it.name.lowercase() }
         )
+}
+
+internal fun abkShouldExposeManagedExtension(
+    module: AbkRuntimeModule,
+    hasDiscoveredApp: Boolean,
+): Boolean {
+    if (module.extensionId.isBlank()) return false
+    if (hasDiscoveredApp) return true
+
+    // Some runtime modules reuse extension_id for non-app dependencies. Keep the
+    // extensions surface limited to entries that actually declare a companion app.
+    return module.requiresCompanionApp ||
+        module.companionPackage.isNotBlank() ||
+        module.companionDisplayName.isNotBlank() ||
+        module.companionAssetName.isNotBlank() ||
+        module.companionDownloadUrl.isNotBlank()
 }
 
 fun abkPickPendingExtension(context: Context): AbkManagedExtension? =
