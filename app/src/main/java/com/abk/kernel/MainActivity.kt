@@ -94,6 +94,7 @@ import com.abk.kernel.ui.screens.SettingsScreen
 import com.abk.kernel.ui.screens.StatusScreen
 import com.abk.kernel.ui.theme.AbkTheme
 import com.abk.kernel.ui.theme.LocalUiSurfaceAlpha
+import com.abk.kernel.ui.theme.appPageBackgroundColor
 import com.abk.kernel.ui.theme.uiSurfaceColor
 import com.abk.kernel.viewmodel.MainViewModel
 
@@ -523,7 +524,7 @@ private fun AbkMainScaffold(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(uiSurfaceColor(MaterialTheme.colorScheme.surface))
+            .background(appPageBackgroundColor(uiSurfaceColor(MaterialTheme.colorScheme.surface)))
     ) {
         Box(
             modifier = Modifier

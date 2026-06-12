@@ -5,10 +5,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material3.MaterialTheme
 import coil.compose.AsyncImage
+import com.abk.kernel.ui.theme.LocalAppBackgroundEnabled
 import com.abk.kernel.ui.theme.LocalUiSurfaceAlpha
 
 @Composable
@@ -34,9 +36,27 @@ fun AppBackgroundHost(
             )
         }
         CompositionLocalProvider(
-            LocalUiSurfaceAlpha provides if (hasBackground) uiSurfaceAlpha.coerceIn(0f, 1f) else 1f
+            LocalUiSurfaceAlpha provides if (hasBackground) uiSurfaceAlpha.coerceIn(0f, 1f) else 1f,
+            LocalAppBackgroundEnabled provides hasBackground
         ) {
             content()
         }
     }
+}
+
+@Composable
+fun AppPageBackground(
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(
+                if (LocalAppBackgroundEnabled.current) {
+                    Color.Transparent
+                } else {
+                    MaterialTheme.colorScheme.surface
+                }
+            )
+    )
 }

@@ -74,12 +74,16 @@ fun abkLoadManagedExtensions(context: Context): List<AbkManagedExtension> {
     val discovered = discoverExtensionApps(context)
 
     return runtimeStatus.modules
-        .mapNotNull { module ->
-            val discoveredApp = discovered[module.extensionId]
-            if (!abkShouldExposeManagedExtension(module, hasDiscoveredApp = discoveredApp != null)) {
-                return@mapNotNull null
-            }
-            toManagedExtension(module, discoveredApp)
+        .asSequence()
+        .filter { it.extensionId.isNotBlank() }
+        .groupBy { it.extensionId.trim() }
+        .mapNotNull { (extensionId, modules) ->
+            val discoveredApp = discovered[extensionId]
+            val selectedModule = abkPickManagedExtensionModule(
+                modules = modules,
+                hasDiscoveredApp = discoveredApp != null
+            ) ?: return@mapNotNull null
+            toManagedExtension(selectedModule, discoveredApp)
         }
         .sortedWith(
             compareByDescending<AbkManagedExtension> { it.needsOobe }
@@ -97,11 +101,31 @@ internal fun abkShouldExposeManagedExtension(
 
     // Some runtime modules reuse extension_id for non-app dependencies. Keep the
     // extensions surface limited to entries that actually declare a companion app.
-    return module.requiresCompanionApp ||
-        module.companionPackage.isNotBlank() ||
-        module.companionDisplayName.isNotBlank() ||
-        module.companionAssetName.isNotBlank() ||
-        module.companionDownloadUrl.isNotBlank()
+    return abkHasCompanionMetadata(module)
+}
+
+internal fun abkPickManagedExtensionModule(
+    modules: List<AbkRuntimeModule>,
+    hasDiscoveredApp: Boolean,
+): AbkRuntimeModule? {
+    val candidates = modules.filter { it.extensionId.isNotBlank() }
+    if (candidates.isEmpty()) return null
+
+    val rankedCandidates = candidates.sortedWith(
+        compareByDescending<AbkRuntimeModule> { abkCompanionMetadataScore(it) }
+            .thenByDescending { it.oobePriority }
+            .thenByDescending { it.name.isNotBlank() }
+            .thenBy { it.name.lowercase() }
+            .thenBy { it.id.lowercase() }
+    )
+    val explicitCompanionModule = rankedCandidates.firstOrNull(::abkHasCompanionMetadata)
+    if (explicitCompanionModule != null) return explicitCompanionModule
+
+    return if (hasDiscoveredApp) {
+        rankedCandidates.firstOrNull()
+    } else {
+        null
+    }
 }
 
 fun abkPickPendingExtension(context: Context): AbkManagedExtension? =
@@ -178,6 +202,23 @@ private fun toManagedExtension(
         },
         state = state,
     )
+}
+
+private fun abkHasCompanionMetadata(module: AbkRuntimeModule): Boolean =
+    module.requiresCompanionApp ||
+        module.companionPackage.isNotBlank() ||
+        module.companionDisplayName.isNotBlank() ||
+        module.companionAssetName.isNotBlank() ||
+        module.companionDownloadUrl.isNotBlank()
+
+private fun abkCompanionMetadataScore(module: AbkRuntimeModule): Int {
+    var score = 0
+    if (module.requiresCompanionApp) score += 16
+    if (module.companionPackage.isNotBlank()) score += 8
+    if (module.companionDownloadUrl.isNotBlank()) score += 4
+    if (module.companionAssetName.isNotBlank()) score += 2
+    if (module.companionDisplayName.isNotBlank()) score += 1
+    return score
 }
 
 private fun parseExtensionState(rawJson: String): AbkExtensionState {
