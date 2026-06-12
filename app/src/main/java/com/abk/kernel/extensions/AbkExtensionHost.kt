@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.os.Build
+import com.abk.kernel.data.model.CustomExternalModuleEntryKind
 import com.abk.kernel.data.model.AbkRuntimeModule
 import com.abk.kernel.data.model.AbkRuntimeStatus
 import com.abk.kernel.utils.RootUtils
@@ -72,8 +73,14 @@ fun abkLoadManagedExtensions(context: Context): List<AbkManagedExtension> {
         ?.let { runCatching { Gson().fromJson(it, AbkRuntimeStatus::class.java) }.getOrNull() }
         ?: return emptyList()
     val discovered = discoverExtensionApps(context)
+    val extensionModules = if (runtimeStatus.extensionModules.isNotEmpty()) {
+        runtimeStatus.extensionModules
+    } else {
+        runtimeStatus.modules
+            .filter { abkShouldExposeManagedExtension(it, discovered[it.extensionId] != null) }
+    }
 
-    return runtimeStatus.modules
+    return extensionModules
         .asSequence()
         .filter { it.extensionId.isNotBlank() }
         .groupBy { it.extensionId.trim() }
@@ -97,6 +104,8 @@ internal fun abkShouldExposeManagedExtension(
     hasDiscoveredApp: Boolean,
 ): Boolean {
     if (module.extensionId.isBlank()) return false
+    if (CustomExternalModuleEntryKind.normalize(module.entryKind) == CustomExternalModuleEntryKind.MODULE_SET_CHILD)
+        return false
     if (hasDiscoveredApp) return true
 
     // Some runtime modules reuse extension_id for non-app dependencies. Keep the
