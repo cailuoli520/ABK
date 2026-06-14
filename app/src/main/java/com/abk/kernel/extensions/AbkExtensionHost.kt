@@ -7,7 +7,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.content.pm.PackageManager.GET_SERVICES
-import android.content.pm.PackageInfoFlags
 import android.content.pm.ResolveInfo
 import com.abk.kernel.data.model.CustomExternalModuleEntryKind
 import com.abk.kernel.data.model.AbkRuntimeModule
@@ -377,7 +376,7 @@ private fun isServiceComponent(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             packageManager.getPackageInfo(
                 packageName,
-                PackageInfoFlags.of(PackageManager.GET_SERVICES.toLong())
+                PackageManager.PackageInfoFlags.of(PackageManager.GET_SERVICES.toLong())
             )
         } else {
             packageManager.getPackageInfo(packageName, GET_SERVICES)
