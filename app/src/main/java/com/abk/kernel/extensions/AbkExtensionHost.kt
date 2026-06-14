@@ -7,6 +7,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.os.Build
+import android.content.pm.PackageManager.ComponentInfoFlags
+import android.content.pm.PackageManager.GET_SERVICES
 import com.abk.kernel.data.model.CustomExternalModuleEntryKind
 import com.abk.kernel.data.model.AbkRuntimeModule
 import com.abk.kernel.data.model.AbkRuntimeStatus
@@ -31,6 +33,7 @@ data class AbkDiscoveredExtensionApp(
     val oobeComponent: ComponentName?,
     val settingsComponent: ComponentName?,
     val serviceComponent: ComponentName?,
+    val serviceIsBackgroundStart: Boolean = false,
 )
 
 data class AbkExtensionState(
@@ -79,6 +82,9 @@ data class AbkManagedExtension(
 
     val canLaunchServiceActivity: Boolean
         get() = isCompanionInstalled && serviceComponent != null
+
+    val canStartServiceSilently: Boolean
+        get() = isCompanionInstalled && discoveredApp?.serviceIsBackgroundStart == true
 
     private val requiresInteractiveSetup: Boolean
         get() = settingsSupported || perAppSupported || discoveredApp?.oobeComponent != null
@@ -190,12 +196,19 @@ fun abkLaunchExtensionOobe(activity: Activity, extension: AbkManagedExtension): 
 
 fun abkLaunchExtensionServiceActivity(activity: Activity, extension: AbkManagedExtension): Boolean {
     val component = extension.serviceComponent ?: return false
-    activity.startActivity(
-        Intent().setComponent(component)
-            .putExtra(ABK_EXTENSION_EXTRA_ID, extension.extensionId)
-            .putExtra(ABK_EXTENSION_EXTRA_HOST_PACKAGE, activity.packageName)
-            .putExtra(ABK_EXTENSION_EXTRA_HOST_PROVIDER, abkExtensionHostAuthority(activity))
-    )
+    val intent = Intent().setComponent(component)
+        .putExtra(ABK_EXTENSION_EXTRA_ID, extension.extensionId)
+        .putExtra(ABK_EXTENSION_EXTRA_HOST_PACKAGE, activity.packageName)
+        .putExtra(ABK_EXTENSION_EXTRA_HOST_PROVIDER, abkExtensionHostAuthority(activity))
+    if (extension.canStartServiceSilently) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            activity.startForegroundService(intent)
+        } else {
+            activity.startService(intent)
+        }
+    } else {
+        activity.startActivity(intent)
+    }
     return true
 }
 
@@ -329,10 +342,13 @@ private fun discoverExtensionApps(context: Context): Map<String, AbkDiscoveredEx
             ?.trim()
             ?.takeIf { it.isNotBlank() }
             ?.let { componentNameFromString(packageName, it) }
-        val serviceComponent = meta.getString(ABK_EXTENSION_META_SERVICE_ACTIVITY)
+        val serviceClassName = meta.getString(ABK_EXTENSION_META_SERVICE_ACTIVITY)
             ?.trim()
             ?.takeIf { it.isNotBlank() }
-            ?.let { componentNameFromString(packageName, it) }
+        val serviceComponent = serviceClassName?.let { componentNameFromString(packageName, it) }
+        val serviceIsBackgroundStart = serviceClassName?.let { className ->
+            isServiceComponent(context.packageManager, packageName, className)
+        } ?: false
         AbkDiscoveredExtensionApp(
             extensionId = extensionId,
             packageName = packageName,
@@ -340,6 +356,7 @@ private fun discoverExtensionApps(context: Context): Map<String, AbkDiscoveredEx
             oobeComponent = oobeComponent,
             settingsComponent = settingsComponent,
             serviceComponent = serviceComponent,
+            serviceIsBackgroundStart = serviceIsBackgroundStart,
         )
     }.associateBy { it.extensionId }
 }
@@ -347,6 +364,25 @@ private fun discoverExtensionApps(context: Context): Map<String, AbkDiscoveredEx
 private fun componentNameFromString(packageName: String, className: String): ComponentName {
     val normalized = if (className.startsWith('.')) "$packageName$className" else className
     return ComponentName(packageName, normalized)
+}
+
+@Suppress("DEPRECATION")
+private fun isServiceComponent(
+    packageManager: PackageManager,
+    packageName: String,
+    className: String,
+): Boolean {
+    val normalized = if (className.startsWith('.')) "$packageName$className" else className
+    return runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.getPackageInfo(
+                packageName,
+                ComponentInfoFlags.of(PackageManager.GET_SERVICES.toLong())
+            )
+        } else {
+            packageManager.getPackageInfo(packageName, GET_SERVICES)
+        }
+    }.getOrNull()?.services?.any { it.name == normalized } == true
 }
 
 @Suppress("DEPRECATION")

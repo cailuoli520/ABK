@@ -137,11 +137,13 @@ class AbkExtensionHostTest {
                 displayName = "Demo",
                 oobeComponent = null,
                 settingsComponent = null,
-                serviceComponent = ComponentName("com.example.demo", "com.example.demo.BootServiceActivity")
+                serviceComponent = ComponentName("com.example.demo", "com.example.demo.BootServiceActivity"),
+                serviceIsBackgroundStart = true
             )
         )
 
         assertTrue(extension.canLaunchServiceActivity)
+        assertTrue(extension.canStartServiceSilently)
         assertTrue(abkNeedsBootstrap(extension))
     }
 }
