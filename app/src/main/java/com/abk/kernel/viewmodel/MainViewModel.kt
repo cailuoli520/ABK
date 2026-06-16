@@ -1077,12 +1077,6 @@ class MainViewModel @JvmOverloads constructor(
         forkSigningInitMutex.withLock {
             val secretName = FORK_ARTIFACT_SIGNING_SECRET_NAME
             val releaseTag = FORK_ARTIFACT_SIGNING_RELEASE_TAG
-            val existingPublicKey = prefs.forkArtifactSigningPublicKey.first()
-            if (!existingPublicKey.isNullOrBlank()) {
-                prefs.saveForkArtifactSigningSecretName(secretName)
-                prefs.saveForkArtifactSigningReleaseTag(releaseTag)
-                return
-            }
 
             val remoteRelease = when (val release = github.getReleaseByTag(owner, fork.name, releaseTag)) {
                 is Result.Success -> release.data
@@ -1132,6 +1126,12 @@ class MainViewModel @JvmOverloads constructor(
                 Result.Loading -> return
             }
             val existingPublicKeyAsset = releaseAssets.firstOrNull { it.name == FORK_ARTIFACT_SIGNING_PUBLIC_KEY_ASSET_NAME }
+            val existingPublicKey = prefs.forkArtifactSigningPublicKey.first()
+            if (secretExists && !existingPublicKey.isNullOrBlank()) {
+                prefs.saveForkArtifactSigningSecretName(secretName)
+                prefs.saveForkArtifactSigningReleaseTag(releaseTag)
+                return
+            }
             if (secretExists && existingPublicKeyAsset != null) {
                 val pem = when (val downloaded = github.downloadReleaseAssetText(owner, fork.name, release.id, FORK_ARTIFACT_SIGNING_PUBLIC_KEY_ASSET_NAME)) {
                     is Result.Success -> downloaded.data
