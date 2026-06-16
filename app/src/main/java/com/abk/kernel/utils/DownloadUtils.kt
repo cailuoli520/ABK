@@ -12,6 +12,7 @@ import com.abk.kernel.data.model.DownloadedArtifact
 import com.abk.kernel.data.model.PREBUILT_GKI_RUN_ID
 import com.abk.kernel.data.model.PrebuiltGkiAsset
 import com.abk.kernel.data.model.WorkflowRun
+import com.abk.kernel.data.repository.PreferencesRepository
 import com.abk.kernel.data.model.normalizeAppUpdateLine
 import com.abk.kernel.data.model.toArtifact
 import com.abk.kernel.data.model.toArtifactCategory
@@ -294,13 +295,14 @@ object DownloadUtils {
                 unzip(downloadedZip, targetOutDir)
                 downloadedZip.delete()
                 zipFile = null
+                val signingPublicKey = PreferencesRepository(context).readForkArtifactSigningPublicKeyBlocking()
                 collectCandidateFiles(targetOutDir).map { candidate ->
                     val type = classifyDownloadedFile(candidate)
-            val verification = if (ArtifactVerification.requiresTrustedBundle(type)) {
-                ArtifactVerification.verifyBundleFile(candidate, type)
-            } else {
-                null
-            }
+                    val verification = if (ArtifactVerification.requiresTrustedBundle(type)) {
+                        ArtifactVerification.verifyBundleFile(candidate, type, ForkSigningManager.publicKeyPemFromBase64(signingPublicKey.orEmpty()))
+                    } else {
+                        null
+                    }
                     LocalDownloadEntry(
                         displayName = candidate.name,
                         file = candidate,
@@ -489,7 +491,16 @@ object DownloadUtils {
                 files.map { candidate ->
                     val type = classifyDownloadedFile(candidate)
                     val verification = if (ArtifactVerification.requiresTrustedBundle(type)) {
-                        ArtifactVerification.verifyBundleFile(candidate, type)
+                        if (runId == PREBUILT_GKI_RUN_ID) {
+                            null
+                        } else {
+                            val signingPublicKey = PreferencesRepository(context).readForkArtifactSigningPublicKeyBlocking()
+                            ArtifactVerification.verifyBundleFile(
+                                candidate,
+                                type,
+                                ForkSigningManager.publicKeyPemFromBase64(signingPublicKey.orEmpty())
+                            )
+                        }
                     } else {
                         null
                     }
@@ -631,7 +642,27 @@ object DownloadUtils {
             return PreparedDownloadedArtifact(source)
         }
         if (ArtifactVerification.requiresTrustedBundle(artifact.type)) {
-            val verification = ArtifactVerification.verifyBundleFile(source, artifact.type)
+            val verification = if (artifact.runId == PREBUILT_GKI_RUN_ID) {
+                BundleVerificationResult(
+                    manifest = SignedBundleManifest(
+                        bundleName = source.name,
+                        artifactType = artifact.type.name,
+                        runId = PREBUILT_GKI_RUN_ID,
+                        payloadName = "",
+                        payloadSha256 = "",
+                        payloadSizeBytes = 0L
+                    ),
+                    success = artifact.verified,
+                    message = artifact.verificationSummary ?: "Prebuilt bundle requires confirmation"
+                )
+            } else {
+                val signingPublicKey = PreferencesRepository(context).readForkArtifactSigningPublicKeyBlocking()
+                ArtifactVerification.verifyBundleFile(
+                    source,
+                    artifact.type,
+                    ForkSigningManager.publicKeyPemFromBase64(signingPublicKey.orEmpty())
+                )
+            }
             if (!verification.success) {
                 throw IllegalStateException(verification.message)
             }
@@ -860,7 +891,7 @@ object DownloadUtils {
         val persistedBundle = File(candidateDir, downloadedFile.name)
         downloadedFile.copyTo(persistedBundle, overwrite = true)
         val verification = if (ArtifactVerification.requiresTrustedBundle(classifyDownloadedFile(persistedBundle))) {
-            ArtifactVerification.verifyBundleFile(persistedBundle, classifyDownloadedFile(persistedBundle))
+            null
         } else {
             null
         }

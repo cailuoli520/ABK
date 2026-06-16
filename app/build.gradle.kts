@@ -147,6 +147,8 @@ dependencies {
     implementation(libs.okhttp.logging)
     implementation(libs.gson)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.lazysodium.android)
+    implementation(libs.jna)
 
     // Root
     implementation(libs.libsu.core)

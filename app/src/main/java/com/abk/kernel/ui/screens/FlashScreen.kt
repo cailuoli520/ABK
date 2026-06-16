@@ -245,6 +245,7 @@ fun FlashScreen(
     var prebuiltParameterTarget by remember { mutableStateOf<PrebuiltGkiRelease?>(null) }
     var deleteRemoteWorkflowRun by remember { mutableStateOf(false) }
     var showFlashConfirm by remember { mutableStateOf(false) }
+    var showUnverifiedFlashConfirm by remember { mutableStateOf(false) }
     var showInstallManagerConfirm by remember { mutableStateOf(false) }
     var cancelConfirmRunId by remember { mutableStateOf<Long?>(null) }
     var showTerminal by remember { mutableStateOf(false) }
@@ -784,6 +785,15 @@ fun FlashScreen(
         }
     }
 
+    fun requestFlash(item: DownloadedArtifact) {
+        selectedItem = item
+        if ((item.type == ArtifactType.KERNEL_IMG || item.type == ArtifactType.ANYKERNEL3) && !item.verified) {
+            showUnverifiedFlashConfirm = true
+        } else {
+            showFlashConfirm = true
+        }
+    }
+
     if (showFlashConfirm) {
         val item = selectedItem
         if (item != null) {
@@ -848,6 +858,32 @@ fun FlashScreen(
                 TextButton(onClick = { showFlashConfirm = false }) { Text(stringResource(R.string.cancel)) }
             }
         )
+        }
+    }
+
+    if (showUnverifiedFlashConfirm) {
+        val item = selectedItem
+        if (item != null) {
+            AlertDialog(
+                onDismissRequest = { showUnverifiedFlashConfirm = false },
+                icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },
+                title = { Text(stringResource(R.string.flash_confirm)) },
+                text = { Text(item.verificationSummary ?: context.getString(R.string.download_unknown_error)) },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showUnverifiedFlashConfirm = false
+                            showFlashConfirm = true
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) { Text(stringResource(R.string.flash_confirm)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showUnverifiedFlashConfirm = false }) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                }
+            )
         }
     }
 
@@ -1285,11 +1321,8 @@ fun FlashScreen(
                                     LocalOnlyArtifactCard(
                                         artifact = artifact,
                                         onCopyPath = ::copyDownloadedFilePath,
-                                        onInstall = ::requestInstallManager,
-                                        onFlash = {
-                                            selectedItem = it
-                                            showFlashConfirm = true
-                                        },
+                            onInstall = ::requestInstallManager,
+                            onFlash = ::requestFlash,
                                         onDelete = { deleteFileTarget = it },
                                         allowRootActions = rootGranted
                                     )
@@ -1470,12 +1503,9 @@ fun FlashScreen(
                                 autoDownload = state.autoDownload,
                                 pendingAutoDownloadRunId = state.pendingAutoDownloadRunId,
                                 onDownload = vm::downloadArtifact,
-                                onCopyPath = ::copyDownloadedFilePath,
-                                onInstall = ::requestInstallManager,
-                                onFlash = {
-                                    selectedItem = it
-                                    showFlashConfirm = true
-                                },
+                                        onCopyPath = ::copyDownloadedFilePath,
+                                        onInstall = ::requestInstallManager,
+                                        onFlash = ::requestFlash,
                                 onDelete = { deleteFileTarget = it },
                                 allowRootActions = rootGranted,
                                 unlinkedWorkflowTitle = unlinkedWorkflowTitle,
@@ -1686,10 +1716,7 @@ fun FlashScreen(
                                             onDownload = { vm.downloadPrebuiltGki(asset) },
                                             onCopyPath = ::copyDownloadedFilePath,
                                             onInstall = ::requestInstallManager,
-                                            onFlash = {
-                                                selectedItem = it
-                                                showFlashConfirm = true
-                                            },
+                                            onFlash = ::requestFlash,
                                             onDelete = { deleteFileTarget = it },
                                             allowRootActions = rootGranted
                                         )

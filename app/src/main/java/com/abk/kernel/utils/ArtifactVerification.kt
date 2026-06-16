@@ -5,9 +5,8 @@ import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import java.io.File
 import java.security.MessageDigest
+import java.security.PublicKey
 import java.security.Signature
-import java.security.cert.CertificateFactory
-import java.security.cert.X509Certificate
 import java.util.Base64
 import java.util.Locale
 import java.util.zip.ZipFile
@@ -33,9 +32,6 @@ object ArtifactVerification {
     const val MANIFEST_FILE_NAME: String = "ABK_BUNDLE_MANIFEST.json"
     const val SIGNATURE_FILE_NAME: String = "ABK_BUNDLE_MANIFEST.sig"
 
-    private const val CERT_BASE64 =
-        "MIIDOzCCAiOgAwIBAgIUD0EsZlnI9dCyVHCYH5WdIuNOvGUwDQYJKoZIhvcNAQELBQAwLTEdMBsGA1UEAwwUQUJLIEFydGlmYWN0IFNpZ25pbmcxDDAKBgNVBAoMA0FCSzAeFw0yNjA2MTYxNjUxNDlaFw0zNjA2MTMxNjUxNDlaMC0xHTAbBgNVBAMMFEFCSyBBcnRpZmFjdCBTaWduaW5nMQwwCgYDVQQKDANBQkswggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCtsdq497whDaXt7HydCShDveW/oTjw3hRp/fH/myOJtS01W7gATeRhWEj4NP4dTtulhh69pEDzu7ONoNYeSx8oMLaEM7v/S7lkdD0k/TH8cdJ9RG9m7IKyTCvOLgoyCwsaLX0ij8OcL+9+6kxpiCyaBHFwXzvBTkBfong5D2KqnjZ8XAvbSF7RbMLj2BAW4I5m9Gm50VPbPR6e7eItc3L+RVpRShNwSNbQjPEMl6XAAAfU7IM6QIm09DwaLpjYgZP+e8e4TRaCy013sVoqlQ83+bvchMPjqzmLkzH24A2DdCr15A/b41L5w6iTaHd0v5VNnm5/EiMG1hNPAMA08awtAgMBAAGjUzBRMB0GA1UdDgQWBBQmN6pBtZvKIacoR+2PcfYHZCs3JDAfBgNVHSMEGDAWgBQmN6pBtZvKIacoR+2PcfYHZCs3JDAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQBqtlyYEXY09cteKoIO5mVSSZCO4izDhj2BZJaWSDyjtvpWqUNxAjwiSZMNZe75BnQJDF1vFyR2eZ1pYkmeV9v6GC/NZ07QbuXeGIM/YDr1/sDPfZ48Hr2syRSNKKuvamx4OeAk7tJ1+OKT/zOJXWwME0EKRqs/5ev4RlgOtfDGm+i3z1iDgPpzGjnlJbEAWcHX0+j0xUzBJ5JEQEcUi3raKJ33VNfe1kdspXv70qXN6z2GoX0E61MFeaYWEJ/rTM9RoYAnqIF0WoTo/TVJLxUyQPg6+fD5QGuBrxrH1Ulp88NdOgYh2FUbu7IznsbYN0ucOfEb04Gp3rS995n5+dZ1"
-
     private val gson = Gson()
 
     fun requiresTrustedBundle(type: ArtifactType): Boolean = when (type) {
@@ -44,10 +40,16 @@ object ArtifactVerification {
         else -> false
     }
 
-    fun verifyBundleFile(bundleFile: File, expectedType: ArtifactType? = null): BundleVerificationResult {
+    fun verifyBundleFile(
+        bundleFile: File,
+        expectedType: ArtifactType? = null,
+        publicKeyPem: String? = null
+    ): BundleVerificationResult {
         if (!bundleFile.isFile || !bundleFile.name.lowercase(Locale.ROOT).endsWith(".bundle.zip")) {
             return failureFor(bundleFile.name, expectedType, "Trusted artifact must be a signed .bundle.zip")
         }
+        val publicKey = parsePublicKey(publicKeyPem)
+            ?: return failureFor(bundleFile.name, expectedType, "Missing fork signing public key")
         return runCatching {
             ZipFile(bundleFile).use { zip ->
                 val manifestEntry = zip.getEntry(MANIFEST_FILE_NAME)
@@ -57,7 +59,7 @@ object ArtifactVerification {
                 val manifestBytes = zip.getInputStream(manifestEntry).use { it.readBytes() }
                 val signatureBytes = zip.getInputStream(signatureEntry).use { it.readBytes() }
                 val manifest = gson.fromJson(String(manifestBytes, Charsets.UTF_8), SignedBundleManifest::class.java)
-                if (!verifyManifestSignature(manifestBytes, signatureBytes)) {
+                if (!verifyManifestSignature(publicKey, manifestBytes, signatureBytes)) {
                     return BundleVerificationResult(manifest, false, "Artifact signature verification failed")
                 }
                 val manifestType = runCatching { ArtifactType.valueOf(manifest.artifactType) }.getOrNull()
@@ -85,17 +87,24 @@ object ArtifactVerification {
 
     fun normalizeDigest(value: String): String = value.trim().lowercase(Locale.ROOT)
 
-    private fun verifyManifestSignature(manifestBytes: ByteArray, signatureBytes: ByteArray): Boolean {
+    private fun verifyManifestSignature(publicKey: PublicKey, manifestBytes: ByteArray, signatureBytes: ByteArray): Boolean {
         val verifier = Signature.getInstance("SHA256withRSA")
-        verifier.initVerify(artifactCertificate().publicKey)
+        verifier.initVerify(publicKey)
         verifier.update(manifestBytes)
         return verifier.verify(signatureBytes)
     }
 
-    private fun artifactCertificate(): X509Certificate {
-        val der = Base64.getDecoder().decode(CERT_BASE64)
-        return CertificateFactory.getInstance("X.509")
-            .generateCertificate(der.inputStream()) as X509Certificate
+    private fun parsePublicKey(publicKeyPem: String?): PublicKey? {
+        val compact = publicKeyPem
+            ?.lineSequence()
+            ?.filterNot { it.startsWith("-----") }
+            ?.joinToString("")
+            ?.trim()
+            .orEmpty()
+        if (compact.isBlank()) return null
+        val keyBytes = Base64.getDecoder().decode(compact)
+        val spec = java.security.spec.X509EncodedKeySpec(keyBytes)
+        return java.security.KeyFactory.getInstance("RSA").generatePublic(spec)
     }
 
     private fun failureFor(
@@ -118,4 +127,3 @@ object ArtifactVerification {
 
 private fun sha256(bytes: ByteArray): String =
     MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
-

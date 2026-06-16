@@ -23,6 +23,8 @@ gson = "2.11.0"
 robolectric = "4.14.1"
 coroutines = "1.10.2"
 androidxTestCore = "1.6.1"
+lazysodium = "5.2.0"
+jna = "5.17.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -58,6 +60,8 @@ kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidxTestCore" }
+lazysodium-android = { group = "com.goterl", name = "lazysodium-android", version.ref = "lazysodium" }
+jna = { group = "net.java.dev.jna", name = "jna", version.ref = "jna" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
