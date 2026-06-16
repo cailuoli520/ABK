@@ -1,3 +1,5 @@
+import java.util.zip.ZipFile
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -38,6 +40,35 @@ val hasReleaseSigning = !releaseStoreFile.orNull.isNullOrBlank() &&
     !releaseStorePassword.orNull.isNullOrBlank() &&
     !releaseKeyAlias.orNull.isNullOrBlank() &&
     !releaseKeyPassword.orNull.isNullOrBlank()
+val libsodiumAarCoordinate = "com.goterl:lazysodium-android:5.2.0@aar"
+
+val extractLibsodium by tasks.registering {
+    val outputDir = layout.buildDirectory.dir("generated/abk-jniLibs/main/libsodium")
+    outputs.dir(outputDir)
+    doLast {
+        val jniRoot = outputDir.get().asFile
+        jniRoot.deleteRecursively()
+        jniRoot.mkdirs()
+
+        val lazysodium = configurations.detachedConfiguration(
+            dependencies.create(libsodiumAarCoordinate)
+        ).singleFile
+        ZipFile(lazysodium).use { zip ->
+            val entries = zip.entries()
+            while (entries.hasMoreElements()) {
+                val entry = entries.nextElement()
+                if (entry.name.startsWith("jni/") && entry.name.endsWith("/libsodium.so")) {
+                    val relative = entry.name.removePrefix("jni/")
+                    val target = jniRoot.resolve(relative)
+                    target.parentFile?.mkdirs()
+                    zip.getInputStream(entry).use { input ->
+                        target.outputStream().use { output -> input.copyTo(output) }
+                    }
+                }
+            }
+        }
+    }
+}
 
 android {
     namespace = "com.abk.kernel"
@@ -123,6 +154,14 @@ android {
             path = file("src/main/cpp/CMakeLists.txt")
         }
     }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(extractLibsodium)
+}
+
+tasks.matching { it.name.startsWith("configureCMake") || it.name.startsWith("buildCMake") }.configureEach {
+    dependsOn(extractLibsodium)
 }
 
 dependencies {

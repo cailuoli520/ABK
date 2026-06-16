@@ -890,17 +890,12 @@ object DownloadUtils {
         }
         val persistedBundle = File(candidateDir, downloadedFile.name)
         downloadedFile.copyTo(persistedBundle, overwrite = true)
-        val verification = if (ArtifactVerification.requiresTrustedBundle(classifyDownloadedFile(persistedBundle))) {
-            null
-        } else {
-            null
-        }
         return LocalDownloadEntry(
             displayName = displayName,
             file = persistedBundle,
             type = classifyDownloadedFile(persistedBundle),
-            verified = verification?.success == true,
-            verificationSummary = verification?.message
+            verified = false,
+            verificationSummary = null
         )
     }
 
