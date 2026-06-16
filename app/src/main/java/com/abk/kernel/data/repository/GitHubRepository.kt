@@ -51,7 +51,7 @@ open class GitHubRepository(
         if (resp.isSuccessful && resp.body() != null) {
             Result.Success(resp.body()!!)
         } else {
-            Result.Error("Device code request failed: ${resp.code}", resp.code)
+            Result.Error("Device code request failed: ${resp.code()}", resp.code())
         }
     }.getOrElse { Result.Error(it.message ?: "Unknown error") }
 
@@ -60,7 +60,7 @@ open class GitHubRepository(
         if (resp.isSuccessful && resp.body() != null) {
             Result.Success(resp.body()!!)
         } else {
-            Result.Error("Token poll failed: ${resp.code}", resp.code)
+            Result.Error("Token poll failed: ${resp.code()}", resp.code())
         }
     }.getOrElse { Result.Error(it.message ?: "Unknown error") }
 
@@ -87,7 +87,7 @@ open class GitHubRepository(
 
                 response.use { resp ->
                     if (!resp.isSuccessful) {
-                        lastError = "HTTP ${resp.code}"
+                        lastError = "HTTP ${resp.code()}"
                         return@use
                     }
 
@@ -124,7 +124,7 @@ open class GitHubRepository(
 
                 response.use { resp ->
                     if (!resp.isSuccessful) {
-                        lastError = "HTTP ${resp.code}"
+                        lastError = "HTTP ${resp.code()}"
                         return@use
                     }
 
@@ -170,7 +170,7 @@ open class GitHubRepository(
 
                 response.use { resp ->
                     if (!resp.isSuccessful) {
-                        lastError = "HTTP ${resp.code}"
+                        lastError = "HTTP ${resp.code()}"
                         return@use
                     }
 
@@ -213,7 +213,7 @@ open class GitHubRepository(
 
         response.use { resp ->
             if (!resp.isSuccessful) {
-                return@withContext Result.Error("HTTP ${resp.code}")
+                return@withContext Result.Error("HTTP ${resp.code()}")
             }
 
             val body = resp.body?.string().orEmpty()
@@ -232,7 +232,7 @@ open class GitHubRepository(
         return runCatching {
             val resp = api.getAuthenticatedUser()
             if (resp.isSuccessful && resp.body() != null) Result.Success(resp.body()!!)
-            else Result.Error("Failed to get user: ${resp.code}", resp.code)
+            else Result.Error("Failed to get user: ${resp.code()}", resp.code())
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
 
@@ -248,8 +248,8 @@ open class GitHubRepository(
                 resp.isSuccessful && repo?.fork == true &&
                     (repo.parent == null || repo.parent.fullName == expectedParent) -> Result.Success(repo)
                 resp.isSuccessful -> Result.Success(null)
-                resp.code == 404 -> Result.Success(null)
-                else -> Result.Error("Failed to check fork: ${resp.code}", resp.code)
+                resp.code() == 404 -> Result.Success(null)
+                else -> Result.Error("Failed to check fork: ${resp.code()}", resp.code())
             }
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
@@ -259,7 +259,7 @@ open class GitHubRepository(
         return runCatching {
             val resp = api.forkRepo(owner, repo)
             if (resp.isSuccessful && resp.body() != null) Result.Success(resp.body()!!)
-            else Result.Error("Fork failed: ${resp.code}", resp.code)
+            else Result.Error("Fork failed: ${resp.code()}", resp.code())
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
 
@@ -268,7 +268,7 @@ open class GitHubRepository(
         return runCatching {
             val resp = api.getRepositorySecretPublicKey(owner, repo)
             if (resp.isSuccessful && resp.body() != null) Result.Success(resp.body()!!)
-            else Result.Error("Get repo secret public key failed: ${resp.code}", resp.code)
+            else Result.Error("Get repo secret public key failed: ${resp.code()}", resp.code())
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
 
@@ -279,7 +279,7 @@ open class GitHubRepository(
             if (resp.isSuccessful) {
                 Result.Success(resp.body()?.secrets.orEmpty())
             } else {
-                Result.Error("List repo secrets failed: ${resp.code}", resp.code)
+                Result.Error("List repo secrets failed: ${resp.code()}", resp.code())
             }
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
@@ -308,7 +308,7 @@ open class GitHubRepository(
                 )
             )
             if (resp.isSuccessful) Result.Success(Unit)
-            else Result.Error("Update repo secret failed: ${resp.code}", resp.code)
+            else Result.Error("Update repo secret failed: ${resp.code()}", resp.code())
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
 
@@ -327,7 +327,7 @@ open class GitHubRepository(
                 "$baseBranch...$headOwner:$headBranch"
             )
             if (resp.isSuccessful && resp.body() != null) Result.Success(resp.body()!!)
-            else Result.Error("Compare failed: ${resp.code}", resp.code)
+            else Result.Error("Compare failed: ${resp.code()}", resp.code())
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
 
@@ -336,7 +336,7 @@ open class GitHubRepository(
         return runCatching {
             val resp = api.syncFork(username, repo, SyncForkRequest(branch))
             if (resp.isSuccessful && resp.body() != null) Result.Success(resp.body()!!)
-            else Result.Error("Sync failed: ${resp.code}", resp.code)
+            else Result.Error("Sync failed: ${resp.code()}", resp.code())
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
 
@@ -351,7 +351,7 @@ open class GitHubRepository(
                 if (wf != null) Result.Success(wf)
                 else Result.Error("Workflow $workflowFile not found")
             } else {
-                Result.Error("List workflows failed: ${resp.code}", resp.code)
+                Result.Error("List workflows failed: ${resp.code()}", resp.code())
             }
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
@@ -375,7 +375,7 @@ open class GitHubRepository(
         return runCatching {
             val resp = api.dispatchWorkflow(owner, repo, workflowId.toString(), WorkflowDispatchRequest(ref, inputs))
             if (resp.isSuccessful) Result.Success(Unit)
-            else Result.Error("Dispatch failed: ${resp.code}", resp.code)
+            else Result.Error("Dispatch failed: ${resp.code()}", resp.code())
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
 
@@ -384,7 +384,7 @@ open class GitHubRepository(
         return runCatching {
             val resp = api.enableWorkflow(owner, repo, workflowId.toString())
             if (resp.isSuccessful) Result.Success(Unit)
-            else Result.Error("Enable workflow failed: ${resp.code}", resp.code)
+            else Result.Error("Enable workflow failed: ${resp.code()}", resp.code())
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
 
@@ -406,7 +406,7 @@ open class GitHubRepository(
                 val runs: List<WorkflowRun> = resp.body()?.workflowRuns.orEmpty()
                 Result.Success(runs)
             } else {
-                Result.Error("List runs failed: ${resp.code}", resp.code)
+                Result.Error("List runs failed: ${resp.code()}", resp.code())
             }
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
@@ -416,7 +416,7 @@ open class GitHubRepository(
         return runCatching {
             val resp = api.getWorkflowRun(owner, repo, runId)
             if (resp.isSuccessful && resp.body() != null) Result.Success(resp.body()!!)
-            else Result.Error("Get run failed: ${resp.code}", resp.code)
+            else Result.Error("Get run failed: ${resp.code()}", resp.code())
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
 
@@ -425,8 +425,8 @@ open class GitHubRepository(
         return runCatching {
             val resp = api.deleteWorkflowRun(owner, repo, runId)
             when {
-                resp.isSuccessful || resp.code == 404 -> Result.Success(Unit)
-                else -> Result.Error("Delete run failed: ${resp.code}", resp.code)
+                resp.isSuccessful || resp.code() == 404 -> Result.Success(Unit)
+                else -> Result.Error("Delete run failed: ${resp.code()}", resp.code())
             }
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
@@ -436,8 +436,8 @@ open class GitHubRepository(
         return runCatching {
             val resp = api.cancelWorkflowRun(owner, repo, runId)
             when {
-                resp.isSuccessful || resp.code == 409 -> Result.Success(Unit)
-                else -> Result.Error("Cancel run failed: ${resp.code}", resp.code)
+                resp.isSuccessful || resp.code() == 409 -> Result.Success(Unit)
+                else -> Result.Error("Cancel run failed: ${resp.code()}", resp.code())
             }
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
@@ -450,7 +450,7 @@ open class GitHubRepository(
                 val jobs: List<WorkflowJob> = resp.body()?.jobs.orEmpty()
                 Result.Success(jobs)
             } else {
-                Result.Error("List jobs failed: ${resp.code}", resp.code)
+                Result.Error("List jobs failed: ${resp.code()}", resp.code())
             }
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
@@ -463,7 +463,7 @@ open class GitHubRepository(
                 val logs = resp.body()?.use { it.string() }.orEmpty()
                 Result.Success(logs)
             } else {
-                Result.Error("Download job logs failed: ${resp.code}", resp.code)
+                Result.Error("Download job logs failed: ${resp.code()}", resp.code())
             }
         }.getOrElse { Result.Error(it.toDownloadLogMessage("Download job logs failed")) }
     }
@@ -476,7 +476,7 @@ open class GitHubRepository(
                 val logs = resp.body()?.use { it.readZipText() }.orEmpty()
                 Result.Success(logs)
             } else {
-                Result.Error("Download run logs failed: ${resp.code}", resp.code)
+                Result.Error("Download run logs failed: ${resp.code()}", resp.code())
             }
         }.getOrElse { Result.Error(it.toDownloadLogMessage("Download run logs failed")) }
     }
@@ -489,7 +489,7 @@ open class GitHubRepository(
                 val artifacts: List<Artifact> = resp.body()?.artifacts.orEmpty()
                 Result.Success(artifacts)
             } else {
-                Result.Error("List artifacts failed: ${resp.code}", resp.code)
+                Result.Error("List artifacts failed: ${resp.code()}", resp.code())
             }
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
@@ -502,7 +502,7 @@ open class GitHubRepository(
             while (true) {
                 val resp = api.listReleases(owner, repo, perPage = perPage, page = page)
                 if (!resp.isSuccessful) {
-                    return@runCatching Result.Error("List releases failed: ${resp.code}", resp.code)
+                    return@runCatching Result.Error("List releases failed: ${resp.code()}", resp.code())
                 }
                 val releases = resp.body().orEmpty()
                 collected += releases
@@ -519,8 +519,8 @@ open class GitHubRepository(
             val resp = api.getReleaseByTag(owner, repo, tag)
             when {
                 resp.isSuccessful -> Result.Success(resp.body())
-                resp.code == 404 -> Result.Success(null)
-                else -> Result.Error("Get release failed: ${resp.code}", resp.code)
+                resp.code() == 404 -> Result.Success(null)
+                else -> Result.Error("Get release failed: ${resp.code()}", resp.code())
             }
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
@@ -538,7 +538,7 @@ open class GitHubRepository(
             while (true) {
                 val resp = api.listReleaseAssets(owner, repo, releaseId, perPage = perPage, page = page)
                 if (!resp.isSuccessful) {
-                    return@runCatching Result.Error("List release assets failed: ${resp.code}", resp.code)
+                    return@runCatching Result.Error("List release assets failed: ${resp.code()}", resp.code())
                 }
                 val assets = resp.body().orEmpty()
                 collected += assets
@@ -554,7 +554,7 @@ open class GitHubRepository(
         return runCatching {
             val resp = api.createRelease(owner, repo, request)
             if (resp.isSuccessful && resp.body() != null) Result.Success(resp.body()!!)
-            else Result.Error("Create release failed: ${resp.code}", resp.code)
+            else Result.Error("Create release failed: ${resp.code()}", resp.code())
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
 
@@ -563,7 +563,7 @@ open class GitHubRepository(
         return runCatching {
             val resp = api.updateRelease(owner, repo, releaseId, request)
             if (resp.isSuccessful && resp.body() != null) Result.Success(resp.body()!!)
-            else Result.Error("Update release failed: ${resp.code}", resp.code)
+            else Result.Error("Update release failed: ${resp.code()}", resp.code())
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
 
@@ -572,8 +572,8 @@ open class GitHubRepository(
         return runCatching {
             val resp = api.deleteReleaseAsset(owner, repo, assetId)
             when {
-                resp.isSuccessful || resp.code == 404 -> Result.Success(Unit)
-                else -> Result.Error("Delete release asset failed: ${resp.code}", resp.code)
+                resp.isSuccessful || resp.code() == 404 -> Result.Success(Unit)
+                else -> Result.Error("Delete release asset failed: ${resp.code()}", resp.code())
             }
         }.getOrElse { Result.Error(it.message ?: "Unknown error") }
     }
@@ -598,7 +598,7 @@ open class GitHubRepository(
             .getOrElse { return@withContext Result.Error(it.message ?: "Unknown error") }
         response.use { resp ->
             if (!resp.isSuccessful) {
-                return@withContext Result.Error("Upload release asset failed: ${resp.code}", resp.code)
+                return@withContext Result.Error("Upload release asset failed: ${resp.code()}", resp.code())
             }
             val body = resp.body?.string().orEmpty()
             val json = runCatching { JsonParser.parseString(body).asJsonObject }.getOrNull()
@@ -626,7 +626,7 @@ open class GitHubRepository(
                     if (resp.isSuccessful) {
                         Result.Success(resp.body()?.string().orEmpty())
                     } else {
-                        Result.Error("Download release asset failed: ${resp.code}", resp.code)
+                        Result.Error("Download release asset failed: ${resp.code()}", resp.code())
                     }
                 }.getOrElse { Result.Error(it.message ?: "Unknown error") }
             }
