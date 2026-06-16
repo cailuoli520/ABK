@@ -87,7 +87,7 @@ open class GitHubRepository(
 
                 response.use { resp ->
                     if (!resp.isSuccessful) {
-                        lastError = "HTTP ${resp.code()}"
+                        lastError = "HTTP ${resp.code}"
                         return@use
                     }
 
@@ -124,7 +124,7 @@ open class GitHubRepository(
 
                 response.use { resp ->
                     if (!resp.isSuccessful) {
-                        lastError = "HTTP ${resp.code()}"
+                        lastError = "HTTP ${resp.code}"
                         return@use
                     }
 
@@ -170,7 +170,7 @@ open class GitHubRepository(
 
                 response.use { resp ->
                     if (!resp.isSuccessful) {
-                        lastError = "HTTP ${resp.code()}"
+                        lastError = "HTTP ${resp.code}"
                         return@use
                     }
 
@@ -213,7 +213,7 @@ open class GitHubRepository(
 
         response.use { resp ->
             if (!resp.isSuccessful) {
-                return@withContext Result.Error("HTTP ${resp.code()}")
+                return@withContext Result.Error("HTTP ${resp.code}")
             }
 
             val body = resp.body?.string().orEmpty()
@@ -598,7 +598,7 @@ open class GitHubRepository(
             .getOrElse { return@withContext Result.Error(it.message ?: "Unknown error") }
         response.use { resp ->
             if (!resp.isSuccessful) {
-                return@withContext Result.Error("Upload release asset failed: ${resp.code()}", resp.code())
+                return@withContext Result.Error("Upload release asset failed: ${resp.code}", resp.code)
             }
             val body = resp.body?.string().orEmpty()
             val json = runCatching { JsonParser.parseString(body).asJsonObject }.getOrNull()
