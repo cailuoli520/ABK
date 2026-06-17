@@ -447,6 +447,7 @@ object DownloadUtils {
                 if (looksLikeNoticeBundle(downloadedFile)) {
                     listOf(
                         persistBundledDownloadEntry(
+                            context = context,
                             bundleRootDir = requireNotNull(assetDir),
                             downloadedFile = downloadedFile
                         )
