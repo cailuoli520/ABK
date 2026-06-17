@@ -60,7 +60,8 @@ object DownloadUtils {
         val cleanupDir: File? = null,
         val dependencyModules: List<File> = emptyList(),
         val dependencyApps: List<File> = emptyList(),
-        val legacyBundleManifest: String? = null
+        val legacyBundleManifest: String? = null,
+        val resolvedType: ArtifactType? = null
     )
 
     data class AppUpdatePackageResult(
@@ -94,6 +95,11 @@ object DownloadUtils {
     private data class BundleVerificationState(
         val verified: Boolean,
         val summary: String?
+    )
+
+    private data class AuxiliaryArtifacts(
+        val moduleFiles: List<File> = emptyList(),
+        val appFiles: List<File> = emptyList()
     )
 
     fun classifyArtifact(name: String): ArtifactType {
@@ -444,53 +450,62 @@ object DownloadUtils {
 
             val downloadedFile = requireNotNull(file)
             val records = if (bundleWithNotices) {
+                val signingPublicKeyPem = PreferencesRepository(context)
+                    .readForkArtifactSigningPublicKeyBlocking()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let(ForkSigningManager::publicKeyPemFromBase64)
                 if (looksLikeNoticeBundle(downloadedFile)) {
-                    listOf(
-                        persistBundledDownloadEntry(
-                            context = context,
-                            bundleRootDir = requireNotNull(assetDir),
-                            downloadedFile = downloadedFile
-                        )
+                    val entry = persistBundledDownloadEntry(
+                        context = context,
+                        bundleRootDir = requireNotNull(assetDir),
+                        downloadedFile = downloadedFile,
+                        signingPublicKeyPem = signingPublicKeyPem
                     )
-                } else {
-                val byName = classifyDownloadedFile(downloadedFile)
-                val candidateFiles = if (downloadedFile.extension.equals("zip", ignoreCase = true) &&
-                    byName in setOf(ArtifactType.KERNEL_PACKAGE, ArtifactType.OTHER)
-                ) {
-                    val extractedDir = File(requireNotNull(stageDir), "extracted").apply { mkdirs() }
-                    unzip(downloadedFile, extractedDir)
-                    collectCandidateFiles(extractedDir)
-                } else {
-                    listOf(downloadedFile)
-                }
-                if (candidateFiles.isEmpty()) {
-                    stageDir?.deleteRecursively()
-                    stageDir = null
-                    assetDir?.deleteRecursively()
-                    return@withContext DownloadResult(
-                        errorMessage = "No downloadable payload was found in $name"
+                    persistAuxiliaryArtifacts(
+                        bundleFile = entry.file,
+                        dependencyModules = emptyList(),
+                        dependencyApps = emptyList()
                     )
-                }
-                val notices = resolveNoticeFiles(requireNotNull(stageDir))
-                    ?: run {
+                    listOf(entry)
+                } else {
+                    val byName = classifyDownloadedFile(downloadedFile)
+                    val candidateFiles = if (downloadedFile.extension.equals("zip", ignoreCase = true) &&
+                        byName in setOf(ArtifactType.KERNEL_PACKAGE, ArtifactType.OTHER)
+                    ) {
+                        val extractedDir = File(requireNotNull(stageDir), "extracted").apply { mkdirs() }
+                        unzip(downloadedFile, extractedDir)
+                        collectCandidateFiles(extractedDir)
+                    } else {
+                        listOf(downloadedFile)
+                    }
+                    if (candidateFiles.isEmpty()) {
                         stageDir?.deleteRecursively()
                         stageDir = null
                         assetDir?.deleteRecursively()
                         return@withContext DownloadResult(
-                            errorMessage = "Failed to fetch $LICENSE_FILE_NAME or $THIRD_PARTY_NOTICES_FILE_NAME"
+                            errorMessage = "No downloadable payload was found in $name"
                         )
                     }
-                val bundledDependencies = resolveBundledMagiskModules(requireNotNull(stageDir), token)
-                val bundledCompanionApps = resolveBundledCompanionApps(requireNotNull(stageDir), token)
-                createBundledDownloadEntries(
-                    context = context,
-                    bundleRootDir = requireNotNull(assetDir),
-                    candidates = candidateFiles,
-                    notices = notices,
-                    signingPublicKeyPem = null,
-                    bundledDependencies = bundledDependencies,
-                    bundledCompanionApps = bundledCompanionApps
-                )
+                    val notices = resolveNoticeFiles(requireNotNull(stageDir))
+                        ?: run {
+                            stageDir?.deleteRecursively()
+                            stageDir = null
+                            assetDir?.deleteRecursively()
+                            return@withContext DownloadResult(
+                                errorMessage = "Failed to fetch $LICENSE_FILE_NAME or $THIRD_PARTY_NOTICES_FILE_NAME"
+                            )
+                        }
+                    val bundledDependencies = resolveBundledMagiskModules(requireNotNull(stageDir), token)
+                    val bundledCompanionApps = resolveBundledCompanionApps(requireNotNull(stageDir), token)
+                    createBundledDownloadEntries(
+                        context = context,
+                        bundleRootDir = requireNotNull(assetDir),
+                        candidates = candidateFiles,
+                        notices = notices,
+                        signingPublicKeyPem = signingPublicKeyPem,
+                        bundledDependencies = bundledDependencies,
+                        bundledCompanionApps = bundledCompanionApps
+                    )
                 }
             } else {
                 val byName = classifyDownloadedFile(downloadedFile)
@@ -659,12 +674,16 @@ object DownloadUtils {
         if (!source.exists()) {
             return PreparedDownloadedArtifact(source)
         }
-        if (ArtifactVerification.requiresTrustedBundle(artifact.type)) {
+        val manifestType = ArtifactVerification.readBundleManifest(source)?.artifactType
+            ?.let { runCatching { ArtifactType.valueOf(it) }.getOrNull() }
+        val effectiveType = manifestType ?: artifact.type
+        if (ArtifactVerification.requiresTrustedBundle(effectiveType) || looksLikeSignedBundle(source)) {
+            val auxiliaryArtifacts = resolveAuxiliaryArtifacts(source)
             val verification = if (artifact.runId == PREBUILT_GKI_RUN_ID) {
                 BundleVerificationResult(
                     manifest = SignedBundleManifest(
                         bundleName = source.name,
-                        artifactType = artifact.type.name,
+                        artifactType = effectiveType.name,
                         runId = PREBUILT_GKI_RUN_ID,
                         payloadName = "",
                         payloadSha256 = "",
@@ -677,7 +696,7 @@ object DownloadUtils {
                 val signingPublicKey = PreferencesRepository(context).readForkArtifactSigningPublicKeyBlocking()
                 ArtifactVerification.verifyBundleFile(
                     source,
-                    artifact.type,
+                    effectiveType,
                     ForkSigningManager.publicKeyPemFromBase64(signingPublicKey.orEmpty())
                 )
             }
@@ -690,10 +709,14 @@ object DownloadUtils {
                     val payloadName = parseBundledPayloadName(manifestText)
                     val payload = payloadName?.let { File(extractDir, it).takeIf(File::isFile) }
                         ?: throw IllegalStateException("Bundled artifact missing payload: ${artifact.name}")
+                    val resolvedType = classifyDownloadedFile(payload)
                     return PreparedDownloadedArtifact(
                         payload,
                         extractDir,
-                        legacyBundleManifest = manifestText
+                        dependencyModules = auxiliaryArtifacts.moduleFiles,
+                        dependencyApps = auxiliaryArtifacts.appFiles,
+                        legacyBundleManifest = manifestText,
+                        resolvedType = resolvedType
                     )
                 }
                 throw IllegalStateException(verification.message)
@@ -703,7 +726,14 @@ object DownloadUtils {
             val payload = File(extractDir, verification.manifest.payloadName)
                 .takeIf(File::isFile)
                 ?: throw IllegalStateException("Bundled artifact missing payload: ${artifact.name}")
-            return PreparedDownloadedArtifact(payload, extractDir)
+            val resolvedType = classifyDownloadedFile(payload)
+            return PreparedDownloadedArtifact(
+                file = payload,
+                cleanupDir = extractDir,
+                dependencyModules = auxiliaryArtifacts.moduleFiles,
+                dependencyApps = auxiliaryArtifacts.appFiles,
+                resolvedType = resolvedType
+            )
         }
 
         if (!looksLikeNoticeBundle(source)) {
@@ -716,7 +746,13 @@ object DownloadUtils {
         val payloadName = parseBundledPayloadName(manifestText)
         val payload = payloadName?.let { File(extractDir, it).takeIf(File::isFile) }
             ?: throw IllegalStateException("Bundled artifact missing payload: ${artifact.name}")
-        return PreparedDownloadedArtifact(payload, extractDir)
+        return PreparedDownloadedArtifact(
+            file = payload,
+            cleanupDir = extractDir,
+            dependencyModules = resolveAuxiliaryArtifacts(source).moduleFiles,
+            dependencyApps = resolveAuxiliaryArtifacts(source).appFiles,
+            resolvedType = classifyDownloadedFile(payload)
+        )
     }
 
     private fun runFolderName(run: WorkflowRun?): String {
@@ -888,12 +924,29 @@ object DownloadUtils {
     ): List<LocalDownloadEntry> {
         return candidates.mapIndexed { index, candidate ->
             if (candidate.name.lowercase(Locale.ROOT).endsWith(".bundle.zip")) {
-                return@mapIndexed persistBundledDownloadEntry(
+                val entry = persistBundledDownloadEntry(
                     context = context,
                     bundleRootDir = bundleRootDir,
                     downloadedFile = candidate,
                     signingPublicKeyPem = signingPublicKeyPem
                 )
+                val resolvedType = resolveBundlePayloadType(entry.file, entry.type)
+                val dependenciesForPayload = if (resolvedType in setOf(ArtifactType.KERNEL_IMG, ArtifactType.ANYKERNEL3)) {
+                    bundledDependencies
+                } else {
+                    emptyList()
+                }
+                val appsForPayload = if (resolvedType in setOf(ArtifactType.KERNEL_IMG, ArtifactType.ANYKERNEL3)) {
+                    bundledCompanionApps
+                } else {
+                    emptyList()
+                }
+                persistAuxiliaryArtifacts(
+                    bundleFile = entry.file,
+                    dependencyModules = dependenciesForPayload,
+                    dependencyApps = appsForPayload
+                )
+                return@mapIndexed entry
             }
             val dirName = safeFileName(candidate.name).ifBlank { "artifact-${index + 1}" }
             val candidateDir = File(bundleRootDir, dirName).apply {
@@ -955,6 +1008,62 @@ object DownloadUtils {
             verified = verification?.verified == true,
             verificationSummary = verification?.summary
         )
+    }
+
+    private fun persistAuxiliaryArtifacts(
+        bundleFile: File,
+        dependencyModules: List<File>,
+        dependencyApps: List<File>
+    ) {
+        val sidecarRoot = File(bundleFile.parentFile ?: return, "${bundleFile.name}.deps").apply {
+            if (exists()) deleteRecursively()
+            mkdirs()
+        }
+        val modulesDir = File(sidecarRoot, "magisk-modules").apply { mkdirs() }
+        val appsDir = File(sidecarRoot, "companion-apps").apply { mkdirs() }
+        dependencyModules.forEach { module ->
+            module.copyTo(File(modulesDir, module.name), overwrite = true)
+        }
+        dependencyApps.forEach { app ->
+            app.copyTo(File(appsDir, app.name), overwrite = true)
+        }
+    }
+
+    private fun resolveAuxiliaryArtifacts(bundleFile: File): AuxiliaryArtifacts {
+        val sidecarRoot = File(bundleFile.parentFile ?: return AuxiliaryArtifacts(), "${bundleFile.name}.deps")
+        if (!sidecarRoot.isDirectory) return AuxiliaryArtifacts()
+        val modules = File(sidecarRoot, "magisk-modules")
+            .takeIf(File::isDirectory)
+            ?.listFiles()
+            ?.filter(File::isFile)
+            ?.sortedBy { it.name }
+            .orEmpty()
+        val apps = File(sidecarRoot, "companion-apps")
+            .takeIf(File::isDirectory)
+            ?.listFiles()
+            ?.filter(File::isFile)
+            ?.sortedBy { it.name }
+            .orEmpty()
+        return AuxiliaryArtifacts(
+            moduleFiles = modules,
+            appFiles = apps
+        )
+    }
+
+    private fun resolveBundlePayloadType(bundleFile: File, fallback: ArtifactType): ArtifactType {
+        val type = classifyDownloadedFile(bundleFile)
+        if (type != fallback) return type
+        val manifest = runCatching {
+            ZipFile(bundleFile).use { zip ->
+                zip.getEntry(SIGNED_BUNDLE_MANIFEST_FILE_NAME)?.let { entry ->
+                    zip.getInputStream(entry).use { it.readBytes().toString(Charsets.UTF_8) }
+                } ?: zip.getEntry(BUNDLE_MANIFEST_FILE_NAME)?.let { entry ->
+                    zip.getInputStream(entry).use { it.readBytes().toString(Charsets.UTF_8) }
+                }
+            }
+        }.getOrNull()
+        val payloadName = parseBundledPayloadName(manifest)
+        return payloadName?.let { classifyDownloadedFile(File(it)) } ?: fallback
     }
 
     private fun createNoticeBundle(
@@ -1040,7 +1149,10 @@ object DownloadUtils {
         type: ArtifactType,
         signingPublicKeyPem: String?
     ): BundleVerificationState? {
-        if (!ArtifactVerification.requiresTrustedBundle(type)) return null
+        val manifestType = ArtifactVerification.readBundleManifest(bundleFile)?.artifactType
+            ?.let { runCatching { ArtifactType.valueOf(it) }.getOrNull() }
+        val effectiveType = manifestType ?: type
+        if (!ArtifactVerification.requiresTrustedBundle(effectiveType) && !looksLikeSignedBundle(bundleFile)) return null
         if (looksLikeLegacyNoticeBundle(bundleFile)) {
             return BundleVerificationState(
                 verified = false,
@@ -1048,7 +1160,7 @@ object DownloadUtils {
             )
         }
         if (!signingPublicKeyPem.isNullOrBlank()) {
-            val result = ArtifactVerification.verifyBundleFile(bundleFile, type, signingPublicKeyPem)
+            val result = ArtifactVerification.verifyBundleFile(bundleFile, effectiveType, signingPublicKeyPem)
             return BundleVerificationState(
                 verified = result.success,
                 summary = result.message
@@ -1294,6 +1406,9 @@ object DownloadUtils {
     }
 
     private fun classifyDownloadedFile(file: File): ArtifactType {
+        ArtifactVerification.readBundleManifest(file)?.artifactType
+            ?.let { runCatching { ArtifactType.valueOf(it) }.getOrNull() }
+            ?.let { return it }
         val byName = classifyArtifact(file.name)
         if (byName != ArtifactType.OTHER || !file.extension.equals("zip", ignoreCase = true)) {
             return byName

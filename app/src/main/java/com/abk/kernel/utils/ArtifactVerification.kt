@@ -40,6 +40,17 @@ object ArtifactVerification {
         else -> false
     }
 
+    fun readBundleManifest(bundleFile: File): SignedBundleManifest? = runCatching {
+        ZipFile(bundleFile).use { zip ->
+            zip.getEntry(MANIFEST_FILE_NAME)?.let { manifestEntry ->
+                gson.fromJson(
+                    zip.getInputStream(manifestEntry).use { String(it.readBytes(), Charsets.UTF_8) },
+                    SignedBundleManifest::class.java
+                )
+            }
+        }
+    }.getOrNull()
+
     fun verifyBundleFile(
         bundleFile: File,
         expectedType: ArtifactType? = null,

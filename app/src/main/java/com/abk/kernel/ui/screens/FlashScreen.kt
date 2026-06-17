@@ -739,7 +739,8 @@ fun FlashScreen(
         scope.launch {
             val result = runCatching {
                 executeWithPreparedArtifact(item, allowHighRiskFallback) { prepared ->
-                    if (item.type == ArtifactType.KERNEL_IMG || item.type == ArtifactType.ANYKERNEL3) {
+                    val flashType = prepared.resolvedType ?: item.type
+                    if (flashType == ArtifactType.KERNEL_IMG || flashType == ArtifactType.ANYKERNEL3) {
                         prepared.dependencyApps.forEach { dependency ->
                             appendTerminalOutput("[ABK] 先安装依赖扩展应用: ${dependency.name}")
                             val dependencyResult = RootUtils.installApk(context, dependency.absolutePath, ::appendTerminalOutput)
@@ -755,7 +756,7 @@ fun FlashScreen(
                             }
                         }
                     }
-                    when (item.type) {
+                    when (flashType) {
                         ArtifactType.KERNEL_IMG -> RootUtils.flashImage(prepared.file.absolutePath, onOutput = ::appendTerminalOutput)
                         ArtifactType.ANYKERNEL3 -> RootUtils.flashAnyKernel3(
                             context,
@@ -877,7 +878,12 @@ fun FlashScreen(
                 onDismissRequest = { showUnverifiedFlashConfirm = false },
                 icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },
                 title = { Text(stringResource(R.string.flash_confirm)) },
-                text = { Text(item.verificationSummary ?: context.getString(R.string.download_unknown_error)) },
+                text = {
+                    Text(
+                        item.verificationSummary
+                            ?: context.getString(R.string.flash_bundle_unverified_requires_confirmation)
+                    )
+                },
                 confirmButton = {
                     Button(
                         onClick = {
