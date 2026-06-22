@@ -4,11 +4,10 @@ subdir-ccflags-y += -I$(src)/vendor/include
 subdir-ccflags-y += -Wno-deprecated-declarations
 
 obj-$(CONFIG_CRYPTO_ZSTDP) += zstdp.o
-obj-$(CONFIG_CRYPTO_ZSTDP) += zstdp_vendor_unprefixed.o
 
 zstdp-y := zstdp_wrapper.o zstdp_vendor_prefixed.o
 
-zstdp_vendor_unprefixed-y := \
+zstdp_vendor_relobjs := \
 	vendor/lib/zstd/common/debug.o \
 	vendor/lib/zstd/common/entropy_common.o \
 	vendor/lib/zstd/common/error_private.o \
@@ -32,11 +31,19 @@ zstdp_vendor_unprefixed-y := \
 	vendor/lib/zstd/decompress/zstd_decompress.o \
 	vendor/lib/zstd/decompress/zstd_decompress_block.o
 
-targets += zstdp_vendor_unprefixed.o zstdp_vendor_rename.syms zstdp_vendor_prefixed.o
+zstdp_vendor_objs := $(addprefix $(obj)/,$(zstdp_vendor_relobjs))
+
+targets += $(zstdp_vendor_relobjs) zstdp_vendor_unprefixed.o zstdp_vendor_rename.syms zstdp_vendor_prefixed.o
 clean-files += zstdp_vendor_rename.syms zstdp_vendor_prefixed.o
 
 quiet_cmd_zstdp_syms = GEN     $@
       cmd_zstdp_syms = $(NM) -g --defined-only $< | awk 'NF == 3 { print $$3 " abk_zstdp_" $$3 }' > $@
+
+quiet_cmd_zstdp_ld = LD      $@
+      cmd_zstdp_ld = $(LD) $(ld_flags) -r -o $@ $(filter %.o,$^)
+
+$(obj)/zstdp_vendor_unprefixed.o: $(zstdp_vendor_objs) FORCE
+	$(call if_changed,zstdp_ld)
 
 $(obj)/zstdp_vendor_rename.syms: $(obj)/zstdp_vendor_unprefixed.o FORCE
 	$(call if_changed,zstdp_syms)
