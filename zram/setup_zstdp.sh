@@ -38,6 +38,29 @@ copy_file() {
   cp -a "$src" "$dst"
 }
 
+patch_vendor_compat() {
+  local common_root="$1"
+  local vendor_root="$2"
+  local mem_h="$vendor_root/lib/zstd/common/mem.h"
+
+  require_file "$mem_h"
+
+  if [ ! -f "$common_root/include/linux/unaligned.h" ]; then
+    python3 - "$mem_h" <<'PY'
+import pathlib
+import sys
+
+mem_h = pathlib.Path(sys.argv[1])
+text = mem_h.read_text()
+old = '#include <linux/unaligned.h>  /* get_unaligned, put_unaligned* */\n'
+new = '#include <asm-generic/unaligned.h>  /* get_unaligned, put_unaligned* */\n'
+if old in text and new not in text:
+    text = text.replace(old, new, 1)
+    mem_h.write_text(text)
+PY
+  fi
+}
+
 vendor_cache_dir() {
   local base tag
 
@@ -372,6 +395,7 @@ integrate() {
   copy_file "$cache_dir/include/linux/zstd_errors.h" "$vendor_root/include/linux/zstd_errors.h"
   copy_file "$repo_root/zram/zstdp/vendor_include_linux_unaligned.h" \
     "$vendor_root/include/linux/unaligned.h"
+  patch_vendor_compat "$common_root" "$vendor_root"
 
   patch_crypto_files "$common_root"
   patch_zram_files "$common_root"

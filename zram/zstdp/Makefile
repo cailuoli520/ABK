@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
-subdir-ccflags-y += -I$(src)/vendor/include
+subdir-ccflags-y += -I$(srctree)/$(src)/vendor/include
+subdir-ccflags-y += -I$(objtree)/$(obj)/vendor/include
 subdir-ccflags-y += -Wno-deprecated-declarations
 
 obj-$(CONFIG_CRYPTO_ZSTDP) += zstdp.o
