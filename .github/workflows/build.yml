@@ -149,11 +149,12 @@ jobs:
           effective_zram_full_algo="${{ inputs.zram_full_algo }}"
           effective_zram_extra_algos="${{ inputs.zram_extra_algos || '' }}"
           effective_zram_legacy_lz4k="true"
+          effective_zram_use_optional_algo="false"
 
           if [ "${{ inputs.kernel_version }}" = "6.12" ]; then
             effective_zram_legacy_lz4k="false"
             if [ "$effective_zram_full_algo" = "true" ]; then
-              echo "::warning::Android16/6.12 会跳过 legacy LZ4K/LZ4KD/LZ4K_OPLUS 补丁栈，仅保留 zstdp 与内核原生支持的 ZRAM 算法。"
+              echo "::warning::Android16/6.12 会跳过 legacy LZ4K/LZ4KD/LZ4K_OPLUS 补丁栈，仅保留内核原生支持的 ZRAM 算法。"
             fi
             if [ -n "$effective_zram_extra_algos" ]; then
               filtered_algos="$(python3 -c 'import sys; blocked={\"lz4k\",\"lz4kd\",\"lz4k_oplus\"}; print(\",\".join(item.strip() for item in sys.argv[1].split(\",\") if item.strip() and item.strip().lower() not in blocked))' "$effective_zram_extra_algos")"
@@ -164,11 +165,24 @@ jobs:
             fi
           fi
 
+          if [ "$effective_use_zram" = "true" ] && [ "$effective_zram_full_algo" != "true" ] && [ -n "$effective_zram_extra_algos" ]; then
+            if python3 - "$effective_zram_extra_algos" <<'PY'
+import sys
+
+algos = [item.strip().lower() for item in sys.argv[1].split(",") if item.strip()]
+raise SystemExit(0 if "zstdp" in algos else 1)
+PY
+            then
+              effective_zram_use_optional_algo="true"
+            fi
+          fi
+
           {
             echo "EFFECTIVE_USE_ZRAM=$effective_use_zram"
             echo "EFFECTIVE_ZRAM_FULL_ALGO=$effective_zram_full_algo"
             echo "EFFECTIVE_ZRAM_EXTRA_ALGOS=$effective_zram_extra_algos"
             echo "EFFECTIVE_ZRAM_LEGACY_LZ4K=$effective_zram_legacy_lz4k"
+            echo "EFFECTIVE_ZRAM_USE_OPTIONAL_ALGO=$effective_zram_use_optional_algo"
           } >> "$GITHUB_ENV"
 
           effective_ksu_branch="${{ inputs.ksu_branch }}"
@@ -2511,9 +2525,13 @@ jobs:
             echo "6.12 检测到新式 zram backend，跳过 legacy LZ4K/LZ4KD/LZ4K_OPLUS 补丁栈。"
           fi
 
-          chmod +x "$ZZH_PATCHES/zram/setup_zstdp.sh"
-          ABK_ZSTDP_UPSTREAM_TAG="v6.15" \
-            bash "$ZZH_PATCHES/zram/setup_zstdp.sh" integrate "$PWD"
+          if [ "${EFFECTIVE_ZRAM_USE_OPTIONAL_ALGO:-false}" = "true" ]; then
+            chmod +x "$ZZH_PATCHES/zram/setup_zstdp.sh"
+            ABK_ZSTDP_UPSTREAM_TAG="v6.15" \
+              bash "$ZZH_PATCHES/zram/setup_zstdp.sh" integrate "$PWD"
+          else
+            echo "未请求额外可选 ZRAM 算法，跳过附加算法集成。"
+          fi
 
       - name: 修复 6.6 WiFi/蓝牙兼容性（三星 + 小米）
         if: inputs.kernel_version == '6.6'
@@ -2594,41 +2612,6 @@ jobs:
             set_config_value CONFIG_CRYPTO_ZSTDP y
           }
 
-          set_legacy_zstdp_default() {
-            if [ "${{ inputs.kernel_version }}" = "5.10" ]; then
-              return 0
-            fi
-            disable_config CONFIG_ZRAM_DEF_COMP_LZORLE
-            disable_config CONFIG_ZRAM_DEF_COMP_ZSTD
-            disable_config CONFIG_ZRAM_DEF_COMP_LZ4
-            disable_config CONFIG_ZRAM_DEF_COMP_LZO
-            disable_config CONFIG_ZRAM_DEF_COMP_LZ4HC
-            disable_config CONFIG_ZRAM_DEF_COMP_842
-            set_config_value CONFIG_ZRAM_DEF_COMP_ZSTDP y
-            set_config_value CONFIG_ZRAM_DEF_COMP '"zstdp"'
-          }
-
-          set_modern_zstdp_default() {
-            disable_config CONFIG_ZRAM_DEF_COMP_LZORLE
-            disable_config CONFIG_ZRAM_DEF_COMP_LZO
-            disable_config CONFIG_ZRAM_DEF_COMP_LZ4
-            disable_config CONFIG_ZRAM_DEF_COMP_LZ4HC
-            disable_config CONFIG_ZRAM_DEF_COMP_ZSTD
-            disable_config CONFIG_ZRAM_DEF_COMP_DEFLATE
-            disable_config CONFIG_ZRAM_DEF_COMP_842
-            set_config_value CONFIG_ZRAM_BACKEND_ZSTDP y
-            set_config_value CONFIG_ZRAM_DEF_COMP_ZSTDP y
-            set_config_value CONFIG_ZRAM_DEF_COMP '"zstdp"'
-          }
-
-          set_zstdp_default() {
-            if [ "${{ inputs.kernel_version }}" = "6.12" ]; then
-              set_modern_zstdp_default
-            else
-              set_legacy_zstdp_default
-            fi
-          }
-
           enable_legacy_full_algos() {
             set_config_value CONFIG_CRYPTO_LZO y
             set_config_value CONFIG_CRYPTO_LZ4 y
@@ -2641,7 +2624,6 @@ jobs:
             set_config_value CONFIG_ZRAM_BACKEND_LZ4 y
             set_config_value CONFIG_ZRAM_BACKEND_LZ4HC y
             set_config_value CONFIG_ZRAM_BACKEND_ZSTD y
-            set_config_value CONFIG_ZRAM_BACKEND_ZSTDP y
             set_config_value CONFIG_ZRAM_BACKEND_DEFLATE y
             set_config_value CONFIG_ZRAM_BACKEND_842 y
           }
@@ -2706,9 +2688,6 @@ jobs:
             fi
           fi
 
-          enable_zstdp_base
-          set_zstdp_default
-
           # ---- ZRAM 完整算法支持 ----
           if [ "${EFFECTIVE_ZRAM_FULL_ALGO:-false}" = "true" ]; then
             echo "启用 ZRAM 完整算法支持..."
@@ -2717,7 +2696,6 @@ jobs:
             else
               enable_legacy_full_algos
             fi
-            set_zstdp_default
           elif [ -n "${EFFECTIVE_ZRAM_EXTRA_ALGOS:-}" ]; then
             # ---- 自定义单独算法 ----
             echo "添加自定义 ZRAM 算法: $EFFECTIVE_ZRAM_EXTRA_ALGOS"
