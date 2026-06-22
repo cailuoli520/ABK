@@ -42,8 +42,10 @@ patch_vendor_compat() {
   local common_root="$1"
   local vendor_root="$2"
   local mem_h="$vendor_root/lib/zstd/common/mem.h"
+  local error_private_h="$vendor_root/lib/zstd/common/error_private.h"
 
   require_file "$mem_h"
+  require_file "$error_private_h"
 
   if [ ! -f "$common_root/include/linux/unaligned.h" ]; then
     python3 - "$mem_h" <<'PY'
@@ -59,6 +61,19 @@ if old in text and new not in text:
     mem_h.write_text(text)
 PY
   fi
+
+  python3 - "$error_private_h" <<'PY'
+import pathlib
+import sys
+
+error_private_h = pathlib.Path(sys.argv[1])
+text = error_private_h.read_text()
+old = '#include <linux/zstd_errors.h>  /* enum list */\n'
+new = '#include "../../../vendor/include/linux/zstd_errors.h"  /* enum list */\n'
+if old in text and new not in text:
+    text = text.replace(old, new, 1)
+    error_private_h.write_text(text)
+PY
 }
 
 vendor_cache_dir() {
