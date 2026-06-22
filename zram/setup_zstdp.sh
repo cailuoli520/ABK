@@ -69,7 +69,7 @@ import sys
 error_private_h = pathlib.Path(sys.argv[1])
 text = error_private_h.read_text()
 old = '#include <linux/zstd_errors.h>  /* enum list */\n'
-new = '#include "../../../vendor/include/linux/zstd_errors.h"  /* enum list */\n'
+new = '#include "vendor/include/linux/zstd_errors.h"  /* enum list */\n'
 if old in text and new not in text:
     text = text.replace(old, new, 1)
     error_private_h.write_text(text)
