@@ -3945,7 +3945,7 @@ jobs:
                           struct ksu_sulog_pending_event *pending_sucompat = NULL;
 
                           pr_info("hook_manager: escape to root for init executing ksud: %d\\n", current->pid);
-                          pending_sucompat = ksu_sulog_capture_sucompat(filename->name, argv_user, GFP_KERNEL);
+                          pending_sucompat = ksu_sulog_capture_sucompat(filename->name, (struct user_arg_ptr *)argv_user, GFP_KERNEL);
                           ret = escape_to_root_for_init();
                           if (ret) {
                               pr_err("escape_to_root_for_init() failed: %d\\n", ret);
